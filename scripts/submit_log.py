@@ -37,15 +37,39 @@ ARCHIVE_DIR = LOG_DIR / "archive"
 BATCH_LIMIT = 500
 
 
+def _get_entry_key(stripped_line: str) -> str:
+    """Extract entry_id or fallback to stripped raw string."""
+    try:
+        data = json.loads(stripped_line)
+        return data.get("entry_id") or stripped_line
+    except Exception:
+        return stripped_line
+
+
 def _archive(pending: Path) -> None:
-    """Append pending file to today's archive. Never overwrites existing data."""
+    """Append pending file to today's archive. Deduplicates entries by entry_id."""
     if not pending.exists() or pending.stat().st_size == 0:
         return
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_file = ARCHIVE_DIR / f"{today}.jsonl"
-    with open(pending, "rb") as src, open(archive_file, "ab") as dst:
-        shutil.copyfileobj(src, dst)
+
+    existing_keys = set()
+    if archive_file.exists():
+        with open(archive_file, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped:
+                    existing_keys.add(_get_entry_key(stripped))
+
+    with open(pending, "r", encoding="utf-8") as src, open(archive_file, "a", encoding="utf-8") as dst:
+        for line in src:
+            stripped = line.strip()
+            if stripped:
+                key = _get_entry_key(stripped)
+                if key not in existing_keys:
+                    existing_keys.add(key)
+                    dst.write(stripped + "\n")
 
 
 def _restore_pending(pending: Path) -> None:
