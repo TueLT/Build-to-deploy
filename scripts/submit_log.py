@@ -38,14 +38,43 @@ BATCH_LIMIT = 500
 
 
 def _archive(pending: Path) -> None:
-    """Append pending file to today's archive. Never overwrites existing data."""
+    """Append pending file to today's archive. Deduplicates entries by entry_id."""
     if not pending.exists() or pending.stat().st_size == 0:
         return
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_file = ARCHIVE_DIR / f"{today}.jsonl"
-    with open(pending, "rb") as src, open(archive_file, "ab") as dst:
-        shutil.copyfileobj(src, dst)
+
+    existing_keys = set()
+    if archive_file.exists():
+        with open(archive_file, "r", encoding="utf-8") as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped:
+                    try:
+                        data = json.loads(stripped)
+                        existing_keys.add(data.get("entry_id") or stripped)
+                    except Exception:
+                        existing_keys.add(stripped)
+
+    new_lines = []
+    with open(pending, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped:
+                try:
+                    data = json.loads(stripped)
+                    key = data.get("entry_id") or stripped
+                except Exception:
+                    key = stripped
+                if key not in existing_keys:
+                    existing_keys.add(key)
+                    new_lines.append(stripped)
+
+    if new_lines:
+        with open(archive_file, "a", encoding="utf-8") as dst:
+            for line_str in new_lines:
+                dst.write(line_str + "\n")
 
 
 def _restore_pending(pending: Path) -> None:
