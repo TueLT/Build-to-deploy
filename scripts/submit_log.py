@@ -37,6 +37,15 @@ ARCHIVE_DIR = LOG_DIR / "archive"
 BATCH_LIMIT = 500
 
 
+def _get_entry_key(stripped_line: str) -> str:
+    """Extract entry_id or fallback to stripped raw string."""
+    try:
+        data = json.loads(stripped_line)
+        return data.get("entry_id") or stripped_line
+    except Exception:
+        return stripped_line
+
+
 def _archive(pending: Path) -> None:
     """Append pending file to today's archive. Deduplicates entries by entry_id."""
     if not pending.exists() or pending.stat().st_size == 0:
@@ -45,35 +54,39 @@ def _archive(pending: Path) -> None:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_file = ARCHIVE_DIR / f"{today}.jsonl"
 
-    existing_keys = set()
+    # Read pending and collect candidate lines and their keys
+    pending_candidates = []  # list of (key, stripped_line)
+    pending_keys = set()
+    with open(pending, "r", encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped:
+                key = _get_entry_key(stripped)
+                if key not in pending_keys:
+                    pending_keys.add(key)
+                    pending_candidates.append((key, stripped))
+
+    if not pending_candidates:
+        return
+
+    # Stream existing archive file line-by-line to check against pending_keys only,
+    # avoiding reading the entire archive into memory.
     if archive_file.exists():
         with open(archive_file, "r", encoding="utf-8") as f:
             for line in f:
                 stripped = line.strip()
                 if stripped:
-                    try:
-                        data = json.loads(stripped)
-                        existing_keys.add(data.get("entry_id") or stripped)
-                    except Exception:
-                        existing_keys.add(stripped)
+                    key = _get_entry_key(stripped)
+                    if key in pending_keys:
+                        pending_keys.remove(key)
+                        if not pending_keys:
+                            break  # Early exit if all pending keys already exist in archive
 
-    new_lines = []
-    with open(pending, "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if stripped:
-                try:
-                    data = json.loads(stripped)
-                    key = data.get("entry_id") or stripped
-                except Exception:
-                    key = stripped
-                if key not in existing_keys:
-                    existing_keys.add(key)
-                    new_lines.append(stripped)
-
-    if new_lines:
+    # Write remaining non-duplicate lines to archive
+    lines_to_write = [stripped for key, stripped in pending_candidates if key in pending_keys]
+    if lines_to_write:
         with open(archive_file, "a", encoding="utf-8") as dst:
-            for line_str in new_lines:
+            for line_str in lines_to_write:
                 dst.write(line_str + "\n")
 
 
