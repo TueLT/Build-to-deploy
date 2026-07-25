@@ -1,7 +1,6 @@
-import json
 import importlib.util
+import json
 from pathlib import Path
-import pytest
 
 # Dynamically import submit_log script
 script_path = Path(__file__).parent.parent / "scripts" / "submit_log.py"
@@ -15,7 +14,7 @@ def test_archive_deduplication_and_streaming(tmp_path, monkeypatch):
     monkeypatch.setattr(submit_log, "ARCHIVE_DIR", archive_dir)
 
     pending_file = tmp_path / "pending.jsonl"
-    
+
     # Write pending entries including internal duplicates
     pending_lines = [
         json.dumps({"entry_id": "1", "data": "first"}),
