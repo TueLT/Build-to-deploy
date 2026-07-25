@@ -54,38 +54,21 @@ def _archive(pending: Path) -> None:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_file = ARCHIVE_DIR / f"{today}.jsonl"
 
-    # Pass 1: Collect unique entry keys present in pending file
-    pending_keys = set()
-    with open(pending, "r", encoding="utf-8") as f:
-        for line in f:
-            stripped = line.strip()
-            if stripped:
-                pending_keys.add(_get_entry_key(stripped))
-
-    if not pending_keys:
-        return
-
-    # Pass 2: Stream archive_file line-by-line to identify keys already archived
-    already_archived_keys = set()
+    existing_keys = set()
     if archive_file.exists():
         with open(archive_file, "r", encoding="utf-8") as f:
             for line in f:
                 stripped = line.strip()
                 if stripped:
-                    key = _get_entry_key(stripped)
-                    if key in pending_keys:
-                        already_archived_keys.add(key)
-                        if len(already_archived_keys) == len(pending_keys):
-                            return  # Early exit if all pending keys are already archived
+                    existing_keys.add(_get_entry_key(stripped))
 
-    # Pass 3: Stream pending file again and append non-duplicate lines directly to archive_file
     with open(pending, "r", encoding="utf-8") as src, open(archive_file, "a", encoding="utf-8") as dst:
         for line in src:
             stripped = line.strip()
             if stripped:
                 key = _get_entry_key(stripped)
-                if key not in already_archived_keys:
-                    already_archived_keys.add(key)
+                if key not in existing_keys:
+                    existing_keys.add(key)
                     dst.write(stripped + "\n")
 
 
