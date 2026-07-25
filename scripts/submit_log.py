@@ -54,23 +54,19 @@ def _archive(pending: Path) -> None:
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     archive_file = ARCHIVE_DIR / f"{today}.jsonl"
 
-    # Read pending and collect candidate lines and their keys
-    pending_candidates = []  # list of (key, stripped_line)
+    # Pass 1: Collect unique entry keys present in pending file
     pending_keys = set()
     with open(pending, "r", encoding="utf-8") as f:
         for line in f:
             stripped = line.strip()
             if stripped:
-                key = _get_entry_key(stripped)
-                if key not in pending_keys:
-                    pending_keys.add(key)
-                    pending_candidates.append((key, stripped))
+                pending_keys.add(_get_entry_key(stripped))
 
-    if not pending_candidates:
+    if not pending_keys:
         return
 
-    # Stream existing archive file line-by-line to check against pending_keys only,
-    # avoiding reading the entire archive into memory.
+    # Pass 2: Stream archive_file line-by-line to identify keys already archived
+    already_archived_keys = set()
     if archive_file.exists():
         with open(archive_file, "r", encoding="utf-8") as f:
             for line in f:
@@ -78,16 +74,19 @@ def _archive(pending: Path) -> None:
                 if stripped:
                     key = _get_entry_key(stripped)
                     if key in pending_keys:
-                        pending_keys.remove(key)
-                        if not pending_keys:
-                            break  # Early exit if all pending keys already exist in archive
+                        already_archived_keys.add(key)
+                        if len(already_archived_keys) == len(pending_keys):
+                            return  # Early exit if all pending keys are already archived
 
-    # Write remaining non-duplicate lines to archive
-    lines_to_write = [stripped for key, stripped in pending_candidates if key in pending_keys]
-    if lines_to_write:
-        with open(archive_file, "a", encoding="utf-8") as dst:
-            for line_str in lines_to_write:
-                dst.write(line_str + "\n")
+    # Pass 3: Stream pending file again and append non-duplicate lines directly to archive_file
+    with open(pending, "r", encoding="utf-8") as src, open(archive_file, "a", encoding="utf-8") as dst:
+        for line in src:
+            stripped = line.strip()
+            if stripped:
+                key = _get_entry_key(stripped)
+                if key not in already_archived_keys:
+                    already_archived_keys.add(key)
+                    dst.write(stripped + "\n")
 
 
 def _restore_pending(pending: Path) -> None:
