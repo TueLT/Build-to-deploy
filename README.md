@@ -121,5 +121,7 @@ pytest tests/ -v
 - [CLAUDE.md](CLAUDE.md) — hướng dẫn chi tiết cho AI coding assistant làm việc trong repo này (quy ước code, lệnh chạy đầy đủ).
 - [Frontend/README.md](Frontend/README.md) — hướng dẫn riêng cho frontend (cấu trúc, xử lý lỗi thường gặp khi chạy npm trên Windows).
 - [Frontend/detai.md](Frontend/detai.md) — đề bài / yêu cầu gốc của dự án.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — kiến trúc hệ thống hiện tại và các quyết định công nghệ.
+- [ROADMAP.md](ROADMAP.md) — kế hoạch theo giai đoạn để hoàn thành toàn bộ yêu cầu đề bài.
 - [WORKLOG.md](WORKLOG.md) — nhật ký công việc theo ngày của cả nhóm.
 - [docs/guide/](docs/guide/) — tài liệu khóa học AI20K (setup, LangGraph, FastAPI, testing, deploy).
