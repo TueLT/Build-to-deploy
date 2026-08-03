@@ -27,7 +27,7 @@
 | --- | --- | --- |
 | 1. Branch README và dependency baseline | Hoàn thành | `37a261c` |
 | 2. Workspace models và Personal Workspace registration | Hoàn thành | `7b548cd` |
-| 3. Alembic migration, preflight và backfill | Hoàn thành | `feat: add idempotent workspace migration` |
+| 3. Alembic migration, preflight và backfill | Hoàn thành | `ea18b68` |
 | 4. Authorization service và Platform Admin boundary | Chưa làm | — |
 | 5. Conversation principal và REST authorization | Chưa làm | — |
 | 6. WebSocket authorization | Chưa làm | — |
