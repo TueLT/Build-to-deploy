@@ -25,7 +25,7 @@
 
 | Task | Trạng thái | Commit |
 | --- | --- | --- |
-| 1. Branch README và dependency baseline | Chưa làm | — |
+| 1. Branch README và dependency baseline | Hoàn thành | `docs: document branch scope and technology stack` |
 | 2. Workspace models và Personal Workspace registration | Chưa làm | — |
 | 3. Alembic migration, preflight và backfill | Chưa làm | — |
 | 4. Authorization service và Platform Admin boundary | Chưa làm | — |
@@ -50,7 +50,7 @@
 - Consumes: lịch sử commit của branch `G19-T132-Lương-Trí-Tuệ` và design spec đã duyệt.
 - Produces: tài liệu branch có trạng thái `Implemented`, `Partial`, `Designed`; dependency manifest đồng bộ và có Alembic.
 
-- [ ] **Step 1: Viết branch report không nhận nhầm trạng thái**
+- [x] **Step 1: Viết branch report không nhận nhầm trạng thái**
 
 Branch report phải phân biệt rõ:
 
@@ -64,11 +64,11 @@ Branch report phải phân biệt rõ:
 - Contact/Relationship Graph và controlled external guests
 ```
 
-- [ ] **Step 2: Cập nhật root README**
+- [x] **Step 2: Cập nhật root README**
 
 Thêm liên kết branch report, hướng dẫn chạy PowerShell/macOS/Linux, bảng công nghệ, trạng thái mock/real và link tới spec/plan. Không mô tả Workspace là đã chạy trước khi Task 2–8 hoàn thành.
 
-- [ ] **Step 3: Đồng bộ dependencies**
+- [x] **Step 3: Đồng bộ dependencies**
 
 Kích hoạt Alembic trong `requirements.txt`:
 
@@ -78,7 +78,7 @@ alembic>=1.14.0
 
 Đồng bộ `pyproject.toml` với runtime packages đang được import: SQLAlchemy, aiosqlite, Alembic, PyJWT, bcrypt, email-validator, APScheduler và Google Calendar clients.
 
-- [ ] **Step 4: Xác minh tài liệu và manifest**
+- [x] **Step 4: Xác minh tài liệu và manifest**
 
 Run:
 
@@ -89,7 +89,7 @@ git diff --check -- README.md requirements.txt pyproject.toml docs/branches/G19-
 
 Expected: không có whitespace error; Ruff exit 0.
 
-- [ ] **Step 5: Cập nhật progress và commit**
+- [x] **Step 5: Cập nhật progress và commit**
 
 Đánh dấu Task 1 hoàn thành, ghi commit hash sau khi commit:
 

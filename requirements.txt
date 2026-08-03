@@ -19,7 +19,7 @@ apscheduler>=3.10.4
 # Database
 sqlalchemy>=2.0.0
 aiosqlite>=0.20.0
-# alembic>=1.14.0
+alembic>=1.14.0
 # psycopg2-binary>=2.9.0
 
 # Auth

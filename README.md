@@ -2,6 +2,16 @@
 
 Dự án AI20K Build Phase: một AI agent nhúng trong ứng dụng chat, giúp tóm tắt hội thoại, trích xuất công việc/lịch hẹn, tạo nhắc nhở (có xác nhận trước khi thực hiện) và quản lý lịch cá nhân. Repo gồm 2 phần: **backend** (FastAPI + LangGraph, thư mục `src/`) và **frontend** (React + Vite, thư mục `Frontend/`).
 
+## Nhánh G19-T132-Lương-Trí-Tuệ
+
+Nhánh hiện tại tập trung vào chat realtime, authentication/admin, LangGraph agent và nền tảng authorization theo mô hình workspace-first. Báo cáo chi tiết về phần đã làm, phần còn mock, công nghệ và cách kiểm thử nằm tại:
+
+- [Báo cáo nhánh G19-T132-Lương-Trí-Tuệ](docs/branches/G19-T132-Luong-Tri-Tue.md)
+- [Workspace Authorization Design](docs/superpowers/specs/2026-08-03-workspace-authorization-foundation-design.md)
+- [Workspace Authorization Implementation Plan](docs/superpowers/plans/2026-08-03-workspace-authorization-foundation.md)
+
+Design workspace đã được duyệt nhưng chưa được mô tả là “đã triển khai” cho tới khi các task code, migration, REST/WebSocket authorization và frontend tương ứng đều vượt qua verification.
+
 ## Hiện có gì
 
 ### Đã hoạt động thật (có backend, có database)
@@ -106,13 +116,34 @@ pytest tests/ -v
 # hoặc: make test
 ```
 
+### Lint và build kiểm tra
+
+```bash
+# Từ thư mục gốc
+ruff check src/ tests/
+
+# Frontend production build
+cd Frontend
+npm run build
+```
+
+### Chạy backend bằng Docker
+
+```bash
+docker compose up --build
+```
+
+Docker Compose hiện chỉ chạy backend tại cổng `8000`; frontend chạy riêng bằng `npm run dev`.
+
 ## Công nghệ sử dụng
 
 | Layer | Công nghệ |
 | --- | --- |
 | AI Agent | LangGraph + LangChain (Groq) |
-| Backend | FastAPI, SQLAlchemy (async) + SQLite, JWT (PyJWT) + bcrypt, WebSocket |
+| Backend | FastAPI, Pydantic 2, SQLAlchemy 2 async + SQLite/aiosqlite, JWT (PyJWT) + bcrypt, WebSocket |
+| Migration | Alembic (dependency đã khai báo; workspace migrations được triển khai theo plan) |
 | Frontend | React 18, Vite, React Router, React Hook Form, Bootstrap 5, Framer Motion |
+| Calendar / Scheduler | Google Calendar API clients, APScheduler |
 | Test | pytest, pytest-asyncio, httpx |
 | Lint | ruff |
 
