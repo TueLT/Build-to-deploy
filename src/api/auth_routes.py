@@ -8,6 +8,7 @@ from src.config import get_settings
 from src.db.models import User
 from src.db.session import get_db
 from src.models.auth_schemas import AuthResponse, LoginRequest, RegisterRequest, UserPublic
+from src.services.workspace_service import create_personal_workspace
 
 router = APIRouter()
 
@@ -33,6 +34,8 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
         role=role,
     )
     db.add(user)
+    await db.flush()
+    await create_personal_workspace(db, user)
     await db.commit()
     await db.refresh(user)
 

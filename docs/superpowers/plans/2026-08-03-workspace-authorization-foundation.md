@@ -25,8 +25,8 @@
 
 | Task | Trạng thái | Commit |
 | --- | --- | --- |
-| 1. Branch README và dependency baseline | Hoàn thành | `docs: document branch scope and technology stack` |
-| 2. Workspace models và Personal Workspace registration | Chưa làm | — |
+| 1. Branch README và dependency baseline | Hoàn thành | `37a261c` |
+| 2. Workspace models và Personal Workspace registration | Hoàn thành | `feat: add workspace ownership foundation` |
 | 3. Alembic migration, preflight và backfill | Chưa làm | — |
 | 4. Authorization service và Platform Admin boundary | Chưa làm | — |
 | 5. Conversation principal và REST authorization | Chưa làm | — |
@@ -117,7 +117,7 @@ git commit -m "docs: document branch scope and technology stack"
 - Produces: `Workspace`, `WorkspaceMembership`; `create_personal_workspace(db, user) -> Workspace`; `require_active_owner_after_change(db, workspace_id, excluded_membership_id=None) -> None`.
 - Consumes later: authorization, migration, invitations và conversation scoping.
 
-- [ ] **Step 1: Viết failing model/registration tests**
+- [x] **Step 1: Viết failing model/registration tests**
 
 ```python
 @pytest.mark.asyncio
@@ -131,7 +131,7 @@ async def test_register_creates_exactly_one_personal_workspace(client, auth_head
 
 Thêm test personal workspace không nhận membership và organization workspace không thể mất owner cuối cùng.
 
-- [ ] **Step 2: Chạy test để xác nhận fail**
+- [x] **Step 2: Chạy test để xác nhận fail**
 
 Run:
 
@@ -141,11 +141,11 @@ Run:
 
 Expected: FAIL vì model/service/route workspace chưa tồn tại.
 
-- [ ] **Step 3: Thêm model và constraint tối thiểu**
+- [x] **Step 3: Thêm model và constraint tối thiểu**
 
 Model fields phải khớp spec; enum được lưu dưới dạng string constants có validate ở service/Pydantic. `Workspace.personal_owner_user_id` có unique partial semantics cho personal workspace; `WorkspaceMembership` unique `(workspace_id, user_id)`.
 
-- [ ] **Step 4: Tạo workspace service**
+- [x] **Step 4: Tạo workspace service**
 
 ```python
 async def create_personal_workspace(db: AsyncSession, user: User) -> Workspace:
@@ -160,11 +160,11 @@ async def create_personal_workspace(db: AsyncSession, user: User) -> Workspace:
 
 Registration gọi service trong cùng transaction với user creation; chỉ commit sau khi workspace được tạo.
 
-- [ ] **Step 5: Thêm workspace list endpoint và chạy test**
+- [x] **Step 5: Thêm workspace list endpoint và chạy test**
 
 Endpoint `GET /api/v1/workspaces` nằm trong `workspace_routes.py`, trả personal workspace và organization workspaces có active membership. Đăng ký router trong `src/main.py`, sau đó chạy lại test file và toàn bộ auth tests.
 
-- [ ] **Step 6: Ruff, progress và commit**
+- [x] **Step 6: Ruff, progress và commit**
 
 ```powershell
 .\.venv\Scripts\python.exe -m ruff check src tests

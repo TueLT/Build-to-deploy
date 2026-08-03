@@ -50,12 +50,22 @@ Mô hình admin hiện tại là legacy behavior. Design mới đã tách `platf
 - README, Architecture, System Overview và Roadmap phản ánh trạng thái mock/real.
 - Design spec và implementation plan có checkbox/commit tracking.
 
+### Workspace foundation — giai đoạn 1
+
+- Đăng ký user tạo Personal Workspace trong cùng database transaction.
+- API `GET /api/v1/workspaces` chỉ trả workspace user được sở hữu hoặc có active membership.
+- API `POST /api/v1/workspaces` tạo Organization Workspace và active owner membership.
+- Personal Workspace từ chối mọi membership.
+- Organization Workspace không được tạo với owner không tồn tại hoặc inactive.
+- Owner cuối cùng không thể bị hạ xuống admin.
+- Sáu workspace tests mới đã được thêm; toàn bộ backend suite hiện có 52 tests.
+
 ## Đã thiết kế, chưa triển khai đầy đủ
 
-### Workspace-first authorization
+### Workspace-first authorization còn lại
 
-- Personal Workspace cho từng user.
-- Organization Workspace với `owner/admin/member/guest`.
+- Alembic migration và backfill dữ liệu cũ.
+- Organization member/admin/guest APIs và invitation lifecycle.
 - Platform Admin tách khỏi workspace administration.
 - Resource role `manager/participant/viewer`.
 - Principal `workspace_user/external_contact`.

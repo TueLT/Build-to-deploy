@@ -7,6 +7,7 @@ from src.api.admin_routes import router as admin_router
 from src.api.auth_routes import router as auth_router
 from src.api.chat_routes import router as chat_router
 from src.api.routes import router
+from src.api.workspace_routes import router as workspace_router
 from src.config import get_settings
 from src.db.session import init_db
 from src.services.scheduler import scheduler
@@ -45,6 +46,7 @@ app.include_router(auth_router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(ws_router, prefix="/api/v1", tags=["ws"])
 app.include_router(admin_router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(workspace_router, prefix="/api/v1/workspaces", tags=["workspaces"])
 
 
 @app.get("/health")
