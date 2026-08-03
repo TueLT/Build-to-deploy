@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
     initial_admin_email: str = ""
+    bootstrap_owner_user_id: str = ""
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"

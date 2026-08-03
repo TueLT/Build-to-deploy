@@ -116,6 +116,23 @@ pytest tests/ -v
 # hoặc: make test
 ```
 
+### Kiểm tra và chạy Workspace migration
+
+Luôn chạy preflight trước; lệnh dry-run không ghi database:
+
+```bash
+python scripts/migrate_workspace_foundation.py --dry-run
+```
+
+Nếu database có nhiều legacy admin, chỉ định rõ owner; không chọn ngẫu nhiên:
+
+```bash
+python scripts/migrate_workspace_foundation.py --dry-run --bootstrap-owner-user-id <USER_ID>
+python scripts/migrate_workspace_foundation.py --bootstrap-owner-user-id <USER_ID>
+```
+
+Migration thật chỉ được chạy sau khi dry-run trả `"can_run": true` và đã sao lưu database. Revision `20260803_01` backfill Personal Workspace, Organization Workspace mặc định, membership và workspace scope cho conversation cũ.
+
 ### Lint và build kiểm tra
 
 ```bash

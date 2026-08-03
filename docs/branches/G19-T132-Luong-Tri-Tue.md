@@ -60,11 +60,20 @@ Mô hình admin hiện tại là legacy behavior. Design mới đã tách `platf
 - Owner cuối cùng không thể bị hạ xuống admin.
 - Sáu workspace tests mới đã được thêm; toàn bộ backend suite hiện có 52 tests.
 
+### Workspace migration — giai đoạn 2
+
+- Alembic async migration framework với revision `20260803_01`.
+- Preflight từ chối owner mơ hồ, owner cấu hình không hợp lệ và orphan participant.
+- `--dry-run` chỉ trả báo cáo count/owner ID, không ghi database.
+- Backfill Personal Workspace, Organization Workspace mặc định, membership và conversation workspace scope.
+- Legacy `admin` được backfill thành `platform_admin` ở database, nhưng ORM chưa sử dụng role mới trước Task 4.
+- Migration chạy lại idempotent trên SQLite tạm và có state transition `running/failed/completed`.
+- Sáu migration tests mới đưa backend suite lên 58 tests.
+
 ## Đã thiết kế, chưa triển khai đầy đủ
 
 ### Workspace-first authorization còn lại
 
-- Alembic migration và backfill dữ liệu cũ.
 - Organization member/admin/guest APIs và invitation lifecycle.
 - Platform Admin tách khỏi workspace administration.
 - Resource role `manager/participant/viewer`.
@@ -137,6 +146,19 @@ Mở `http://localhost:5173`. Swagger ở `http://localhost:8000/docs`, health c
 Set-Location Frontend
 npm run build
 ```
+
+### Workspace migration
+
+```powershell
+# Không ghi database
+.\.venv\Scripts\python.exe scripts\migrate_workspace_foundation.py --dry-run
+
+# Khi có nhiều admin legacy, owner phải được chọn rõ ràng
+.\.venv\Scripts\python.exe scripts\migrate_workspace_foundation.py --dry-run --bootstrap-owner-user-id <USER_ID>
+.\.venv\Scripts\python.exe scripts\migrate_workspace_foundation.py --bootstrap-owner-user-id <USER_ID>
+```
+
+Sao lưu database trước lệnh cuối. Không chạy migration thật nếu dry-run báo owner mơ hồ, owner không hợp lệ hoặc orphan participant.
 
 ### Docker
 

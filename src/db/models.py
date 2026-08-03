@@ -57,6 +57,17 @@ class WorkspaceMembership(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class MigrationState(Base):
+    __tablename__ = "migration_states"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    migration_key: Mapped[str] = mapped_column(unique=True, index=True)
+    status: Mapped[str]
+    error_code: Mapped[str | None] = mapped_column(default=None)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 

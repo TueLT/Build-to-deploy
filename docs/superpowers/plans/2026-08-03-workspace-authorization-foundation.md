@@ -26,8 +26,8 @@
 | Task | Trạng thái | Commit |
 | --- | --- | --- |
 | 1. Branch README và dependency baseline | Hoàn thành | `37a261c` |
-| 2. Workspace models và Personal Workspace registration | Hoàn thành | `feat: add workspace ownership foundation` |
-| 3. Alembic migration, preflight và backfill | Chưa làm | — |
+| 2. Workspace models và Personal Workspace registration | Hoàn thành | `7b548cd` |
+| 3. Alembic migration, preflight và backfill | Hoàn thành | `feat: add idempotent workspace migration` |
 | 4. Authorization service và Platform Admin boundary | Chưa làm | — |
 | 5. Conversation principal và REST authorization | Chưa làm | — |
 | 6. WebSocket authorization | Chưa làm | — |
@@ -190,7 +190,7 @@ git commit -m "feat: add workspace ownership foundation"
 - Produces: `preflight_workspace_migration(db, bootstrap_owner_user_id) -> MigrationPreflightReport`; CLI `--dry-run`; Alembic revision `20260803_01`.
 - Consumes: Task 2 models and owner invariant.
 
-- [ ] **Step 1: Viết failing migration tests**
+- [x] **Step 1: Viết failing migration tests**
 
 ```python
 def test_preflight_rejects_multiple_admins_without_config(session):
@@ -201,17 +201,17 @@ def test_preflight_rejects_multiple_admins_without_config(session):
 
 Thêm test dry-run không ghi DB, migration chạy hai lần không trùng, orphan participant rollback và owner invariant.
 
-- [ ] **Step 2: Chạy test để xác nhận fail**
+- [x] **Step 2: Chạy test để xác nhận fail**
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/test_workspace_migration.py -v -p no:cacheprovider
 ```
 
-- [ ] **Step 3: Cấu hình Alembic async**
+- [x] **Step 3: Cấu hình Alembic async**
 
 `env.py` đọc `get_settings().database_url`, đổi `sqlite:///` thành `sqlite+aiosqlite:///`, import `Base.metadata`, và dùng `async_engine_from_config`.
 
-- [ ] **Step 4: Viết preflight và dry-run**
+- [x] **Step 4: Viết preflight và dry-run**
 
 ```python
 @dataclass(frozen=True)
@@ -226,11 +226,11 @@ class MigrationPreflightReport:
 
 CLI chỉ in count và email đã mask; không in message hoặc secret.
 
-- [ ] **Step 5: Viết revision idempotent và backfill**
+- [x] **Step 5: Viết revision idempotent và backfill**
 
 Revision đầu chỉ tạo/backfill nền tảng đã có model ở Task 2: `platform_role`, workspace, membership và `conversation.workspace_id`. Việc chuyển participant/external contact thuộc revision kế tiếp trong Task 5. Owner resolution tuân đúng preflight; failure rollback data transaction và migration state được ghi `failed` sau rollback.
 
-- [ ] **Step 6: Chạy migration tests và upgrade test database**
+- [x] **Step 6: Chạy migration tests và upgrade test database**
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/test_workspace_migration.py -v -p no:cacheprovider
@@ -239,7 +239,7 @@ Revision đầu chỉ tạo/backfill nền tảng đã có model ở Task 2: `pl
 
 Không chạy upgrade lên `data/app.db` thật nếu dry-run chưa pass hoặc owner còn ambiguous.
 
-- [ ] **Step 7: Progress và commit**
+- [x] **Step 7: Progress và commit**
 
 ```powershell
 git add alembic.ini src/db/migrations src/services/migration_service.py scripts/migrate_workspace_foundation.py src/config.py tests/test_workspace_migration.py docs/superpowers/plans/2026-08-03-workspace-authorization-foundation.md
@@ -558,10 +558,12 @@ Expected: 0 failed.
 - [ ] **Step 2: Chạy lint**
 
 ```powershell
-.\.venv\Scripts\python.exe -m ruff check src tests scripts
+.\.venv\Scripts\python.exe -m ruff check src tests scripts/migrate_workspace_foundation.py
 ```
 
 Expected: `All checks passed!`.
+
+Các logging utility legacy trong `scripts/` đang có lint debt riêng, gồm merge-conflict markers trong `scripts/log_antigravity.py`; không sửa chúng trong workspace authorization plan để tránh trộn phạm vi.
 
 - [ ] **Step 3: Chạy frontend build**
 
