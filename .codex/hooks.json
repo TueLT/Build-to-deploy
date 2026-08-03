@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "description": "Record Codex prompt and stop events in the shared project AI log.",
   "hooks": {
     "UserPromptSubmit": [
       {

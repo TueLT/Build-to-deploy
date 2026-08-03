@@ -9,6 +9,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_codex_hook_config_uses_supported_top_level_schema():
+    config = json.loads((REPO_ROOT / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+
+    assert set(config) <= {"description", "hooks"}
+    assert "hooks" in config
+
+
 def test_codex_hooks_define_cross_platform_command_handlers():
     config = json.loads((REPO_ROOT / ".codex" / "hooks.json").read_text(encoding="utf-8"))
 
