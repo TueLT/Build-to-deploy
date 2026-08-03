@@ -38,6 +38,20 @@ async def test_chat_completed_response(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_surfaces_llm_error_instead_of_empty_response(client, monkeypatch):
+    def broken_get_llm():
+        raise RuntimeError("Rate limit reached")
+
+    monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", broken_get_llm)
+
+    response = await client.post("/api/v1/chat", json={"message": "hello"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["response"] == "Rate limit reached"
+
+
+@pytest.mark.asyncio
 async def test_chat_uses_provided_messages_as_context(client, monkeypatch, fake_llm_factory):
     captured = {}
     reply = AIMessage(content="Summary done.")
@@ -65,11 +79,11 @@ async def test_chat_uses_provided_messages_as_context(client, monkeypatch, fake_
 
 @pytest.mark.asyncio
 async def test_chat_interrupts_and_resume_completes(client, monkeypatch, fake_llm_factory):
-    from src.agents.tools import calendar_tool
+    from src.services import calendar_service
 
     fake_service = MagicMock()
     fake_service.events.return_value.insert.return_value.execute.return_value = {"id": "evt-1"}
-    monkeypatch.setattr(calendar_tool, "_get_calendar_service", lambda: fake_service)
+    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
 
     def _final_message(state):
         last = state["messages"][-1]

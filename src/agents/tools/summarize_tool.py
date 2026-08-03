@@ -32,7 +32,9 @@ async def summarize_conversation(
         f"Summarize the following conversation in a {style_label} style "
         f"({style_instructions[style]}). Give exactly ONE summary in that style. Do not "
         "restate it in other formats (no mixing brief + detailed + bullet points), and do "
-        "not add any preamble or closing remarks — output only the summary itself.\n\n"
+        "not add any preamble or closing remarks — output only the summary itself. "
+        "Write the summary in Vietnamese (tiếng Việt), regardless of what language the "
+        "conversation below is in.\n\n"
         f"{text}"
     )
     result = await llm.ainvoke(prompt)

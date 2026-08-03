@@ -10,14 +10,14 @@ nhật trạng thái mỗi khi một mục hoàn thành.
 | --- | --- | --- |
 | Deploy online, đăng nhập, ≥2 role | 🟡 Một phần | Auth+role xong; `docker-compose.yml` chỉ có backend, chưa deploy thật, chưa có CD |
 | Tóm tắt hội thoại theo yêu cầu | 🟢 Xong | Nút Summarize trong `AIPanel.jsx` đã nối `/api/v1/chat` thật |
-| Trích xuất task + tạo nhắc việc có xác nhận | 🔴 Chưa có | Không có tool/table nào cho "task"; `TaskPage.jsx` 100% mock (nhưng shape mock đã khớp sẵn) |
-| Hiển thị lịch cá nhân | 🔴 Chưa có | `calendar_tool.py` có `list_calendar_events` thật nhưng `CalendarPage.jsx` chưa gọi |
+| Trích xuất task + tạo nhắc việc có xác nhận | 🟢 Xong | Tool `extract_tasks` + bảng `tasks`, nút "Extract tasks" trong `AIPanel.jsx`, `/tasks` có mục AI suggestions Accept/Dismiss |
+| Hiển thị lịch cá nhân | 🟢 Xong | `/calendar` gọi Google Calendar API thật (list + create), cần tự cấu hình OAuth (`scripts/google_oauth_setup.py`) |
 | Memory hội thoại | 🟡 Một phần | Chỉ có memory trong 1 thread (LangGraph `MemorySaver`, mất khi restart), không có memory dài hạn |
-| Xử lý lỗi cơ bản | 🟡 Một phần | Lỗi LLM bị nuốt thành response rỗng thay vì báo lỗi rõ cho user |
-| Reminder có xác nhận | 🟡 Một phần | `reminder_tool.py` có human-in-the-loop nhưng lưu in-memory, mất khi restart, không đẩy realtime khi fired |
+| Xử lý lỗi cơ bản | 🟢 Xong | `ChatResponse` có `status: "error"` trả lỗi thật thay vì response rỗng; agent không còn gọi LLM lần 2 gây lỗi 400 |
+| Reminder có xác nhận | 🟢 Xong | Bảng `reminders` bền vững qua restart (`SQLAlchemyJobStore`), đẩy realtime qua WebSocket khi fired, `/reminders` nối API thật |
 | Agent chủ động phát hiện cam kết | 🔴 Chưa có | WebSocket `send_message` handler không có bước phân tích nào |
-| Đồng bộ Google Calendar 2 chiều | 🔴 Chưa có | Chỉ tạo (ghi 1 chiều) + đọc rời rạc, không sync/diff |
-| Dashboard "inbox nhiệm vụ" ưu tiên | 🔴 Chưa có | Mock only |
+| Đồng bộ Google Calendar 2 chiều | 🔴 Chưa có | Chỉ tạo + đọc, không sync/diff 2 chiều thật |
+| Dashboard "inbox nhiệm vụ" ưu tiên | 🟡 Một phần | `/tasks` đã hiển thị task thật nhưng chưa có sort ưu tiên đặc thù cho "inbox" |
 | Cảnh báo vượt hạn mức token/chi phí | 🔴 Chưa có | Không có usage tracking |
 | Đánh giá độ chính xác trích xuất task | 🔴 Chưa có | Không có eval harness |
 
@@ -26,21 +26,24 @@ nhật trạng thái mỗi khi một mục hoàn thành.
 ## Giai đoạn 0 — Hạ tầng nền (làm trước, mọi giai đoạn sau phụ thuộc vào đây)
 
 - [ ] Migrate SQLite → PostgreSQL (Supabase): `alembic init`, migration đầu từ schema hiện tại,
-      thêm driver `asyncpg`, cập nhật `_async_url()` trong `src/db/session.py`.
+      thêm driver `asyncpg`, cập nhật `_async_url()` trong `src/db/session.py`. (Quyết định hiện
+      tại: tạm giữ SQLite, các bảng mới ở Giai đoạn 1 vẫn tạo được bình thường qua `create_all()`.)
 - [ ] Bảng `ai_permissions` (conversation_id, user_id, granted, scope) + endpoint
       `GET/PUT /api/v1/conversations/{id}/ai-permission`, thay cho toggle local trong `AIPanel.jsx`.
-- [ ] Sửa `_build_chat_response` (`src/api/routes.py`) để trả lỗi rõ ràng thay vì response rỗng
-      khi `planner_node` bắt exception.
+- [x] Sửa `_build_chat_response` (`src/api/routes.py`) để trả lỗi rõ ràng thay vì response rỗng
+      khi `planner_node` bắt exception. Xong luôn: agent không gọi LLM lần 2 sau tool không cần xác
+      nhận (`summarize_conversation`, `extract_tasks`) — tránh lỗi 400 do model tự hallucinate lại
+      cú pháp gọi tool.
 
 ## Giai đoạn 1 — Hoàn thành "Cơ bản" còn thiếu
 
-- [ ] **Trích xuất Task**: tool `extract_tasks` (`src/agents/tools/task_tool.py`) + bảng `tasks`,
-      nối nút "Extract tasks" đã có sẵn (chưa có onClick) trong `AIPanel.jsx`.
-- [ ] **Reminder bền vững + realtime**: bảng `reminders`, `src/services/reminder_service.py` dùng
-      chung cho LangGraph tool và endpoint `POST /api/v1/tasks/{id}/confirm`; `_fire_reminder` đẩy
-      WebSocket khi đến giờ.
-- [ ] **Lịch cá nhân thật**: `CalendarPage.jsx` nối `GET /api/v1/calendar/events` (dựa trên
-      `list_calendar_events` đã có).
+- [x] **Trích xuất Task**: tool `extract_tasks` (`src/agents/tools/task_tool.py`) + bảng `tasks`,
+      nút "Extract tasks" trong `AIPanel.jsx`, `/tasks` có mục "AI suggestions" Accept/Dismiss.
+- [x] **Reminder bền vững + realtime**: bảng `reminders`, `src/services/reminder_service.py` dùng
+      chung cho LangGraph tool và REST `/api/v1/reminders`; `SQLAlchemyJobStore` giữ job qua
+      restart; đẩy WebSocket tới đúng chủ sở hữu khi fired (qua kết nối chung ở `AppLayout.jsx`).
+- [x] **Lịch cá nhân thật**: `/calendar` nối `GET/POST /api/v1/calendar/events` (Google Calendar
+      thật qua `src/services/calendar_service.py`, dùng chung với agent tool).
 - [ ] **Memory dài hạn**: bật `chromadb`, `src/services/memory_service.py`, `planner_node.py`
       truy vấn top-k memory liên quan trước khi trả lời, `MemoryPage.jsx` nối API thật.
 - [ ] **Deploy online thật**: backend lên Render/Railway, frontend lên Vercel, DB Supabase (Giai
@@ -54,8 +57,8 @@ nhật trạng thái mỗi khi một mục hoàn thành.
       Không tự tạo reminder — vẫn cần người dùng xác nhận trong dashboard.
 - [ ] **Đồng bộ Google Calendar 2 chiều**: polling định kỳ qua `syncToken`, bảng `calendar_events`
       cache local, lưu `google_event_id` khi tạo event từ app.
-- [ ] **Dashboard inbox ưu tiên**: `TaskPage.jsx` nối `GET /api/v1/tasks` (sort priority + due_at),
-      tái dùng `TaskTable.jsx`.
+- [ ] **Dashboard inbox ưu tiên**: `/tasks` đã nối API thật (Giai đoạn 1) — còn thiếu sort/lọc theo
+      độ ưu tiên tổng hợp (priority + due_at + nguồn proactive) kiểu "cần làm gấp nhất hôm nay".
 - [ ] **Cảnh báo token/chi phí**: bảng `llm_usage`, setting `monthly_token_budget`, stat card cảnh
       báo trong `AdminDashboardPage.jsx`.
 - [ ] **Eval harness**: `tests/eval/fixtures/*.json` + `scripts/eval_task_extraction.py` tính

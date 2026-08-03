@@ -47,7 +47,7 @@ Kiến trúc thư mục
         └── router/                    # React Router + ProtectedRoute
 Công nghệ sử dụng
 Layer	Công nghệ
-AI Agent	LangGraph + LangChain (Groq)
+AI Agent	LangGraph + LangChain (Google Gemini)
 Backend	FastAPI, SQLAlchemy (async) + SQLite, JWT (PyJWT) + bcrypt, WebSocket
 Frontend	React 18, Vite, React Router, React Hook Form, Bootstrap 5, Framer Motion
 Test	pytest, pytest-asyncio, httpx
@@ -62,7 +62,7 @@ bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env             # điền GROQ_API_KEY nếu cần AI chat
+cp .env.example .env             # điền GOOGLE_API_KEY nếu cần AI chat
 
 # Chạy dev server
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
@@ -104,5 +104,5 @@ Frontend/detai.md — đề bài / yêu cầu gốc của dự án, tham khảo 
 WORKLOG.md — nhật ký công việc theo ngày của cả nhóm, xem để biết ai đang làm phần nào trước khi động vào.
 docs/guide/ — tài liệu khóa học AI20K (setup, LangGraph, FastAPI, testing, deploy).
 Lưu ý an toàn khi code
-Không hardcode GROQ_API_KEY hay bất kỳ secret nào vào code — luôn đọc từ .env.
+Không hardcode GOOGLE_API_KEY hay bất kỳ secret nào vào code — luôn đọc từ .env.
 Khi agent thao tác với Google Calendar hoặc tạo nhắc nhở, giữ nguyên bước xác nhận người dùng trước khi gọi API thật; đây là yêu cầu thiết kế cốt lõi của sản phẩm (human-in-the-loop), không phải chi tiết có thể lược bỏ để "cho gọn".

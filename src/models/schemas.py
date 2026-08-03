@@ -28,7 +28,7 @@ class ChatResponse(BaseModel):
     response: str = Field(default="", description="Phản hồi từ agent")
     analysis: str = Field(default="", description="Phân tích nội bộ")
     thread_id: str
-    status: Literal["completed", "interrupted"] = "completed"
+    status: Literal["completed", "interrupted", "error"] = "completed"
     interrupt: InterruptPayload | None = None
 
 

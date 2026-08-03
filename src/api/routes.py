@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from src.agents.graph import agent
@@ -25,9 +25,15 @@ def _build_chat_response(result: dict, thread_id: str) -> ChatResponse:
             interrupt=InterruptPayload(**payload),
         )
 
+    error = result.get("error")
+    if error:
+        return ChatResponse(response=error, thread_id=thread_id, status="error")
+
     final_text = ""
     for m in reversed(result.get("messages", [])):
-        if isinstance(m, AIMessage) and m.content:
+        # A trailing ToolMessage means graph.py routed straight to END after a "terminal" tool
+        # (summarize_conversation/extract_tasks) - its content is already the final answer.
+        if isinstance(m, (AIMessage, ToolMessage)) and m.content:
             final_text = m.content
             break
     return ChatResponse(response=final_text, thread_id=thread_id, status="completed")

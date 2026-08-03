@@ -10,10 +10,14 @@ Dự án AI20K Build Phase: một AI agent nhúng trong ứng dụng chat, giúp
 - **Nhắn tin 1-1 và theo nhóm, real-time**: tạo cuộc trò chuyện 1-1 hoặc nhóm (chọn nhiều người), gửi/nhận tin nhắn tức thời qua WebSocket, xem lại lịch sử tin nhắn, đếm tin nhắn chưa đọc.
 - **AI Agent (chat với AI)**: endpoint `/api/v1/chat` dùng LangGraph, có tool gọi Google Calendar và tạo nhắc nhở với bước xác nhận (human-in-the-loop) trước khi thực hiện.
 - **Phân quyền Admin**: tài khoản có 2 role (`user`/`admin`). Trang `/admin` (Dashboard, Users, Conversations) chỉ hiển thị và truy cập được với tài khoản `admin` — cho phép xem thống kê hệ thống, đổi role/khoá-mở khoá tài khoản người dùng, xem và xoá hội thoại để kiểm duyệt.
+- **Tóm tắt hội thoại theo yêu cầu**: trong trang Chat, bấm icon AI trên header → **Summarize** — AI đọc tin nhắn thật (theo scope 20/50 tin gần nhất đang chọn) và trả về bản tóm tắt.
+- **Trích xuất Task từ hội thoại**: cùng panel AI → **Extract tasks** — AI tìm việc cần làm/lịch hẹn trong hội thoại, lưu vào trang `/tasks` mục "AI suggestions"; người dùng bấm **Accept**/**Dismiss** để xác nhận (human-in-the-loop, không tự động tạo task thật).
+- **Lịch cá nhân (Google Calendar thật)**: trang `/calendar` gọi thẳng Google Calendar API (cần tự cấu hình OAuth — xem `scripts/google_oauth_setup.py`) để xem và tạo sự kiện thật, không phải dữ liệu mẫu.
+- **Nhắc nhở bền vững + realtime**: trang `/reminders` tạo nhắc nhở thật, lưu DB, sống sót qua restart server (APScheduler + `SQLAlchemyJobStore`); khi đến giờ, đẩy thông báo realtime qua WebSocket dù đang ở trang nào.
 
 ### Mới là giao diện mẫu (chưa nối API thật)
 
-Các trang Tasks, Calendar, Reminders, Memory, Profile, và tính năng AI Assistant tóm tắt/quản lý cá nhân (`/assistant`) hiện đang chạy trên dữ liệu mẫu (`Frontend/src/data/mockData.js`) — giao diện đã xong nhưng chưa nối vào backend.
+Các trang Memory, Profile, và tính năng AI Assistant tóm tắt/quản lý cá nhân (`/assistant`) hiện đang chạy trên dữ liệu mẫu (`Frontend/src/data/mockData.js`) — giao diện đã xong nhưng chưa nối vào backend. Xem tiến độ đầy đủ theo từng giai đoạn ở [ROADMAP.md](ROADMAP.md).
 
 ## Kiến trúc
 
@@ -67,7 +71,7 @@ pip install -r requirements.txt
 
 # Tạo file cấu hình (chỉ cần làm 1 lần)
 cp .env.example .env
-# Mở .env, điền GROQ_API_KEY nếu muốn dùng tính năng AI chat (tóm tắt, calendar, nhắc nhở).
+# Mở .env, điền GOOGLE_API_KEY (lấy tại https://aistudio.google.com/apikey) nếu muốn dùng tính năng AI chat (tóm tắt, calendar, nhắc nhở).
 # DATABASE_URL mặc định là sqlite:///./data/app.db, không cần cài Postgres.
 # Điền INITIAL_ADMIN_EMAIL nếu muốn tài khoản đăng ký với email đó tự động có quyền admin.
 
@@ -98,6 +102,7 @@ Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi 
 3. Từ tài khoản thứ nhất, vào trang **Chats**, bấm nút bút (soạn tin nhắn) để chọn người và bắt đầu chat 1-1 hoặc chọn nhiều người để tạo nhóm.
 4. Gửi tin nhắn — tài khoản còn lại sẽ nhận tin nhắn theo thời gian thực nếu đang mở cùng cuộc trò chuyện, hoặc thấy số tin nhắn chưa đọc.
 5. Muốn thử trang **Admin**: đăng ký một tài khoản với email trùng `INITIAL_ADMIN_EMAIL` đã đặt trong `.env` (hoặc đổi role một tài khoản có sẵn thành `admin` trực tiếp trong DB) — tài khoản đó sẽ thấy mục "Admin" trong Sidebar, vào được `/admin`.
+6. Muốn thử **AI Summarize / Extract tasks**: cần điền `GOOGLE_API_KEY` thật trong `.env` (xem bước 2). Trong 1 cuộc trò chuyện có vài tin nhắn, bấm icon AI trên header (⭐) → **Summarize** để xem tóm tắt, hoặc **Extract tasks** rồi vào `/tasks` xem việc AI tìm được ở mục "AI suggestions".
 
 ### Chạy test backend
 
@@ -110,7 +115,7 @@ pytest tests/ -v
 
 | Layer | Công nghệ |
 | --- | --- |
-| AI Agent | LangGraph + LangChain (Groq) |
+| AI Agent | LangGraph + LangChain (Google Gemini) |
 | Backend | FastAPI, SQLAlchemy (async) + SQLite, JWT (PyJWT) + bcrypt, WebSocket |
 | Frontend | React 18, Vite, React Router, React Hook Form, Bootstrap 5, Framer Motion |
 | Test | pytest, pytest-asyncio, httpx |

@@ -6,7 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from src.agents.graph import agent
-from src.agents.tools import calendar_tool
+from src.services import calendar_service
 
 
 def _config():
@@ -42,7 +42,7 @@ async def test_create_calendar_event_interrupts_then_creates(monkeypatch, fake_l
     fake_service.events.return_value.insert.return_value.execute.return_value = {
         "htmlLink": "https://calendar.google.com/event?eid=abc"
     }
-    monkeypatch.setattr(calendar_tool, "_get_calendar_service", lambda: fake_service)
+    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
 
     llm = _script_tool_call(
         fake_llm_factory,
@@ -69,7 +69,7 @@ async def test_create_calendar_event_interrupts_then_creates(monkeypatch, fake_l
 @pytest.mark.asyncio
 async def test_create_calendar_event_declined(monkeypatch, fake_llm_factory):
     fake_service = MagicMock()
-    monkeypatch.setattr(calendar_tool, "_get_calendar_service", lambda: fake_service)
+    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
 
     llm = _script_tool_call(
         fake_llm_factory,

@@ -66,3 +66,32 @@ class Message(Base):
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
     sender: Mapped["User"] = relationship()
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), default=None)
+    title: Mapped[str]
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    priority: Mapped[str] = mapped_column(default="Medium")  # "High" | "Medium" | "Low"
+    status: Mapped[str] = mapped_column(default="suggested")
+    # "suggested" | "pending" | "in_progress" | "completed" | "dismissed"
+    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "proactive"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    title: Mapped[str]
+    message: Mapped[str] = mapped_column(default="")
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    fire_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(default="scheduled")  # "scheduled" | "fired" | "cancelled"
+    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "agent"
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

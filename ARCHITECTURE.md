@@ -5,7 +5,7 @@
 Orbit là AI agent nhúng trong ứng dụng chat: FastAPI + LangGraph ở backend, React + Vite ở
 frontend, SQLite (sẽ chuyển Postgres — xem [ROADMAP.md](ROADMAP.md)) làm database. Backend đã có
 auth thật (JWT + bcrypt), nhắn tin 1-1/nhóm realtime qua WebSocket, phân quyền role user/admin, và
-agent LangGraph (LLM: Groq) với các tool có human-in-the-loop (calendar, reminder) cùng tool
+agent LangGraph (LLM: Google Gemini) với các tool có human-in-the-loop (calendar, reminder) cùng tool
 tóm tắt hội thoại theo yêu cầu.
 
 ## Architecture Diagram
@@ -31,7 +31,7 @@ graph TB
     subgraph Data["Data Layer"]
         DB[(SQLite → Postgres)]
         Google[Google Calendar API]
-        GroqAPI[Groq API]
+        GeminiAPI[Google Gemini API]
     end
 
     UI -->|HTTP/REST| AuthAPI
@@ -42,7 +42,7 @@ graph TB
     AgentAPI --> Agent
     Agent --> LLM
     Agent --> Tools
-    LLM --> GroqAPI
+    LLM --> GeminiAPI
     Tools --> Google
     AuthAPI --> DB
     ChatAPI --> DB
@@ -114,7 +114,7 @@ graph LR
 2. Route xác thực (JWT) và validate input (Pydantic schema trong `src/models/`).
 3. Với tin nhắn agent (`POST /api/v1/chat`): build `AgentState`, chạy qua LangGraph
    (`src/agents/graph.py::agent`, checkpoint theo `thread_id`).
-4. Planner gọi LLM (Groq); nếu cần hành động có tác dụng phụ (calendar/reminder), graph dừng lại
+4. Planner gọi LLM (Google Gemini); nếu cần hành động có tác dụng phụ (calendar/reminder), graph dừng lại
    ở `interrupt()` chờ xác nhận qua `POST /api/v1/chat/resume`.
 5. Kết quả trả về Frontend; với chat người-với-người, tin nhắn được broadcast realtime qua
    `src/websocket/` tới các thành viên khác trong cuộc trò chuyện.
@@ -140,7 +140,7 @@ test). Kế hoạch deploy chi tiết ở Giai đoạn 1.5 trong [ROADMAP.md](RO
 
 ## Security
 
-- API key/secret đọc từ `.env` (không commit), ví dụ `GROQ_API_KEY`, `SECRET_KEY`.
+- API key/secret đọc từ `.env` (không commit), ví dụ `GOOGLE_API_KEY`, `SECRET_KEY`.
 - Input validation qua Pydantic ở mọi route.
 - Password hash bcrypt, JWT cho auth — xem quy ước "không tự ý đổi cơ chế" trong `CLAUDE.md`.
 - CORS cấu hình qua `cors_origins` trong `.env`.
@@ -158,7 +158,7 @@ test). Kế hoạch deploy chi tiết ở Giai đoạn 1.5 trong [ROADMAP.md](RO
 | --- | --- | --- |
 | Backend framework | FastAPI | Async, auto-docs (`/docs`), type-safe qua Pydantic |
 | Agent orchestration | LangGraph | Quản lý state + human-in-the-loop (`interrupt`) sẵn có, phù hợp yêu cầu xác nhận trước hành động |
-| LLM provider | Groq (`ChatGroq`, model `llama-3.3-70b-versatile`) | Nhanh/rẻ, hỗ trợ tool-calling, đổi từ OpenAI qua đúng 1 điểm nối (`src/services/llm.py::get_llm()`) |
+| LLM provider | Google Gemini (`ChatGoogleGenerativeAI`, model `gemini-2.5-flash`) | Free tier hào phóng, hỗ trợ tool-calling, đổi qua đúng 1 điểm nối (`src/services/llm.py::get_llm()`) |
 | Database (hiện tại) | SQLite | Zero-config cho dev/demo giai đoạn đầu |
 | Database (kế hoạch) | PostgreSQL (Supabase) | Cần cho các bảng mới bền vững qua restart + concurrency khi deploy — xem ROADMAP Giai đoạn 0 |
 | Vector store (kế hoạch) | ChromaDB embedded | Không cần thêm service cloud, config đã có sẵn, đủ cho quy mô dự án |

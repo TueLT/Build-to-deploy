@@ -1,12 +1,12 @@
-from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from src.config import get_settings
 
 
-def get_llm() -> ChatGroq:
+def get_llm() -> ChatGoogleGenerativeAI:
     settings = get_settings()
-    return ChatGroq(
+    return ChatGoogleGenerativeAI(
         model=settings.model_name,
-        api_key=settings.groq_api_key,
+        google_api_key=settings.google_api_key,
         temperature=settings.llm_temperature,
     )
