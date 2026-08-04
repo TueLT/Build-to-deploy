@@ -34,14 +34,17 @@ async def set_workspace_migration_state(
     if state is None:
         state = MigrationState(
             migration_key=MIGRATION_KEY,
+            migration_version=MIGRATION_KEY,
             status=status,
             error_code=error_code,
+            error_message=error_code,
             started_at=now,
         )
         db.add(state)
     else:
         state.status = status
         state.error_code = error_code
+        state.error_message = error_code
     state.completed_at = now if status == "completed" else None
     await db.flush()
     return state

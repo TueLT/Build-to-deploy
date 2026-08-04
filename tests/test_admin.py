@@ -85,22 +85,42 @@ async def test_deactivated_user_loses_access(client, admin_auth_headers, auth_he
 
 
 @pytest.mark.asyncio
-async def test_admin_can_list_and_view_conversations(client, admin_auth_headers, auth_headers, other_auth_headers):
+async def test_platform_admin_cannot_list_view_or_delete_private_conversations(
+    client,
+    admin_auth_headers,
+    auth_headers,
+    other_auth_headers,
+):
     bob = (await client.get("/api/v1/auth/me", headers=other_auth_headers)).json()
+    workspace = (
+        await client.post(
+            "/api/v1/workspaces",
+            json={"name": "Private Team"},
+            headers=auth_headers,
+        )
+    ).json()
+    await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        json={"email": bob["email"], "role": "member"},
+        headers=auth_headers,
+    )
     conv = (
         await client.post(
-            "/api/v1/conversations", json={"type": "direct", "participant_ids": [bob["id"]]}, headers=auth_headers
+            "/api/v1/conversations",
+            json={
+                "type": "direct",
+                "participant_ids": [bob["id"]],
+                "workspace_id": workspace["id"],
+            },
+            headers=auth_headers,
         )
     ).json()
 
     resp = await client.get("/api/v1/admin/conversations", headers=admin_auth_headers)
-    assert resp.status_code == 200
-    listed = next(c for c in resp.json() if c["id"] == conv["id"])
-    assert listed["participant_count"] == 2
+    assert resp.status_code == 404
 
     resp = await client.get(f"/api/v1/admin/conversations/{conv['id']}/messages", headers=admin_auth_headers)
-    assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.status_code == 404
 
     resp = await client.delete(f"/api/v1/admin/conversations/{conv['id']}", headers=admin_auth_headers)
-    assert resp.status_code == 204
+    assert resp.status_code == 404

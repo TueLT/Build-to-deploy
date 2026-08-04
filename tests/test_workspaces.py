@@ -125,12 +125,14 @@ async def test_personal_workspace_rejects_membership(client):
 
         assert exc_info.value.status_code == 409
         memberships = (
-            await db.execute(
-                select(WorkspaceMembership).where(
-                    WorkspaceMembership.workspace_id == personal_workspace["id"]
+            (
+                await db.execute(
+                    select(WorkspaceMembership).where(WorkspaceMembership.workspace_id == personal_workspace["id"])
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert memberships == []
 
 
@@ -145,9 +147,7 @@ async def test_organization_workspace_requires_active_owner(client):
             )
 
         assert exc_info.value.status_code == 404
-        organization_count = (
-            await db.execute(select(func.count()).select_from(Workspace))
-        ).scalar_one()
+        organization_count = (await db.execute(select(func.count()).select_from(Workspace))).scalar_one()
         assert organization_count == 0
 
 

@@ -3,14 +3,11 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from src.auth.dependencies import require_admin
 from src.db.models import Conversation, Message, User
 from src.db.session import get_db
 from src.models.admin_schemas import (
-    AdminConversationOut,
-    AdminMessageOut,
     AdminStats,
     AdminUserOut,
     UpdateRoleRequest,
@@ -33,9 +30,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> AdminStats:
     total_conversations = (await db.execute(select(func.count()).select_from(Conversation))).scalar_one()
     total_messages = (await db.execute(select(func.count()).select_from(Message))).scalar_one()
     since = datetime.now(UTC) - timedelta(days=7)
-    new_users = (
-        await db.execute(select(func.count()).select_from(User).where(User.created_at >= since))
-    ).scalar_one()
+    new_users = (await db.execute(select(func.count()).select_from(User).where(User.created_at >= since))).scalar_one()
     return AdminStats(
         total_users=total_users,
         total_conversations=total_conversations,
@@ -84,59 +79,3 @@ async def update_user_status(
     await db.commit()
     await db.refresh(user)
     return AdminUserOut.model_validate(user, from_attributes=True)
-
-
-@router.get("/conversations", response_model=list[AdminConversationOut])
-async def list_conversations(db: AsyncSession = Depends(get_db)) -> list[AdminConversationOut]:
-    stmt = (
-        select(Conversation)
-        .options(selectinload(Conversation.participants), selectinload(Conversation.messages))
-        .order_by(Conversation.updated_at.desc())
-    )
-    conversations = (await db.execute(stmt)).scalars().all()
-    return [
-        AdminConversationOut(
-            id=c.id,
-            type=c.type,
-            name=c.name,
-            created_by=c.created_by,
-            created_at=c.created_at,
-            participant_count=len(c.participants),
-            message_count=len(c.messages),
-        )
-        for c in conversations
-    ]
-
-
-@router.get("/conversations/{conversation_id}/messages", response_model=list[AdminMessageOut])
-async def get_conversation_messages(
-    conversation_id: str, db: AsyncSession = Depends(get_db)
-) -> list[AdminMessageOut]:
-    stmt = (
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .options(selectinload(Message.sender))
-        .order_by(Message.created_at.asc())
-    )
-    messages = (await db.execute(stmt)).scalars().all()
-    return [
-        AdminMessageOut(
-            id=m.id,
-            sender_id=m.sender_id,
-            sender_display_name=m.sender.display_name,
-            content=m.content,
-            created_at=m.created_at,
-        )
-        for m in messages
-    ]
-
-
-@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_conversation(conversation_id: str, db: AsyncSession = Depends(get_db)) -> None:
-    conversation = (
-        await db.execute(select(Conversation).where(Conversation.id == conversation_id))
-    ).scalar_one_or_none()
-    if conversation is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    await db.delete(conversation)
-    await db.commit()

@@ -20,6 +20,8 @@ target_metadata = Base.metadata
 def _async_url(url: str) -> str:
     if url.startswith("sqlite:///") and "+aiosqlite" not in url:
         return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
     if url.startswith("postgresql://") and "+asyncpg" not in url:
         return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url

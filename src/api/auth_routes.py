@@ -14,24 +14,32 @@ router = APIRouter()
 
 
 def _to_public(user: User) -> UserPublic:
-    return UserPublic(id=user.id, email=user.email, display_name=user.display_name, role=user.role)
+    return UserPublic(
+        id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        role=user.role,
+        platform_role=user.platform_role,
+    )
 
 
 @router.post("/register", response_model=AuthResponse)
 async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
-    existing = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
+    normalized_email = str(request.email).lower()
+    existing = (await db.execute(select(User).where(User.email == normalized_email))).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
     settings = get_settings()
     initial_admin_email = settings.initial_admin_email.strip().lower()
-    role = "admin" if initial_admin_email and request.email.lower() == initial_admin_email else "user"
+    role = "admin" if initial_admin_email and normalized_email == initial_admin_email else "user"
 
     user = User(
-        email=request.email,
+        email=normalized_email,
         password_hash=hash_password(request.password),
         display_name=request.display_name,
         role=role,
+        platform_role="platform_admin" if role == "admin" else "user",
     )
     db.add(user)
     await db.flush()
@@ -45,9 +53,11 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
 
 @router.post("/login", response_model=AuthResponse)
 async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
-    user = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.email == request.email.lower()))).scalar_one_or_none()
     if user is None or not verify_password(request.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
 
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))

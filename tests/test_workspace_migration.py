@@ -70,8 +70,8 @@ async def test_workspace_migration_dry_run_does_not_write(client):
         user = await db.get(User, admin["id"])
         user.role = "admin"
         personal_workspaces = (
-            await db.execute(select(Workspace).where(Workspace.personal_owner_user_id == admin["id"]))
-        ).scalars().all()
+            (await db.execute(select(Workspace).where(Workspace.personal_owner_user_id == admin["id"]))).scalars().all()
+        )
         for workspace in personal_workspaces:
             await db.delete(workspace)
         await db.commit()
@@ -167,6 +167,31 @@ def test_alembic_upgrade_backfills_workspace_foundation_idempotently(tmp_path, m
     assert owner_role == "owner"
     assert conversation_workspace == organization[0]
     assert platform_role == "platform_admin"
+
+
+def test_alembic_upgrade_builds_fresh_database(tmp_path):
+    database_path = tmp_path / "fresh.db"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path.as_posix()}")
+
+    command.upgrade(config, "head")
+
+    connection = sqlite3.connect(database_path)
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    connection.close()
+
+    assert {
+        "users",
+        "workspaces",
+        "workspace_memberships",
+        "external_contacts",
+        "contact_relationships",
+        "conversations",
+        "conversation_participants",
+        "messages",
+    }.issubset(tables)
+    assert revision == "20260804_03"
 
 
 @pytest.mark.asyncio

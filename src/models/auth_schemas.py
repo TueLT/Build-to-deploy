@@ -19,6 +19,7 @@ class UserPublic(BaseModel):
     email: str
     display_name: str
     role: str
+    platform_role: Literal["user", "platform_admin"]
 
 
 class AuthResponse(BaseModel):

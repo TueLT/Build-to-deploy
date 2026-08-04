@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import User, Workspace, WorkspaceMembership
@@ -105,6 +106,29 @@ async def add_workspace_member(
             status_code=status.HTTP_409_CONFLICT,
             detail="Personal workspaces cannot have memberships",
         )
+    if role not in {"owner", "admin", "member", "guest"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid workspace role")
+    user = await db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active user not found")
+    existing = (
+        await db.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        if existing.status == "active":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a workspace member")
+        existing.role = role
+        existing.status = "active"
+        existing.invited_by_user_id = invited_by_user_id
+        existing.joined_at = datetime.now(UTC)
+        existing.updated_at = datetime.now(UTC)
+        await db.flush()
+        return existing
     membership = WorkspaceMembership(
         workspace_id=workspace.id,
         user_id=user_id,
@@ -113,8 +137,47 @@ async def add_workspace_member(
         invited_by_user_id=invited_by_user_id,
     )
     db.add(membership)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already a workspace member") from exc
     return membership
+
+
+async def add_workspace_member_by_email(
+    db: AsyncSession,
+    workspace_id: str,
+    email: str,
+    role: str,
+    invited_by_user_id: str,
+) -> WorkspaceMembership:
+    user = (await db.execute(select(User).where(func.lower(User.email) == email.strip().lower()))).scalar_one_or_none()
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active account uses this email. Ask the person to register first.",
+        )
+    return await add_workspace_member(db, workspace_id, user.id, role, invited_by_user_id)
+
+
+async def list_workspace_members(
+    db: AsyncSession,
+    workspace_id: str,
+) -> list[tuple[WorkspaceMembership, User]]:
+    rows = await db.execute(
+        select(WorkspaceMembership, User)
+        .join(User, User.id == WorkspaceMembership.user_id)
+        .where(
+            WorkspaceMembership.workspace_id == workspace_id,
+            WorkspaceMembership.status == "active",
+            User.is_active.is_(True),
+        )
+        .order_by(
+            WorkspaceMembership.role.asc(),
+            User.display_name.asc(),
+        )
+    )
+    return list(rows.all())
 
 
 async def list_user_workspaces(db: AsyncSession, user_id: str) -> list[Workspace]:
@@ -138,3 +201,36 @@ async def list_user_workspaces(db: AsyncSession, user_id: str) -> list[Workspace
         .order_by(Workspace.created_at.asc())
     )
     return list(result.scalars().all())
+
+
+async def resolve_workspace_for_user(
+    db: AsyncSession,
+    user_id: str,
+    workspace_id: str | None = None,
+) -> Workspace:
+    """Resolve a workspace only after checking the caller's current membership."""
+    if workspace_id is not None:
+        workspace = await db.get(Workspace, workspace_id)
+        if workspace is None or workspace.status != "active":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+        if workspace.type == "personal":
+            allowed = workspace.personal_owner_user_id == user_id
+        else:
+            allowed = (
+                await db.execute(
+                    select(WorkspaceMembership.id).where(
+                        WorkspaceMembership.workspace_id == workspace_id,
+                        WorkspaceMembership.user_id == user_id,
+                        WorkspaceMembership.status == "active",
+                    )
+                )
+            ).scalar_one_or_none() is not None
+        if not allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace access denied")
+        return workspace
+
+    workspaces = await list_user_workspaces(db, user_id)
+    personal = next((workspace for workspace in workspaces if workspace.type == "personal"), None)
+    if personal is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User has no personal workspace")
+    return personal

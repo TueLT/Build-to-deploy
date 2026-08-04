@@ -28,9 +28,9 @@
 | 1. Branch README và dependency baseline | Hoàn thành | `37a261c` |
 | 2. Workspace models và Personal Workspace registration | Hoàn thành | `7b548cd` |
 | 3. Alembic migration, preflight và backfill | Hoàn thành | `ea18b68` |
-| 4. Authorization service và Platform Admin boundary | Chưa làm | — |
-| 5. Conversation principal và REST authorization | Chưa làm | — |
-| 6. WebSocket authorization | Chưa làm | — |
+| 4. Authorization service và Platform Admin boundary | Đang triển khai | chưa commit; ruff pass |
+| 5. Conversation principal và REST authorization | Đang triển khai | chưa commit; ruff pass |
+| 6. WebSocket authorization | Đang triển khai | chưa commit; frontend build pass |
 | 7. Invitation và External Contact | Chưa làm | — |
 | 8. Frontend Workspace/Contact/Group integration | Chưa làm | — |
 | 9. Full verification và handoff docs | Chưa làm | — |

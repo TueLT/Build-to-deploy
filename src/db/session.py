@@ -16,10 +16,18 @@ def _async_url(url: str) -> str:
         if db_path not in (":memory:", ""):
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
 
 
-engine = create_async_engine(_async_url(settings.database_url), connect_args={"check_same_thread": False})
+async_database_url = _async_url(settings.database_url)
+engine_options = {"pool_pre_ping": True}
+if async_database_url.startswith("sqlite+"):
+    engine_options["connect_args"] = {"check_same_thread": False}
+engine = create_async_engine(async_database_url, **engine_options)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -29,11 +37,12 @@ async def get_db() -> AsyncIterator[AsyncSession]:
 
 
 async def _add_missing_user_columns(conn) -> None:
-    """`create_all` only creates missing tables, it never ALTERs an existing one.
+    """Patch legacy SQLite files; PostgreSQL schema changes go through Alembic.
 
-    The repo has no Alembic migrations, so patch the `users` table in place when an
-    existing SQLite file predates the `role`/`is_active` columns.
+    `create_all` only creates missing tables and never alters an existing one.
     """
+    if conn.dialect.name != "sqlite":
+        return
     result = await conn.execute(text("PRAGMA table_info(users)"))
     existing_columns = {row[1] for row in result.fetchall()}
     if "role" not in existing_columns:

@@ -57,7 +57,7 @@ async def auth_headers(client):
 
 @pytest_asyncio.fixture
 async def admin_auth_headers(client):
-    """Registers a test user, promotes it to admin directly in the test DB, and returns its header."""
+    """Registers a test user with both legacy and platform admin roles."""
     resp = await client.post(
         "/api/v1/auth/register",
         json={"email": "admin@example.com", "password": "password123", "display_name": "Admin"},
@@ -66,6 +66,41 @@ async def admin_auth_headers(client):
 
     async with db_session.async_session_maker() as session:
         user = (await session.execute(select(User).where(User.email == "admin@example.com"))).scalar_one()
+        user.role = "admin"
+        user.platform_role = "platform_admin"
+        await session.commit()
+
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def platform_admin_headers(client):
+    """Registers a platform admin without granting any workspace role."""
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "platform@example.com", "password": "password123", "display_name": "Platform Admin"},
+    )
+    token = resp.json()["access_token"]
+
+    async with db_session.async_session_maker() as session:
+        user = (await session.execute(select(User).where(User.email == "platform@example.com"))).scalar_one()
+        user.platform_role = "platform_admin"
+        await session.commit()
+
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def legacy_admin_headers(client):
+    """Registers an account carrying only the deprecated global admin role."""
+    resp = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "legacy-admin@example.com", "password": "password123", "display_name": "Legacy Admin"},
+    )
+    token = resp.json()["access_token"]
+
+    async with db_session.async_session_maker() as session:
+        user = (await session.execute(select(User).where(User.email == "legacy-admin@example.com"))).scalar_one()
         user.role = "admin"
         await session.commit()
 

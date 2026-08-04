@@ -12,7 +12,7 @@ const actions = [
 
 const scopeToCount = { '20 latest messages': 20, '50 latest messages': 50 }
 
-export default function AIPanel({ open, onClose, messages = [] }) {
+export default function AIPanel({ open, onClose, conversationId, messages = [] }) {
   const { token } = useAuth()
   const [granted, setGranted] = useState(true)
   const [scope, setScope] = useState('20 latest messages')
@@ -28,6 +28,7 @@ export default function AIPanel({ open, onClose, messages = [] }) {
     try {
       const res = await chatWithAgent(token, {
         message: 'Summarize this conversation.',
+        conversation_id: conversationId,
         messages: scoped.map(m => ({ role: 'user', sender: m.sender_name, content: m.content, timestamp: m.created_at })),
       })
       setResult(res.response)

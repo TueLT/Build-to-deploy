@@ -12,6 +12,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000, description="Tin nhắn từ user")
+    conversation_id: str | None = Field(default=None, description="Conversation whose content may be used as context")
     thread_id: str | None = Field(default=None, description="Conversation thread id; generated if omitted")
     messages: list[ChatMessage] | None = Field(
         default=None,

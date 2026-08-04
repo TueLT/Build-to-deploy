@@ -1,11 +1,25 @@
 from fastapi import APIRouter, Depends, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user
-from src.db.models import User
+from src.db.models import User, WorkspaceMembership
 from src.db.session import get_db
-from src.models.workspace_schemas import OrganizationWorkspaceCreate, WorkspaceOut
-from src.services.workspace_service import create_organization_workspace, list_user_workspaces
+from src.models.platform_schemas import SupportAccessGrantOut
+from src.models.workspace_schemas import (
+    OrganizationWorkspaceCreate,
+    WorkspaceMemberCreate,
+    WorkspaceMemberOut,
+    WorkspaceOut,
+)
+from src.services.audit_service import record_audit_event
+from src.services.authorization_service import approve_support_access, require_workspace_role
+from src.services.workspace_service import (
+    add_workspace_member_by_email,
+    create_organization_workspace,
+    list_user_workspaces,
+    list_workspace_members,
+)
 
 router = APIRouter()
 
@@ -19,7 +33,8 @@ async def create_workspace(
     workspace = await create_organization_workspace(db, request.name, current_user.id)
     await db.commit()
     await db.refresh(workspace)
-    return WorkspaceOut.model_validate(workspace)
+    output = WorkspaceOut.model_validate(workspace)
+    return output.model_copy(update={"current_user_role": "owner"})
 
 
 @router.get("", response_model=list[WorkspaceOut])
@@ -28,4 +43,99 @@ async def list_workspaces(
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceOut]:
     workspaces = await list_user_workspaces(db, current_user.id)
-    return [WorkspaceOut.model_validate(workspace) for workspace in workspaces]
+    outputs: list[WorkspaceOut] = []
+    for workspace in workspaces:
+        if workspace.type == "personal":
+            role = "owner"
+        else:
+            role = (
+                await db.execute(
+                    select(WorkspaceMembership.role).where(
+                        WorkspaceMembership.workspace_id == workspace.id,
+                        WorkspaceMembership.user_id == current_user.id,
+                        WorkspaceMembership.status == "active",
+                    )
+                )
+            ).scalar_one_or_none()
+        outputs.append(WorkspaceOut.model_validate(workspace).model_copy(update={"current_user_role": role}))
+    return outputs
+
+
+@router.get("/{workspace_id}/members", response_model=list[WorkspaceMemberOut])
+async def get_workspace_members(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceMemberOut]:
+    await require_workspace_role(db, current_user, workspace_id, {"owner", "admin", "member"})
+    members = await list_workspace_members(db, workspace_id)
+    return [
+        WorkspaceMemberOut(
+            id=membership.id,
+            user_id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            role=membership.role,
+            status=membership.status,
+            joined_at=membership.joined_at,
+        )
+        for membership, user in members
+    ]
+
+
+@router.post(
+    "/{workspace_id}/members",
+    response_model=WorkspaceMemberOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_member(
+    workspace_id: str,
+    request: WorkspaceMemberCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceMemberOut:
+    await require_workspace_role(db, current_user, workspace_id, {"owner", "admin"})
+    membership = await add_workspace_member_by_email(
+        db,
+        workspace_id,
+        str(request.email),
+        request.role,
+        current_user.id,
+    )
+    user = await db.get(User, membership.user_id)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="workspace.member_added",
+        target_type="workspace_membership",
+        target_id=membership.id,
+        workspace_id=workspace_id,
+        metadata={"member_user_id": membership.user_id, "role": membership.role},
+    )
+    await db.commit()
+    await db.refresh(membership)
+    return WorkspaceMemberOut(
+        id=membership.id,
+        user_id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        role=membership.role,
+        status=membership.status,
+        joined_at=membership.joined_at,
+    )
+
+
+@router.post(
+    "/{workspace_id}/support-grants/{grant_id}/approve",
+    response_model=SupportAccessGrantOut,
+)
+async def approve_support_grant(
+    workspace_id: str,
+    grant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SupportAccessGrantOut:
+    grant = await approve_support_access(db, current_user, workspace_id, grant_id)
+    await db.commit()
+    await db.refresh(grant)
+    return SupportAccessGrantOut.model_validate(grant)

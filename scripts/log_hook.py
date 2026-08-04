@@ -173,15 +173,24 @@ def main():
     if not entry:
         sys.exit(0)
 
-    log_dir = Path(os.environ.get("AI_LOG_DIR", ".ai-log"))
+    configured_log_dir = os.environ.get("AI_LOG_DIR")
+    if configured_log_dir:
+        log_dir = Path(configured_log_dir)
+    else:
+        # Codex runs hooks with the session cwd. A session may start in a
+        # nested directory (for example Frontend/), but the shared AI log is
+        # repository-scoped and must always live at the repository root.
+        repo_root = git("git rev-parse --show-toplevel")
+        log_dir = Path(repo_root) / ".ai-log" if repo_root else Path(".ai-log")
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / "session.jsonl"
 
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    # Output valid JSON (required by some tools like Gemini)
-    print(json.dumps({"status": "logged"}))
+    # Codex command hooks expect a JSON control object on stdout. Other tools
+    # only require valid JSON and safely ignore this permissive field.
+    print(json.dumps({"continue": True}))
 
 
 if __name__ == "__main__":

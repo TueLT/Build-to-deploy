@@ -9,14 +9,16 @@ import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
 import { useChatSocket } from '../api/useWebSocket'
 import { markRead } from '../api/chat'
+import { useWorkspace } from '../context/WorkspaceContext'
 
 export default function ChatPage() {
   const { token, user } = useAuth()
+  const { workspaceId } = useWorkspace()
   const [mobileChat, setMobileChat] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [newConvoOpen, setNewConvoOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
-  const { conversations, setConversations } = useConversations(token)
+  const { conversations, setConversations } = useConversations(token, workspaceId)
   const { messages, setMessages } = useMessages(token, selectedId)
 
   const { sendJson } = useChatSocket(token, (data) => {
@@ -62,7 +64,7 @@ export default function ChatPage() {
           <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Select a conversation or start a new one</p></div>
         )}
       </section>
-      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} messages={messages} />
+      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} conversationId={selectedId} messages={messages} />
       <NewConversationModal open={newConvoOpen} onClose={() => setNewConvoOpen(false)} onCreated={onCreated} />
     </div>
   )

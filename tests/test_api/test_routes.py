@@ -22,14 +22,14 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_empty_message(client):
-    response = await client.post("/api/v1/chat", json={"message": ""})
+async def test_chat_empty_message(client, auth_headers):
+    response = await client.post("/api/v1/chat", json={"message": ""}, headers=auth_headers)
     assert response.status_code == 422  # Validation error
 
 
 @pytest.mark.asyncio
-async def test_chat_completed_response(client):
-    response = await client.post("/api/v1/chat", json={"message": "hello"})
+async def test_chat_completed_response(client, auth_headers):
+    response = await client.post("/api/v1/chat", json={"message": "hello"}, headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "completed"
@@ -38,7 +38,7 @@ async def test_chat_completed_response(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_uses_provided_messages_as_context(client, monkeypatch, fake_llm_factory):
+async def test_chat_uses_provided_messages_as_context(client, auth_headers, monkeypatch, fake_llm_factory):
     captured = {}
     reply = AIMessage(content="Summary done.")
     llm = fake_llm_factory([reply])
@@ -59,12 +59,13 @@ async def test_chat_uses_provided_messages_as_context(client, monkeypatch, fake_
                 {"role": "user", "sender": "Bob", "content": "let's meet tomorrow"},
             ],
         },
+        headers=auth_headers,
     )
     assert response.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_chat_interrupts_and_resume_completes(client, monkeypatch, fake_llm_factory):
+async def test_chat_interrupts_and_resume_completes(client, auth_headers, monkeypatch, fake_llm_factory):
     from src.agents.tools import calendar_tool
 
     fake_service = MagicMock()
@@ -103,14 +104,18 @@ async def test_chat_interrupts_and_resume_completes(client, monkeypatch, fake_ll
     llm.ainvoke = ainvoke
     monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
 
-    response = await client.post("/api/v1/chat", json={"message": "book a sync"})
+    response = await client.post("/api/v1/chat", json={"message": "book a sync"}, headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "interrupted"
     assert data["interrupt"]["type"] == "calendar_event"
     thread_id = data["thread_id"]
 
-    resume_response = await client.post("/api/v1/chat/resume", json={"thread_id": thread_id, "approved": True})
+    resume_response = await client.post(
+        "/api/v1/chat/resume",
+        json={"thread_id": thread_id, "approved": True},
+        headers=auth_headers,
+    )
     assert resume_response.status_code == 200
     resume_data = resume_response.json()
     assert resume_data["status"] == "completed"
