@@ -6,6 +6,7 @@ from src.auth.dependencies import get_current_user
 from src.db.models import Task, User
 from src.db.session import get_db
 from src.models.task_schemas import TaskCreateRequest, TaskOut, UpdateTaskStatusRequest
+from src.websocket.manager import manager
 
 router = APIRouter()
 
@@ -65,7 +66,9 @@ async def create_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
-    return _to_out(task)
+    out = _to_out(task)
+    await manager.broadcast_to_users([current_user.id], {"type": "task_created", "task": out.model_dump(mode="json")})
+    return out
 
 
 @router.patch("/tasks/{task_id}/status", response_model=TaskOut)
@@ -79,7 +82,9 @@ async def update_task_status(
     task.status = request.status
     await db.commit()
     await db.refresh(task)
-    return _to_out(task)
+    out = _to_out(task)
+    await manager.broadcast_to_users([current_user.id], {"type": "task_updated", "task": out.model_dump(mode="json")})
+    return out
 
 
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -89,3 +94,4 @@ async def delete_task(
     task = await _get_own_task_or_404(task_id, current_user, db)
     await db.delete(task)
     await db.commit()
+    await manager.broadcast_to_users([current_user.id], {"type": "task_deleted", "task_id": task_id})

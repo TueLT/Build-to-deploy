@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
 from src.agents.graph import agent
+from src.config import get_settings
 from src.services import reminder_service
 
 
@@ -61,7 +63,8 @@ async def test_create_reminder_interrupts_then_schedules(client, monkeypatch, fa
     final = result2["messages"][-1]
     assert "scheduled to fire" in final.content
     assert len(recorded_jobs) == 1
-    assert recorded_jobs[0]["run_date"] == datetime.fromisoformat(due_at) - timedelta(minutes=30)
+    expected_due_at = datetime.fromisoformat(due_at).replace(tzinfo=ZoneInfo(get_settings().scheduler_timezone))
+    assert recorded_jobs[0]["run_date"] == expected_due_at - timedelta(minutes=30)
 
     reminders = await reminder_service.list_reminders(owner_id=None)
     assert len(reminders) == 1

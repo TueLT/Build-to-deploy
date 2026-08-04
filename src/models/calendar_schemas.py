@@ -15,3 +15,10 @@ class CalendarEventCreateRequest(BaseModel):
     end_iso: str
     description: str = ""
     attendees: list[str] | None = None
+
+
+class CalendarEventUpdateRequest(BaseModel):
+    summary: str | None = Field(default=None, min_length=1, max_length=200)
+    start_iso: str | None = None
+    end_iso: str | None = None
+    description: str | None = None

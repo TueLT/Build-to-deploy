@@ -1,8 +1,10 @@
 import logging
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
+from src.config import get_settings
 from src.db import session as db_session
 from src.db.models import Reminder
 from src.services.scheduler import scheduler
@@ -21,6 +23,10 @@ async def schedule_reminder(
     source: str = "manual",
 ) -> Reminder:
     due_at = datetime.fromisoformat(due_at_iso)
+    if due_at.tzinfo is None:
+        # The agent/LLM sometimes emits a date/time with no UTC offset - treat it as Hanoi
+        # time (not the server's local zone) rather than storing an ambiguous naive value.
+        due_at = due_at.replace(tzinfo=ZoneInfo(get_settings().scheduler_timezone))
     fire_at = due_at - timedelta(minutes=lead_minutes)
 
     async with db_session.async_session_maker() as db:
@@ -61,6 +67,13 @@ async def list_reminders(owner_id: str | None) -> list[Reminder]:
         return list(result.scalars().all())
 
 
+def _safe_remove_job(reminder_id: str) -> None:
+    try:
+        scheduler.remove_job(reminder_id)
+    except Exception:  # noqa: BLE001 - job may already have fired/been removed
+        pass
+
+
 async def cancel_reminder(reminder_id: str, owner_id: str) -> bool:
     async with db_session.async_session_maker() as db:
         reminder = (
@@ -71,10 +84,21 @@ async def cancel_reminder(reminder_id: str, owner_id: str) -> bool:
         if reminder is None:
             return False
         if reminder.status == "scheduled":
-            try:
-                scheduler.remove_job(reminder_id)
-            except Exception:  # noqa: BLE001 - job may already have fired/been removed
-                pass
+            _safe_remove_job(reminder_id)
         reminder.status = "cancelled"
+        await db.commit()
+    return True
+
+
+async def admin_delete_reminder(reminder_id: str) -> bool:
+    """Admin variant of cancel_reminder: no owner check, and hard-deletes the row instead of
+    soft-cancelling it - consistent with how admin deletes Conversations/Tasks/Memories."""
+    async with db_session.async_session_maker() as db:
+        reminder = await db.get(Reminder, reminder_id)
+        if reminder is None:
+            return False
+        if reminder.status == "scheduled":
+            _safe_remove_job(reminder_id)
+        await db.delete(reminder)
         await db.commit()
     return True

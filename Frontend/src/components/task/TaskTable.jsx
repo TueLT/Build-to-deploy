@@ -1,3 +1,5 @@
+import { formatDateShort } from '../../utils/datetime'
+
 const priorityClass = { High: 'danger', Medium: 'warning', Low: 'info' }
 const statusClass = { Completed: 'success', Overdue: 'danger', Pending: 'secondary', 'In progress': 'primary' }
 const sourceLabel = { manual: 'Manual', proactive: 'AI suggestion' }
@@ -11,7 +13,7 @@ function displayStatus(task) {
 
 export function formatDue(due_at) {
   if (!due_at) return 'No due date'
-  return new Date(due_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return formatDateShort(due_at)
 }
 
 export default function TaskTable({ tasks, onComplete, onDelete }) {

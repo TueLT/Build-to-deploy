@@ -10,3 +10,9 @@ export const listCalendarEvents = (token, { time_min, time_max } = {}) => {
 
 export const createCalendarEvent = (token, { summary, start_iso, end_iso, description, attendees }) =>
   apiFetch('/calendar/events', { method: 'POST', token, body: { summary, start_iso, end_iso, description, attendees } })
+
+export const updateCalendarEvent = (token, eventId, { summary, start_iso, end_iso, description } = {}) =>
+  apiFetch(`/calendar/events/${eventId}`, { method: 'PATCH', token, body: { summary, start_iso, end_iso, description } })
+
+export const deleteCalendarEvent = (token, eventId) =>
+  apiFetch(`/calendar/events/${eventId}`, { method: 'DELETE', token })

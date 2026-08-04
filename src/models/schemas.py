@@ -17,10 +17,18 @@ class ChatRequest(BaseModel):
         default=None,
         description="Raw message history to summarize (read by summarize_conversation via state)",
     )
+    conversation_id: str | None = Field(
+        default=None,
+        description=(
+            "If `messages` come from a real 1-1/group chat conversation, its id - the server "
+            "verifies the caller is actually a participant before letting the agent see them, "
+            "rather than trusting whatever `messages` the client attached."
+        ),
+    )
 
 
 class InterruptPayload(BaseModel):
-    type: Literal["calendar_event", "reminder"]
+    type: Literal["calendar_event", "calendar_event_update", "calendar_event_delete", "reminder"]
     draft: dict
 
 

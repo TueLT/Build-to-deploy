@@ -5,6 +5,7 @@ import NewReminderModal from '../components/reminder/NewReminderModal'
 import { useAuth } from '../context/AuthContext'
 import { listReminders, cancelReminder } from '../api/reminders'
 import { getColor } from '../utils/avatar'
+import { formatDateTime } from '../utils/datetime'
 
 const statusLabel = { scheduled: 'Scheduled', fired: 'Fired', cancelled: 'Cancelled' }
 const statusClass = { scheduled: 'primary', fired: 'success', cancelled: 'secondary' }
@@ -37,7 +38,7 @@ export default function ReminderPage() {
       {loading ? <p className="text-muted small p-3 mb-0">Loading...</p> : reminders.map(r => (
         <div className={`reminder-row ${r.status !== 'scheduled' ? 'disabled' : ''}`} key={r.id}>
           <div className="reminder-icon" style={{ background: `${getColor(r.id)}12`, color: getColor(r.id) }}><i className="bi bi-alarm"/></div>
-          <div className="reminder-info"><h4>{r.title}</h4><strong>{new Date(r.due_at).toLocaleString()}</strong><div><span><i className="bi bi-bell"/>Reminds at {new Date(r.fire_at).toLocaleString()}</span>{r.message && <span><i className="bi bi-chat-left-text"/>{r.message}</span>}</div></div>
+          <div className="reminder-info"><h4>{r.title}</h4><strong>{formatDateTime(r.due_at)}</strong><div><span><i className="bi bi-bell"/>Reminds at {formatDateTime(r.fire_at)}</span>{r.message && <span><i className="bi bi-chat-left-text"/>{r.message}</span>}</div></div>
           <div className="reminder-controls"><span className={`status-badge ${statusClass[r.status]}`}>{statusLabel[r.status]}</span>{r.status === 'scheduled' && <button className="btn btn-sm btn-light" onClick={() => onCancel(r)}>Cancel</button>}</div>
         </div>
       ))}
