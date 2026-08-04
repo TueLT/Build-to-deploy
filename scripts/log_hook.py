@@ -15,7 +15,14 @@ VN_TZ = timezone(timedelta(hours=7))
 
 def git(cmd):
     try:
-        return subprocess.check_output(cmd, shell=True, text=True, stderr=subprocess.DEVNULL).strip()
+        return subprocess.check_output(
+            cmd,
+            shell=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stderr=subprocess.DEVNULL,
+        ).strip()
     except Exception:
         return ""
 
@@ -180,8 +187,12 @@ def main():
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    # Output valid JSON (required by some tools like Gemini)
-    print(json.dumps({"status": "logged"}))
+    # Codex validates hook output against its lifecycle schema. Other tools only
+    # require valid JSON and keep the legacy acknowledgement for compatibility.
+    if tool == "codex":
+        print(json.dumps({"continue": True, "suppressOutput": True}))
+    else:
+        print(json.dumps({"status": "logged"}))
 
 
 if __name__ == "__main__":

@@ -24,9 +24,9 @@ def test_codex_hook_config_uses_supported_schema():
         handler = config["hooks"][event_name][0]["hooks"][0]
         assert handler["type"] == "command"
         assert "git rev-parse --show-toplevel" in handler["command"]
-        assert "git rev-parse --show-toplevel" in handler["commandWindows"]
         assert "--tool=codex" in handler["command"]
         assert "--tool=codex" in handler["commandWindows"]
+        assert handler["commandWindows"].startswith("scripts\\_pyrun.cmd")
 
 
 def test_codex_prompt_is_normalized_and_appended_to_jsonl(tmp_path):
@@ -52,7 +52,7 @@ def test_codex_prompt_is_normalized_and_appended_to_jsonl(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == {"status": "logged"}
+    assert json.loads(result.stdout) == {"continue": True, "suppressOutput": True}
     entries = [
         json.loads(line)
         for line in (tmp_path / "session.jsonl").read_text(encoding="utf-8").splitlines()
@@ -61,10 +61,17 @@ def test_codex_prompt_is_normalized_and_appended_to_jsonl(tmp_path):
     assert entries[0]["tool"] == "codex"
     assert entries[0]["event"] == "UserPromptSubmit"
     assert entries[0]["prompt"] == "Codex prompt"
+    expected_branch = subprocess.check_output(
+        ["git", "branch", "--show-current"],
+        cwd=REPO_ROOT,
+        text=True,
+        encoding="utf-8",
+    ).strip()
+    assert entries[0]["branch"] == expected_branch
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows hook command test")
-def test_windows_codex_hook_command_runs_from_subdirectory(tmp_path):
+def test_windows_codex_hook_command_runs_from_repo_root(tmp_path):
     payload = {
         "hook_event_name": "UserPromptSubmit",
         "session_id": "windows-session",
@@ -80,7 +87,7 @@ def test_windows_codex_hook_command_runs_from_subdirectory(tmp_path):
 
     result = subprocess.run(
         command,
-        cwd=REPO_ROOT / "Frontend",
+        cwd=REPO_ROOT,
         input=json.dumps(payload),
         capture_output=True,
         text=True,
@@ -91,7 +98,7 @@ def test_windows_codex_hook_command_runs_from_subdirectory(tmp_path):
     )
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout) == {"status": "logged"}
+    assert json.loads(result.stdout) == {"continue": True, "suppressOutput": True}
     entry = json.loads(
         (tmp_path / "session.jsonl").read_text(encoding="utf-8").splitlines()[0]
     )
