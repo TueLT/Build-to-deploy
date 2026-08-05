@@ -10,21 +10,6 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: orbit_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v4
 
@@ -44,5 +29,4 @@ jobs:
         run: pytest tests/ -v --tb=short
         env:
           APP_ENV: test
-          GOOGLE_API_KEY: test-key
-          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orbit_test
+          OPENAI_API_KEY: test-key
