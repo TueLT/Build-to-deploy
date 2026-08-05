@@ -31,7 +31,6 @@ Thumbs.db
 # Data (never commit large data)
 data/
 *.db
-*.sqlite3
 
 # Google OAuth credentials/tokens
 secrets/

@@ -19,6 +19,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "langchain>=0.3.0",
     "langchain-google-genai>=2.0.0",
+    "langchain-groq>=0.2.0",
+    "langchain-openai>=0.2.0",
     "langgraph>=0.2.0",
 ]
 
@@ -32,3 +34,9 @@ dev = [
 
 [project.urls]
 repository = "https://github.com/AI20K-Build-Phase-Cohort-3/P-132"
+
+[tool.pytest.ini_options]
+# All tests/fixtures share one event loop for the whole session so the Postgres checkpointer's
+# connection pool (opened once, session-scoped) stays valid across every test function.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

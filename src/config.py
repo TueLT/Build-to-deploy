@@ -21,15 +21,17 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
 
     # LLM
-    llm_provider: Literal["google", "groq"] = "google"
+    llm_provider: Literal["google", "groq", "openai"] = "google"
     google_api_key: str = ""
     groq_api_key: str = ""
+    openai_api_key: str = ""
     model_name: str = "gemini-2.5-flash"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     daily_token_budget: int = Field(default=200_000, ge=0)
 
-    # Database
-    database_url: str = "sqlite:///./data/app.db"
+    # Database — PostgreSQL only, no SQLite fallback. Required: no default, so a missing/misconfigured
+    # DATABASE_URL fails fast at startup instead of silently falling back to a file-based DB.
+    database_url: str
 
     # Auth
     secret_key: str = "dev-insecure-secret-change-me"

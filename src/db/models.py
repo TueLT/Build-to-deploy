@@ -58,6 +58,20 @@ class ConversationParticipant(Base):
     user: Mapped["User"] = relationship()
 
 
+class AIPermission(Base):
+    """Per (conversation, user) consent for the AI agent to read that conversation's messages.
+
+    Keyed per-user rather than per-conversation: each participant grants/revokes independently for
+    themselves, no consensus from other members required."""
+
+    __tablename__ = "ai_permissions"
+
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    granted: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class Message(Base):
     __tablename__ = "messages"
 
@@ -136,7 +150,7 @@ class Reminder(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     fire_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(default="scheduled")  # "scheduled" | "fired" | "cancelled"
-    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "agent"
+    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "agent" | "proactive"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     owner: Mapped["User | None"] = relationship()

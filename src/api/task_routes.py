@@ -1,3 +1,6 @@
+import logging
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +9,10 @@ from src.auth.dependencies import get_current_user
 from src.db.models import Task, User
 from src.db.session import get_db
 from src.models.task_schemas import TaskCreateRequest, TaskOut, UpdateTaskStatusRequest
+from src.services import calendar_service, reminder_service
 from src.websocket.manager import manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -41,8 +47,7 @@ async def list_tasks(
 ) -> list[TaskOut]:
     tasks = (await db.execute(select(Task).where(Task.owner_id == current_user.id))).scalars().all()
     def _sort_key(t: Task) -> tuple[bool, float, int]:
-        # .timestamp() sidesteps aware/naive datetime comparison issues (SQLite may round-trip
-        # DateTime(timezone=True) values as naive) - fine for a relative sort ordering.
+        # .timestamp() gives a plain float to sort by - fine for a relative sort ordering.
         return (t.due_at is None, t.due_at.timestamp() if t.due_at else 0.0, _PRIORITY_RANK.get(t.priority, 1))
 
     tasks.sort(key=_sort_key)
@@ -71,6 +76,29 @@ async def create_task(
     return out
 
 
+async def _add_to_calendar_and_reminder(task: Task, owner_id: str) -> None:
+    """A proactively-detected task with a due date, once explicitly Accepted, also gets a real
+    Google Calendar event and a real Reminder - the Accept click is the human confirmation, so
+    neither needs its own interrupt() step. Best-effort: the task itself must stay accepted even
+    if Calendar/Reminder creation fails."""
+    start_iso = task.due_at.isoformat()
+    end_iso = (task.due_at + timedelta(minutes=30)).isoformat()
+    try:
+        event = calendar_service.create_event(summary=task.title, start_iso=start_iso, end_iso=end_iso)
+        await calendar_service.broadcast_change(
+            "calendar_event_created", {"event": calendar_service.to_out_dict(event)}
+        )
+    except Exception:  # noqa: BLE001 - best-effort, must not block the task Accept
+        logger.exception("Auto-create calendar event for accepted task %s failed", task.id)
+
+    try:
+        await reminder_service.schedule_reminder(
+            owner_id=owner_id, title=task.title, due_at_iso=start_iso, lead_minutes=30, source="proactive"
+        )
+    except Exception:  # noqa: BLE001 - best-effort, must not block the task Accept
+        logger.exception("Auto-create reminder for accepted task %s failed", task.id)
+
+
 @router.patch("/tasks/{task_id}/status", response_model=TaskOut)
 async def update_task_status(
     task_id: str,
@@ -79,11 +107,21 @@ async def update_task_status(
     db: AsyncSession = Depends(get_db),
 ) -> TaskOut:
     task = await _get_own_task_or_404(task_id, current_user, db)
+    is_accepting_proactive_schedule = (
+        task.status == "suggested"
+        and request.status == "pending"
+        and task.source == "proactive"
+        and task.due_at is not None
+    )
     task.status = request.status
     await db.commit()
     await db.refresh(task)
     out = _to_out(task)
     await manager.broadcast_to_users([current_user.id], {"type": "task_updated", "task": out.model_dump(mode="json")})
+
+    if is_accepting_proactive_schedule:
+        await _add_to_calendar_and_reminder(task, current_user.id)
+
     return out
 
 

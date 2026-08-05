@@ -22,9 +22,9 @@ AI Agent chat: endpoint POST /api/v1/chat + /chat/resume, dùng LangGraph, 8 too
 Tasks, Calendar (Google Calendar 2 chiều), Reminders (bền vững qua restart), Memory, Profile, AI Assistant (/assistant), Admin dashboard — tất cả đã nối API thật.
 Proactive detection: mỗi tin nhắn mới được lọc regex rồi hỏi LLM, tự tạo Task gợi ý và đẩy WebSocket.
 Theo dõi token: bảng usage_logs + cảnh báo trên Admin dashboard khi ≥80% DAILY_TOKEN_BUDGET.
+AI đọc hội thoại chỉ khi được cấp quyền: bảng ai_permissions (conversation_id, user_id, granted), mặc định chưa cấp quyền, POST /api/v1/chat từ chối (403) nếu chưa được người dùng đó cấp; toggle Grant/Revoke Permission trong AIPanel.jsx gọi GET/PUT /conversations/{id}/ai-permission thật.
 
 Đã có nhưng chưa hoàn chỉnh
-Toggle "Grant/Revoke Permission" trong AIPanel.jsx vẫn chỉ là state React cục bộ — chưa có bảng ai_permissions ở backend.
 Cảnh báo token chỉ hiện khi admin chủ động mở trang; chưa push/email, chưa tự chặn gọi LLM khi vượt ngân sách.
 Chưa deploy online, chưa có rate limiting. Xem ROADMAP.md.
 
@@ -35,7 +35,7 @@ Kiến trúc thư mục
 │   ├── agents/             # Agent LangGraph (planner, tools, state)
 │   ├── api/                # REST routes: auth, chat (người-với-người), agent chat
 │   ├── auth/                # Hash mật khẩu, tạo/kiểm tra JWT
-│   ├── db/                  # SQLAlchemy models + session (SQLite/PostgreSQL)
+│   ├── db/                  # SQLAlchemy models + session (PostgreSQL)
 │   ├── models/               # Pydantic schemas
 │   ├── services/              # chat_service, scheduler, llm, calendar_service, reminder_service, proactive_service, usage_service
 │   ├── websocket/              # Kênh real-time cho chat
@@ -51,8 +51,8 @@ Kiến trúc thư mục
         └── router/                    # React Router + ProtectedRoute
 Công nghệ sử dụng
 Layer	Công nghệ
-AI Agent	LangGraph + LangChain (Google Gemini hoặc Groq, đổi qua LLM_PROVIDER trong .env)
-Backend	FastAPI, SQLAlchemy (async) + SQLite/PostgreSQL, JWT (PyJWT) + bcrypt, WebSocket
+AI Agent	LangGraph + LangChain (Google Gemini, Groq, hoặc OpenAI, đổi qua LLM_PROVIDER trong .env)
+Backend	FastAPI, SQLAlchemy (async) + PostgreSQL, JWT (PyJWT) + bcrypt, WebSocket
 Frontend	React 18, Vite, React Router, React Hook Form, Bootstrap 5, Framer Motion
 Test	pytest, pytest-asyncio, httpx
 Lint	ruff
@@ -66,17 +66,17 @@ bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env             # điền GOOGLE_API_KEY (hoặc GROQ_API_KEY + LLM_PROVIDER=groq nếu Gemini hết quota) nếu cần AI chat
+cp .env.example .env             # điền GOOGLE_API_KEY (hoặc GROQ_API_KEY + LLM_PROVIDER=groq, hoặc OPENAI_API_KEY + LLM_PROVIDER=openai nếu Gemini hết quota) nếu cần AI chat
 
 # Chạy dev server
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 # hoặc nếu có make: make run
-# Windows + DATABASE_URL là PostgreSQL: dùng `python scripts/run_dev.py` thay vì lệnh uvicorn ở
-# trên — agent memory bền vững (AsyncPostgresSaver) cần SelectorEventLoop, nhưng uvicorn CLI trên
+# Windows: LUÔN dùng `python scripts/run_dev.py` thay vì lệnh uvicorn ở trên, không phải tuỳ chọn —
+# agent memory bền vững (AsyncPostgresSaver) cần SelectorEventLoop, nhưng uvicorn CLI trên
 # Windows luôn chọn ProactorEventLoop trước khi app được import, không có cờ CLI nào sửa được.
 Health check: GET http://localhost:8000/health → {"status":"ok",...}
 Swagger UI: http://localhost:8000/docs
-DB mặc định: SQLite tại sqlite:///./data/app.db; đổi DATABASE_URL sang postgresql://... nếu muốn Postgres (xem README.md)
+DB: PostgreSQL bắt buộc qua DATABASE_URL trong .env (không có default, không còn hỗ trợ SQLite) — xem README.md để tạo database. Test suite dùng database Postgres riêng (orbit_test mặc định, đổi qua TEST_DATABASE_URL).
 Nếu sửa .env mà hành vi backend không đổi, kiểm tra có tiến trình uvicorn/scripts/run_dev.py cũ nào còn sống trên port 8000 trước khi nghi code sai — uvicorn --reload trên Windows để lại tiến trình con (spawn qua multiprocessing) vẫn giữ cổng dù tiến trình cha đã bị tắt, nhiều bản cũ/mới có thể cùng nhận request. Kiểm tra: netstat -ano | findstr :8000 rồi Stop-Process -Id <pid> -Force cho từng tiến trình tìm thấy, sau đó khởi động lại.
 Frontend
 bash
