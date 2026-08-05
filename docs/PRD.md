@@ -35,8 +35,13 @@ dùng rời khỏi app chat và không bao giờ tự ý hành động thay họ
 - [x] Đăng ký bằng email + mật khẩu, mật khẩu hash bằng **bcrypt** (không lưu plaintext).
 - [x] Đăng nhập trả **JWT access token**; frontend gửi qua `Authorization: Bearer`.
 - [x] Mọi route ứng dụng nằm sau `ProtectedRoute`; chưa đăng nhập → redirect `/login`.
-- [x] Hai role: `user` và `admin`. Admin đầu tiên bootstrap qua `INITIAL_ADMIN_EMAIL`.
+- [x] Hai role: `user` và `admin`. Admin đầu tiên bootstrap qua `INITIAL_ADMIN_EMAIL` (áp dụng cho
+      cả tài khoản tạo qua Google, không riêng `/register`).
 - [x] Route `/admin/*` chặn bằng `AdminRoute` (FE) **và** `require_admin` dependency (BE).
+- [x] **Đăng nhập bằng Google** (cộng thêm, không thay email/mật khẩu): `POST /auth/google` xác
+      minh ID token, find-or-create qua bảng `google_identities` riêng — không đổi cấu trúc bảng
+      `users`/JWT hiện có. Chỉ tự liên kết vào tài khoản mật khẩu có sẵn khi Google xác nhận
+      `email_verified`.
 
 ### US-2 — Nhắn tin 1-1 và nhóm realtime 🟢
 
@@ -159,6 +164,7 @@ erDiagram
     conversations ||--o{ tasks : "sinh ra"
     conversations ||--o{ ai_permissions : "có"
     users ||--o{ ai_permissions : "cấp quyền"
+    users ||--o| google_identities : "đăng nhập bằng"
 
     users {
         string id PK
@@ -242,6 +248,13 @@ erDiagram
         boolean granted
         datetime updated_at
     }
+    google_identities {
+        string id PK
+        string user_id FK
+        string google_sub UK
+        string email
+        datetime created_at
+    }
 ```
 
 `conversation_participants` dùng **khoá chính kép** `(conversation_id, user_id)` — cả hai đồng thời
@@ -260,11 +273,11 @@ con trỏ đồng bộ (1 dòng, `id="default"`).
 
 ## 6. API Surface
 
-Tất cả dưới prefix `/api/v1`, đều yêu cầu JWT trừ `/auth/register` và `/auth/login`.
+Tất cả dưới prefix `/api/v1`, đều yêu cầu JWT trừ `/auth/register`, `/auth/login`, `/auth/google`.
 
 | Nhóm | Endpoint |
 | --- | --- |
-| **Auth** | `POST /auth/register` · `POST /auth/login` · `GET /auth/me` · `PATCH /auth/me` · `POST /auth/me/password` |
+| **Auth** | `POST /auth/register` · `POST /auth/login` · `POST /auth/google` · `GET /auth/me` · `PATCH /auth/me` · `POST /auth/me/password` |
 | **Chat** | `GET /users` · `GET|POST /conversations` · `GET|POST /conversations/{id}/messages` · `POST /conversations/{id}/read` · `GET|PUT /conversations/{id}/ai-permission` |
 | **Agent** | `POST /chat` · `POST /chat/resume` · `GET /status` |
 | **Tasks** | `GET|POST /tasks` · `PATCH /tasks/{id}/status` · `DELETE /tasks/{id}` |

@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
     initial_admin_email: str = ""
+    # "Sign in with Google" - Web application OAuth Client ID (audience for ID-token verification).
+    # Distinct from google_credentials_path/google_token_path below (those are for the Calendar
+    # integration's single shared Desktop-app token, unrelated to per-user login). No client secret
+    # needed - only ID-token verification, never an authorization-code exchange.
+    google_oauth_client_id: str = ""
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"

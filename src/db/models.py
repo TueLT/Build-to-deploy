@@ -30,6 +30,25 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class GoogleIdentity(Base):
+    """Links a User to the Google account they signed in with (Sign in with Google) - kept as its
+    own table rather than columns on User so this feature needs no ALTER on the existing users
+    table (this repo has no Alembic; Base.metadata.create_all() only creates missing tables).
+
+    Unrelated to the app's other Google integration (Calendar sync, src/services/calendar_service.py) -
+    that's one shared service-account token for the whole app, not a per-user login identity."""
+
+    __tablename__ = "google_identities"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    google_sub: Mapped[str] = mapped_column(unique=True, index=True)  # Google's stable subject id
+    email: Mapped[str] = mapped_column(default="")  # snapshot at link time, for audit only
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    user: Mapped["User"] = relationship()
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
