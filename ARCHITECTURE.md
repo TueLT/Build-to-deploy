@@ -92,6 +92,10 @@ graph TB
 - **Authentication:** JWT (PyJWT), password hash bcrypt (`src/auth/`). `get_current_user` +
   `require_admin` dependency cho phân quyền 2 role (`user`/`admin`). `/api/v1/chat` verify thêm
   người gọi có phải participant của `conversation_id` (nếu có truyền) trước khi cho agent xử lý.
+  Ngoài email/mật khẩu, `POST /auth/google` (`src/auth/google_oauth.py`) cho đăng nhập bằng Google —
+  xác minh chữ ký ID token (GIS, không cần client secret, không có route callback), find-or-create
+  qua bảng `google_identities` riêng (FK tới `users`, không ALTER bảng `users` sẵn có); JWT trả về
+  tạo bởi đúng `create_access_token` dùng chung với flow mật khẩu — cấu trúc token không đổi.
 
 ### 3. AI Agent (LangGraph)
 - **Agent Type:** Plan-and-execute dạng đơn giản — 1 node `planner` (LLM bound tools) ⇄ 1 node
@@ -154,7 +158,8 @@ graph LR
   connection bị bind cứng vào loop đã tạo ra nó, pool connection tái sử dụng giữa 2 loop sẽ lỗi
   "attached to a different loop".
 - **Tables hiện có** (`src/db/models.py`): `User` (role, is_active, job_title, timezone,
-  preferences), `Conversation`, `ConversationParticipant`, `Message`, `Task` (status
+  preferences), `GoogleIdentity` (link `user_id` ↔ `google_sub` cho đăng nhập Google — bảng riêng,
+  không thêm cột vào `User`), `Conversation`, `ConversationParticipant`, `Message`, `Task` (status
   suggested/pending/in_progress/completed/dismissed, source manual/proactive), `Reminder` (status
   scheduled/fired/cancelled), `Memory` (ghi chú cá nhân người dùng tự thêm — category/title/detail,
   **khác** với agent checkpoint memory ở trên), `UsageLog` (token mỗi lần gọi LLM),
