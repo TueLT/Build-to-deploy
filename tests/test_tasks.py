@@ -1,7 +1,10 @@
+from datetime import datetime
 from unittest.mock import MagicMock
+from zoneinfo import ZoneInfo
 
 import pytest
 
+from src.config import get_settings
 from src.services import calendar_service
 
 
@@ -71,6 +74,36 @@ async def test_task_not_visible_to_other_user(client, auth_headers, other_auth_h
 
     resp = await client.delete(f"/api/v1/tasks/{created['id']}", headers=other_auth_headers)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_task_with_naive_due_at_is_localized_to_calendar_timezone(client, auth_headers):
+    """A due_at with no UTC offset (what the LLM emits, e.g. via AIPanel's "Extract tasks" posting
+    it straight to this endpoint) must be interpreted as calendar_timezone - not left for
+    Postgres/asyncpg to guess from the DB server's own session timezone, which only happens to
+    match by coincidence on any given machine. Regression test for task_routes.py::create_task."""
+    resp = await client.post(
+        "/api/v1/tasks",
+        json={"title": "Naive due date", "due_at": "2026-08-10T15:00:00", "priority": "Medium"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    due_at = datetime.fromisoformat(resp.json()["due_at"])
+    assert due_at.tzinfo is not None
+    assert due_at == datetime(2026, 8, 10, 15, 0, tzinfo=ZoneInfo(get_settings().calendar_timezone))
+
+
+@pytest.mark.asyncio
+async def test_create_task_with_offset_due_at_is_kept_as_is(client, auth_headers):
+    """A due_at that already carries an explicit UTC offset must not be re-localized/shifted."""
+    resp = await client.post(
+        "/api/v1/tasks",
+        json={"title": "Explicit offset due date", "due_at": "2026-08-10T15:00:00+00:00", "priority": "Medium"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 201
+    due_at = datetime.fromisoformat(resp.json()["due_at"])
+    assert due_at == datetime(2026, 8, 10, 15, 0, tzinfo=ZoneInfo("UTC"))
 
 
 @pytest.mark.asyncio

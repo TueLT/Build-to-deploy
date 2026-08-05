@@ -1,11 +1,13 @@
 import logging
 from datetime import timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user
+from src.config import get_settings
 from src.db.models import Task, User
 from src.db.session import get_db
 from src.models.task_schemas import TaskCreateRequest, TaskOut, UpdateTaskStatusRequest
@@ -60,11 +62,21 @@ async def create_task(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TaskOut:
+    due_at = request.due_at
+    if due_at is not None and due_at.tzinfo is None:
+        # Same ambiguity reminder_service/proactive_service already guard against: a naive due_at
+        # (no UTC offset - e.g. AIPanel's "Extract tasks" posting the LLM's raw due_at straight
+        # here) would otherwise let Postgres/asyncpg interpret it using the DB server's own session
+        # timezone, which only happens to match calendar_timezone by coincidence on a given machine
+        # (verified: local Postgres here defaults to Asia/Bangkok, not something this app controls) -
+        # explicit is correct everywhere, not just on this machine.
+        due_at = due_at.replace(tzinfo=ZoneInfo(get_settings().calendar_timezone))
+
     task = Task(
         owner_id=current_user.id,
         conversation_id=request.conversation_id,
         title=request.title,
-        due_at=request.due_at,
+        due_at=due_at,
         priority=request.priority,
         source=request.source,
     )
