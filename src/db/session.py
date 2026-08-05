@@ -24,8 +24,9 @@ def _async_url(url: str) -> str:
 
 
 async_database_url = _async_url(settings.database_url)
+_is_sqlite = async_database_url.startswith("sqlite+")
 engine_options = {"pool_pre_ping": True}
-if async_database_url.startswith("sqlite+"):
+if _is_sqlite:
     engine_options["connect_args"] = {"check_same_thread": False}
 engine = create_async_engine(async_database_url, **engine_options)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
@@ -49,9 +50,16 @@ async def _add_missing_user_columns(conn) -> None:
         await conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR NOT NULL DEFAULT 'user'"))
     if "is_active" not in existing_columns:
         await conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1"))
+    if "job_title" not in existing_columns:
+        await conn.execute(text("ALTER TABLE users ADD COLUMN job_title VARCHAR NOT NULL DEFAULT ''"))
+    if "timezone" not in existing_columns:
+        await conn.execute(text("ALTER TABLE users ADD COLUMN timezone VARCHAR NOT NULL DEFAULT 'Asia/Ho_Chi_Minh'"))
+    if "preferences" not in existing_columns:
+        await conn.execute(text("ALTER TABLE users ADD COLUMN preferences JSON NOT NULL DEFAULT '{}'"))
 
 
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        await _add_missing_user_columns(conn)
+        if _is_sqlite:
+            await _add_missing_user_columns(conn)

@@ -13,6 +13,23 @@ def _no_live_llm(monkeypatch, fake_llm_factory):
     return llm
 
 
+async def _team_workspace(client, owner_headers, member: dict) -> dict:
+    workspace_response = await client.post(
+        "/api/v1/workspaces",
+        json={"name": "Agent route test team"},
+        headers=owner_headers,
+    )
+    assert workspace_response.status_code == 201
+    workspace = workspace_response.json()
+    member_response = await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        json={"email": member["email"], "role": "member"},
+        headers=owner_headers,
+    )
+    assert member_response.status_code == 201
+    return workspace
+
+
 @pytest.mark.asyncio
 async def test_health(client):
     response = await client.get("/health")
@@ -22,9 +39,65 @@ async def test_health(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_requires_auth(client):
+    response = await client.post("/api/v1/chat", json={"message": "hello"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_chat_empty_message(client, auth_headers):
     response = await client.post("/api/v1/chat", json={"message": ""}, headers=auth_headers)
     assert response.status_code == 422  # Validation error
+
+
+@pytest.mark.asyncio
+async def test_chat_rejects_conversation_id_caller_is_not_a_participant_of(
+    client, auth_headers, other_auth_headers
+):
+    # A third user's conversation with other_auth_headers' user - auth_headers' user is in neither.
+    third = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "carol@example.com", "password": "password123", "display_name": "Carol"},
+    )
+    third_headers = {"Authorization": f"Bearer {third.json()['access_token']}"}
+    other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
+    other = other_me.json()
+    workspace = await _team_workspace(client, third_headers, other)
+    conv = await client.post(
+        "/api/v1/conversations",
+        json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+        headers=third_headers,
+    )
+    conversation_id = conv.json()["id"]
+
+    # auth_headers' user was never added to this conversation - it belongs to third_headers and
+    # other_auth_headers' user only.
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Summarize this.", "conversation_id": conversation_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_chat_allows_conversation_id_caller_is_a_participant_of(client, auth_headers, other_auth_headers):
+    other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
+    other = other_me.json()
+    workspace = await _team_workspace(client, auth_headers, other)
+    conv = await client.post(
+        "/api/v1/conversations",
+        json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+        headers=auth_headers,
+    )
+    conversation_id = conv.json()["id"]
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Summarize this.", "conversation_id": conversation_id},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -35,6 +108,20 @@ async def test_chat_completed_response(client, auth_headers):
     assert data["status"] == "completed"
     assert data["response"] == "Mocked agent reply."
     assert data["thread_id"]
+
+
+@pytest.mark.asyncio
+async def test_chat_surfaces_llm_error_instead_of_empty_response(client, auth_headers, monkeypatch):
+    def broken_get_llm():
+        raise RuntimeError("Rate limit reached")
+
+    monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", broken_get_llm)
+
+    response = await client.post("/api/v1/chat", json={"message": "hello"}, headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "error"
+    assert data["response"] == "Rate limit reached"
 
 
 @pytest.mark.asyncio
@@ -66,11 +153,11 @@ async def test_chat_uses_provided_messages_as_context(client, auth_headers, monk
 
 @pytest.mark.asyncio
 async def test_chat_interrupts_and_resume_completes(client, auth_headers, monkeypatch, fake_llm_factory):
-    from src.agents.tools import calendar_tool
+    from src.services import calendar_service
 
     fake_service = MagicMock()
     fake_service.events.return_value.insert.return_value.execute.return_value = {"id": "evt-1"}
-    monkeypatch.setattr(calendar_tool, "_get_calendar_service", lambda: fake_service)
+    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
 
     def _final_message(state):
         last = state["messages"][-1]
@@ -112,9 +199,7 @@ async def test_chat_interrupts_and_resume_completes(client, auth_headers, monkey
     thread_id = data["thread_id"]
 
     resume_response = await client.post(
-        "/api/v1/chat/resume",
-        json={"thread_id": thread_id, "approved": True},
-        headers=auth_headers,
+        "/api/v1/chat/resume", json={"thread_id": thread_id, "approved": True}, headers=auth_headers
     )
     assert resume_response.status_code == 200
     resume_data = resume_response.json()

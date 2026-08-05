@@ -1,12 +1,12 @@
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
-from langchain_core.messages import AIMessage, HumanMessage
+from fastapi import APIRouter, Depends, HTTPException, status
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.agents.graph import agent
+from src.agents import graph as agent_graph
 from src.auth.dependencies import get_current_user
 from src.db.models import Message, User
 from src.db.session import get_db
@@ -14,6 +14,17 @@ from src.models.schemas import ChatMessage, ChatRequest, ChatResponse, Interrupt
 from src.services.authorization_service import require_conversation_access
 
 router = APIRouter()
+
+# thread_id -> owner user id. In-memory only: enough to stop one user resuming another
+# user's interrupted (unconfirmed calendar/reminder) run; doesn't need to survive a restart
+# since thread_ids are random UUIDs nobody else can guess anyway.
+_thread_owners: dict[str, str] = {}
+
+
+def _check_thread_owner(thread_id: str, current_user: User) -> None:
+    owner = _thread_owners.get(thread_id)
+    if owner is not None and owner != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your conversation")
 
 
 def _format_messages(messages: list[ChatMessage]) -> str:
@@ -44,9 +55,15 @@ def _build_chat_response(result: dict, thread_id: str) -> ChatResponse:
             interrupt=InterruptPayload(**payload),
         )
 
+    error = result.get("error")
+    if error:
+        return ChatResponse(response=error, thread_id=thread_id, status="error")
+
     final_text = ""
     for m in reversed(result.get("messages", [])):
-        if isinstance(m, AIMessage) and m.content:
+        # A trailing ToolMessage means graph.py routed straight to END after a "terminal" tool
+        # (summarize_conversation/extract_tasks) - its content is already the final answer.
+        if isinstance(m, (AIMessage, ToolMessage)) and m.content:
             final_text = m.content
             break
     return ChatResponse(response=final_text, thread_id=thread_id, status="completed")
@@ -62,14 +79,20 @@ async def chat(
     if request.conversation_id is not None:
         await require_conversation_access(db, current_user, request.conversation_id, "viewer")
     thread_id = request.thread_id or str(uuid4())
+    _check_thread_owner(thread_id, current_user)
+    _thread_owners.setdefault(thread_id, current_user.id)
     config = {"configurable": {"thread_id": f"{current_user.id}:{thread_id}"}}
     if request.conversation_id is not None:
         context_text = await _conversation_context(db, request.conversation_id)
     else:
         context_text = _format_messages(request.messages) if request.messages else ""
-    inputs = {"messages": [HumanMessage(content=request.message)], "context": context_text}
+    inputs = {
+        "messages": [HumanMessage(content=request.message)],
+        "context": context_text,
+        "user_id": current_user.id,
+    }
     try:
-        result = await agent.ainvoke(inputs, config)
+        result = await agent_graph.agent.ainvoke(inputs, config)
     except Exception:
         raise HTTPException(status_code=500, detail="AI service is temporarily unavailable")
     return _build_chat_response(result, thread_id)
@@ -81,9 +104,12 @@ async def resume_chat(
     current_user: User = Depends(get_current_user),
 ) -> ChatResponse:
     """Resume an interrupted agent run with the user's confirm/reject decision."""
+    _check_thread_owner(request.thread_id, current_user)
     config = {"configurable": {"thread_id": f"{current_user.id}:{request.thread_id}"}}
     try:
-        result = await agent.ainvoke(Command(resume={"approved": request.approved, "edits": request.edits}), config)
+        result = await agent_graph.agent.ainvoke(
+            Command(resume={"approved": request.approved, "edits": request.edits}), config
+        )
     except Exception:
         raise HTTPException(status_code=500, detail="AI service is temporarily unavailable")
     return _build_chat_response(result, request.thread_id)
