@@ -135,9 +135,13 @@ async def test_non_participant_forbidden(client, auth_headers, other_auth_header
         )
     ).json()
 
-    third = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={"email": "carol@example.com", "password": "password123", "display_name": "Carol"},
+    )
+    third = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "carol@example.com", "password": "password123"},
     )
     carol_headers = {"Authorization": f"Bearer {third.json()['access_token']}"}
 

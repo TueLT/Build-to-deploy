@@ -26,16 +26,18 @@ from src.websocket.routes import router as ws_router
 async def lifespan(app: FastAPI):
     settings = get_settings()
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
-    await init_db()
+    if settings.app_env != "production":
+        await init_db()
     await init_checkpointer()
     scheduler.start()
-    scheduler.add_job(
-        calendar_service.poll_calendar_changes,
-        "interval",
-        seconds=settings.calendar_poll_interval_seconds,
-        id="calendar_poll",
-        replace_existing=True,
-    )
+    if settings.google_calendar_workspace_id:
+        scheduler.add_job(
+            calendar_service.poll_calendar_changes,
+            "interval",
+            seconds=settings.calendar_poll_interval_seconds,
+            id=f"calendar_poll:{settings.google_calendar_workspace_id}",
+            replace_existing=True,
+        )
     yield
     scheduler.shutdown(wait=False)
     await close_checkpointer()
@@ -52,7 +54,7 @@ app = FastAPI(
 settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins.split(","),
+    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

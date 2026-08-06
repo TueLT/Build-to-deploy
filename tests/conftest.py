@@ -1,3 +1,4 @@
+import os
 from unittest.mock import AsyncMock
 
 import pytest
@@ -6,6 +7,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
+# Tests must not inherit a developer's local PostgreSQL configuration. Set this before
+# importing application modules so the agent uses its isolated in-memory checkpointer.
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["SECRET_KEY"] = "test-only-secret-key-with-at-least-32-bytes"
 
 import src.db.session as db_session
 from src.db.base import Base
@@ -47,22 +53,33 @@ async def client(monkeypatch):
 @pytest_asyncio.fixture
 async def auth_headers(client):
     """Registers a test user and returns an Authorization header for it."""
-    resp = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={"email": "alice@example.com", "password": "password123", "display_name": "Alice"},
+    )
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "alice@example.com", "password": "password123"},
     )
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest_asyncio.fixture
+async def personal_workspace(client, auth_headers):
+    """Returns the personal workspace created automatically at registration."""
+    resp = await client.get("/api/v1/workspaces", headers=auth_headers)
+    assert resp.status_code == 200
+    return next(workspace for workspace in resp.json() if workspace["type"] == "personal")
+
+
+@pytest_asyncio.fixture
 async def admin_auth_headers(client):
     """Registers a test user with both legacy and platform admin roles."""
-    resp = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={"email": "admin@example.com", "password": "password123", "display_name": "Admin"},
     )
-    token = resp.json()["access_token"]
 
     async with db_session.async_session_maker() as session:
         user = (await session.execute(select(User).where(User.email == "admin@example.com"))).scalar_one()
@@ -70,49 +87,66 @@ async def admin_auth_headers(client):
         user.platform_role = "platform_admin"
         await session.commit()
 
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "admin@example.com", "password": "password123"},
+    )
+    token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest_asyncio.fixture
 async def platform_admin_headers(client):
     """Registers a platform admin without granting any workspace role."""
-    resp = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={"email": "platform@example.com", "password": "password123", "display_name": "Platform Admin"},
     )
-    token = resp.json()["access_token"]
 
     async with db_session.async_session_maker() as session:
         user = (await session.execute(select(User).where(User.email == "platform@example.com"))).scalar_one()
         user.platform_role = "platform_admin"
         await session.commit()
 
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "platform@example.com", "password": "password123"},
+    )
+    token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest_asyncio.fixture
 async def legacy_admin_headers(client):
     """Registers an account carrying only the deprecated global admin role."""
-    resp = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={"email": "legacy-admin@example.com", "password": "password123", "display_name": "Legacy Admin"},
     )
-    token = resp.json()["access_token"]
 
     async with db_session.async_session_maker() as session:
         user = (await session.execute(select(User).where(User.email == "legacy-admin@example.com"))).scalar_one()
         user.role = "admin"
         await session.commit()
 
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "legacy-admin@example.com", "password": "password123"},
+    )
+    token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest_asyncio.fixture
 async def other_auth_headers(client):
     """Registers a second test user and returns an Authorization header for it."""
-    resp = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={"email": "bob@example.com", "password": "password123", "display_name": "Bob"},
+    )
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "bob@example.com", "password": "password123"},
     )
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

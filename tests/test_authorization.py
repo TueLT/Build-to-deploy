@@ -162,6 +162,64 @@ async def test_active_workspace_owner_can_approve_support_access(
 
 
 @pytest.mark.asyncio
+async def test_workspace_owner_can_reject_and_revoke_support_access(
+    client,
+    auth_headers,
+    platform_admin_headers,
+):
+    workspace = (
+        await client.post(
+            "/api/v1/workspaces",
+            json={"name": "Grant lifecycle"},
+            headers=auth_headers,
+        )
+    ).json()
+
+    async def request_grant(scope):
+        response = await client.post(
+            "/api/v1/platform/support-grants",
+            json={
+                "workspace_id": workspace["id"],
+                "requested_scope": scope,
+                "reason": "Resolve a customer-approved support incident",
+                "duration_minutes": 30,
+            },
+            headers=platform_admin_headers,
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    rejected = await request_grant("personal_data:read")
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/support-grants/{rejected['id']}/reject",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "rejected"
+
+    approved = await request_grant("personal_data:manage")
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/support-grants/{approved['id']}/approve",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+    async with db_session.async_session_maker() as db:
+        platform_admin = (await db.execute(select(User).where(User.email == "platform@example.com"))).scalar_one()
+        inherited = await authorization_service.require_support_scope(
+            db, platform_admin, workspace["id"], "personal_data:read"
+        )
+        assert inherited.id == approved["id"]
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/support-grants/{approved['id']}/revoke",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "revoked"
+
+
+@pytest.mark.asyncio
 async def test_platform_admin_cannot_approve_own_support_request(client, platform_admin_headers):
     workspace = (
         await client.post(

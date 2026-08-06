@@ -33,8 +33,8 @@ def _to_public(user: User) -> UserPublic:
     )
 
 
-@router.post("/register", response_model=AuthResponse)
-async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
+@router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
+async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)) -> UserPublic:
     normalized_email = str(request.email).lower()
     existing = (await db.execute(select(User).where(User.email == normalized_email))).scalar_one_or_none()
     if existing is not None:
@@ -57,8 +57,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     await db.commit()
     await db.refresh(user)
 
-    token = create_access_token(user.id)
-    return AuthResponse(access_token=token, user=_to_public(user))
+    return _to_public(user)
 
 
 @router.post("/login", response_model=AuthResponse)

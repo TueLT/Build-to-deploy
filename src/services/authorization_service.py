@@ -13,6 +13,7 @@ from src.db.models import (
     Workspace,
     WorkspaceMembership,
 )
+from src.services.audit_service import record_audit_event
 
 
 def require_platform_admin(user: User) -> User:
@@ -29,7 +30,17 @@ async def require_workspace_role(
     user: User,
     workspace_id: str,
     allowed_roles: set[str] | frozenset[str],
-) -> WorkspaceMembership:
+) -> WorkspaceMembership | None:
+    workspace = await db.get(Workspace, workspace_id)
+    if workspace is None or workspace.status != "active":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    if workspace.type == "personal":
+        if workspace.personal_owner_user_id == user.id and "owner" in allowed_roles:
+            return None
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Workspace access denied",
+        )
     membership = (
         await db.execute(
             select(WorkspaceMembership).where(
@@ -52,7 +63,7 @@ async def require_workspace_member(
     db: AsyncSession,
     user: User,
     workspace_id: str,
-) -> WorkspaceMembership:
+) -> WorkspaceMembership | None:
     return await require_workspace_role(db, user, workspace_id, {"owner", "admin", "member", "guest"})
 
 
@@ -178,13 +189,22 @@ async def request_support_access(
         platform_admin_id=platform_admin.id,
         workspace_id=workspace_id,
         requested_scope=requested_scope,
-        scope_json=scope_json or {"scope": requested_scope},
+        scope_json=scope_json or {"scope": requested_scope, "duration_minutes": duration_minutes},
         reason=reason,
         status="requested",
         expires_at=datetime.now(UTC) + timedelta(minutes=duration_minutes),
     )
     db.add(grant)
     await db.flush()
+    await record_audit_event(
+        db,
+        actor=platform_admin,
+        action="platform.support_access_requested",
+        target_type="support_access_grant",
+        target_id=grant.id,
+        workspace_id=workspace_id,
+        metadata={"scope": requested_scope, "duration_minutes": duration_minutes},
+    )
     return grant
 
 
@@ -205,10 +225,83 @@ async def approve_support_access(
         )
     if grant.status != "requested":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Support access grant is not pending")
+    now = datetime.now(UTC)
+    request_expires_at = grant.expires_at
+    if request_expires_at.tzinfo is None:
+        request_expires_at = request_expires_at.replace(tzinfo=UTC)
+    if request_expires_at <= now:
+        grant.status = "expired"
+        await db.flush()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Support access request has expired")
+    duration_minutes = int(grant.scope_json.get("duration_minutes", 30))
     grant.status = "approved"
     grant.approved_by_owner_id = owner.id
-    grant.approved_at = datetime.now(UTC)
+    grant.approved_at = now
+    grant.expires_at = now + timedelta(minutes=max(5, min(duration_minutes, 60)))
     await db.flush()
+    await record_audit_event(
+        db,
+        actor=owner,
+        action="workspace.support_access_approved",
+        target_type="support_access_grant",
+        target_id=grant.id,
+        workspace_id=workspace_id,
+        metadata={"scope": grant.requested_scope},
+    )
+    return grant
+
+
+async def reject_support_access(
+    db: AsyncSession,
+    owner: User,
+    workspace_id: str,
+    grant_id: str,
+) -> SupportAccessGrant:
+    await require_workspace_role(db, owner, workspace_id, {"owner"})
+    grant = await db.get(SupportAccessGrant, grant_id)
+    if grant is None or grant.workspace_id != workspace_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support access grant not found")
+    if grant.status != "requested":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Support access grant is not pending")
+    grant.status = "rejected"
+    grant.approved_by_owner_id = owner.id
+    await db.flush()
+    await record_audit_event(
+        db,
+        actor=owner,
+        action="workspace.support_access_rejected",
+        target_type="support_access_grant",
+        target_id=grant.id,
+        workspace_id=workspace_id,
+        metadata={"scope": grant.requested_scope},
+    )
+    return grant
+
+
+async def revoke_support_access(
+    db: AsyncSession,
+    owner: User,
+    workspace_id: str,
+    grant_id: str,
+) -> SupportAccessGrant:
+    await require_workspace_role(db, owner, workspace_id, {"owner"})
+    grant = await db.get(SupportAccessGrant, grant_id)
+    if grant is None or grant.workspace_id != workspace_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support access grant not found")
+    if grant.status != "approved" or grant.revoked_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Support access grant is not active")
+    grant.status = "revoked"
+    grant.revoked_at = datetime.now(UTC)
+    await db.flush()
+    await record_audit_event(
+        db,
+        actor=owner,
+        action="workspace.support_access_revoked",
+        target_type="support_access_grant",
+        target_id=grant.id,
+        workspace_id=workspace_id,
+        metadata={"scope": grant.requested_scope},
+    )
     return grant
 
 
@@ -219,6 +312,9 @@ async def require_support_scope(
     scope: str,
 ) -> SupportAccessGrant:
     require_platform_admin(platform_admin)
+    accepted_scopes = [scope]
+    if scope == "personal_data:read":
+        accepted_scopes.append("personal_data:manage")
     grant = (
         (
             await db.execute(
@@ -226,7 +322,7 @@ async def require_support_scope(
                 .where(
                     SupportAccessGrant.platform_admin_id == platform_admin.id,
                     SupportAccessGrant.workspace_id == workspace_id,
-                    SupportAccessGrant.requested_scope == scope,
+                    SupportAccessGrant.requested_scope.in_(accepted_scopes),
                     SupportAccessGrant.status == "approved",
                     SupportAccessGrant.approved_at.is_not(None),
                     SupportAccessGrant.expires_at > datetime.now(UTC),

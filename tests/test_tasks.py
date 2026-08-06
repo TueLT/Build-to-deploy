@@ -10,7 +10,8 @@ async def test_create_and_list_task(client, auth_headers):
     body = resp.json()
     assert body["title"] == "Send report"
     assert body["priority"] == "High"
-    assert body["status"] == "suggested"
+    assert body["status"] == "pending"
+    assert body["source"] == "manual"
     assert body["source"] == "manual"
 
     resp = await client.get("/api/v1/tasks", headers=auth_headers)

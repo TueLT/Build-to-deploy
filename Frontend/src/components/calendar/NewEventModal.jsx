@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useWorkspace } from '../../context/WorkspaceContext'
 import { createCalendarEvent } from '../../api/calendar'
 
 export default function NewEventModal({ open, onClose, onCreated }) {
   const { token } = useAuth()
+  const { workspaceId } = useWorkspace()
   const [summary, setSummary] = useState('')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
@@ -15,13 +17,15 @@ export default function NewEventModal({ open, onClose, onCreated }) {
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!summary.trim() || !start || !end) return
+    if (!workspaceId || !summary.trim() || !start || !end) return
+    if (new Date(end) <= new Date(start)) { setError('End time must be later than start time.'); return }
     setSubmitting(true); setError('')
     try {
       const event = await createCalendarEvent(token, {
+        workspace_id: workspaceId,
         summary: summary.trim(),
-        start_iso: `${start}:00`,
-        end_iso: `${end}:00`,
+        start_iso: new Date(start).toISOString(),
+        end_iso: new Date(end).toISOString(),
         description: description.trim() || undefined,
       })
       onCreated(event)

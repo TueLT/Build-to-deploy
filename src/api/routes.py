@@ -8,10 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents import graph as agent_graph
 from src.auth.dependencies import get_current_user
-from src.db.models import Message, User
+from src.db.models import Conversation, Message, User
 from src.db.session import get_db
 from src.models.schemas import ChatMessage, ChatRequest, ChatResponse, InterruptPayload, ResumeRequest
 from src.services.authorization_service import require_conversation_access
+from src.services.workspace_service import resolve_workspace_for_user
 
 router = APIRouter()
 
@@ -78,18 +79,32 @@ async def chat(
     """Chat với AI agent."""
     if request.conversation_id is not None:
         await require_conversation_access(db, current_user, request.conversation_id, "viewer")
+        conversation = await db.get(Conversation, request.conversation_id)
+        if conversation is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+        if request.workspace_id is not None and request.workspace_id != conversation.workspace_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="conversation_id does not belong to workspace_id",
+            )
+        workspace_id = conversation.workspace_id
+    else:
+        workspace = await resolve_workspace_for_user(db, current_user.id, request.workspace_id)
+        workspace_id = workspace.id
     thread_id = request.thread_id or str(uuid4())
     _check_thread_owner(thread_id, current_user)
     _thread_owners.setdefault(thread_id, current_user.id)
     config = {"configurable": {"thread_id": f"{current_user.id}:{thread_id}"}}
     if request.conversation_id is not None:
-        context_text = await _conversation_context(db, request.conversation_id)
+        context_text = await _conversation_context(db, request.conversation_id, request.context_limit)
     else:
-        context_text = _format_messages(request.messages) if request.messages else ""
+        scoped_messages = request.messages[-request.context_limit :] if request.messages else []
+        context_text = _format_messages(scoped_messages)
     inputs = {
         "messages": [HumanMessage(content=request.message)],
         "context": context_text,
         "user_id": current_user.id,
+        "workspace_id": workspace_id,
     }
     try:
         result = await agent_graph.agent.ainvoke(inputs, config)

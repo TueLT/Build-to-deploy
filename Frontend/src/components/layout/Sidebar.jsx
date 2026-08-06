@@ -10,7 +10,7 @@ const nav = [
 const getInitials = (name) => (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 
 const adminNav = [
-  ['admin', 'bi-speedometer2', 'Dashboard'], ['admin/users', 'bi-people', 'Users'], ['admin/conversations', 'bi-chat-square-text', 'Conversations'],
+  ['admin', 'bi-speedometer2', 'Dashboard'], ['admin/users', 'bi-people', 'Users'],
   ['admin/user-data', 'bi-database', 'User data'],
 ]
 

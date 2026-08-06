@@ -180,6 +180,26 @@ async def list_workspace_members(
     return list(rows.all())
 
 
+async def list_workspace_user_ids(db: AsyncSession, workspace_id: str) -> list[str]:
+    workspace = await db.get(Workspace, workspace_id)
+    if workspace is None or workspace.status != "active":
+        return []
+    if workspace.type == "personal":
+        return [workspace.personal_owner_user_id] if workspace.personal_owner_user_id else []
+    return list(
+        (
+            await db.execute(
+                select(WorkspaceMembership.user_id).where(
+                    WorkspaceMembership.workspace_id == workspace_id,
+                    WorkspaceMembership.status == "active",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 async def list_user_workspaces(db: AsyncSession, user_id: str) -> list[Workspace]:
     result = await db.execute(
         select(Workspace)

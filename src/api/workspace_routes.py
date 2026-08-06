@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user
-from src.db.models import User, WorkspaceMembership
+from src.db.models import SupportAccessGrant, User, WorkspaceMembership
 from src.db.session import get_db
 from src.models.platform_schemas import SupportAccessGrantOut
 from src.models.workspace_schemas import (
@@ -13,7 +13,12 @@ from src.models.workspace_schemas import (
     WorkspaceOut,
 )
 from src.services.audit_service import record_audit_event
-from src.services.authorization_service import approve_support_access, require_workspace_role
+from src.services.authorization_service import (
+    approve_support_access,
+    reject_support_access,
+    require_workspace_role,
+    revoke_support_access,
+)
 from src.services.workspace_service import (
     add_workspace_member_by_email,
     create_organization_workspace,
@@ -139,3 +144,52 @@ async def approve_support_grant(
     await db.commit()
     await db.refresh(grant)
     return SupportAccessGrantOut.model_validate(grant)
+
+
+@router.post(
+    "/{workspace_id}/support-grants/{grant_id}/reject",
+    response_model=SupportAccessGrantOut,
+)
+async def reject_support_grant(
+    workspace_id: str,
+    grant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SupportAccessGrantOut:
+    grant = await reject_support_access(db, current_user, workspace_id, grant_id)
+    await db.commit()
+    await db.refresh(grant)
+    return SupportAccessGrantOut.model_validate(grant)
+
+
+@router.post(
+    "/{workspace_id}/support-grants/{grant_id}/revoke",
+    response_model=SupportAccessGrantOut,
+)
+async def revoke_support_grant(
+    workspace_id: str,
+    grant_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> SupportAccessGrantOut:
+    grant = await revoke_support_access(db, current_user, workspace_id, grant_id)
+    await db.commit()
+    await db.refresh(grant)
+    return SupportAccessGrantOut.model_validate(grant)
+
+
+@router.get("/{workspace_id}/support-grants", response_model=list[SupportAccessGrantOut])
+async def list_workspace_support_grants(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[SupportAccessGrantOut]:
+    await require_workspace_role(db, current_user, workspace_id, {"owner"})
+    grants = (
+        await db.execute(
+            select(SupportAccessGrant)
+            .where(SupportAccessGrant.workspace_id == workspace_id)
+            .order_by(SupportAccessGrant.created_at.desc())
+        )
+    ).scalars().all()
+    return [SupportAccessGrantOut.model_validate(grant) for grant in grants]

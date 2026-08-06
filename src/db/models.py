@@ -1,7 +1,18 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -171,6 +182,47 @@ class ContactRelationship(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class PeoplePreference(Base):
+    """Sparse, private user preferences for people in an organization workspace.
+
+    Interaction metrics are derived from workspace chat/task metadata. Only explicit personal
+    choices belong here so users never need to configure every coworker manually.
+    """
+
+    __tablename__ = "people_preferences"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "owner_user_id",
+            "subject_user_id",
+            name="uq_people_preference_workspace_owner_subject",
+        ),
+        CheckConstraint("owner_user_id <> subject_user_id", name="ck_people_preference_not_self"),
+        Index(
+            "ix_people_preferences_workspace_owner_pinned",
+            "workspace_id",
+            "owner_user_id",
+            "is_pinned",
+        ),
+        Index(
+            "ix_people_preferences_workspace_owner_follow_up",
+            "workspace_id",
+            "owner_user_id",
+            "follow_up_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    owner_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    subject_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    private_note: Mapped[str | None] = mapped_column(Text, default=None)
+    follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class MigrationState(Base):
     __tablename__ = "migration_states"
 
@@ -301,17 +353,29 @@ class Message(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint("priority IN ('High', 'Medium', 'Low')", name="ck_task_priority"),
+        CheckConstraint(
+            "status IN ('suggested', 'pending', 'in_progress', 'completed', 'dismissed')",
+            name="ck_task_status",
+        ),
+        CheckConstraint("source IN ('manual', 'ai_extracted', 'proactive')", name="ck_task_source"),
+        Index("ix_tasks_workspace_owner_status", "workspace_id", "owner_id", "status"),
+        Index("ix_tasks_workspace_due_at", "workspace_id", "due_at"),
+    )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
-    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), default=None)
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), default=None, index=True)
     title: Mapped[str]
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     priority: Mapped[str] = mapped_column(default="Medium")  # "High" | "Medium" | "Low"
     status: Mapped[str] = mapped_column(default="suggested")
     # "suggested" | "pending" | "in_progress" | "completed" | "dismissed"
-    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "proactive"
+    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "ai_extracted" | "proactive"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     owner: Mapped["User"] = relationship()
     conversation: Mapped["Conversation | None"] = relationship()
@@ -321,6 +385,8 @@ class UsageLog(Base):
     __tablename__ = "usage_logs"
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"), default=None, index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     provider: Mapped[str]
     model: Mapped[str]
     prompt_tokens: Mapped[int] = mapped_column(default=0)
@@ -331,34 +397,42 @@ class UsageLog(Base):
 
 class Memory(Base):
     __tablename__ = "memories"
+    __table_args__ = (Index("ix_memories_workspace_owner_created", "workspace_id", "owner_id", "created_at"),)
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     category: Mapped[str] = mapped_column(default="Preference")  # "Work" | "Preference" | "People" | ...
     title: Mapped[str]
     detail: Mapped[str] = mapped_column(default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
     owner: Mapped["User"] = relationship()
 
 
 class CalendarSyncState(Base):
-    """Single-row table (id is always "default") holding the Google Calendar incremental sync
-    cursor, so calendar_service.poll_calendar_changes can resume where it left off across polls
-    and server restarts instead of re-scanning the whole calendar every time."""
+    """Per-workspace Google Calendar incremental sync cursor."""
 
     __tablename__ = "calendar_sync_state"
 
-    id: Mapped[str] = mapped_column(primary_key=True, default=lambda: "default")
+    workspace_id: Mapped[str] = mapped_column("id", ForeignKey("workspaces.id"), primary_key=True)
     sync_token: Mapped[str | None] = mapped_column(default=None)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
 class Reminder(Base):
     __tablename__ = "reminders"
+    __table_args__ = (
+        CheckConstraint("status IN ('scheduled', 'fired', 'cancelled')", name="ck_reminder_status"),
+        CheckConstraint("source IN ('manual', 'agent')", name="ck_reminder_source"),
+        Index("ix_reminders_workspace_owner_status", "workspace_id", "owner_id", "status"),
+        Index("ix_reminders_workspace_fire_at", "workspace_id", "fire_at"),
+    )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
-    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     title: Mapped[str]
     message: Mapped[str] = mapped_column(default="")
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -366,5 +440,6 @@ class Reminder(Base):
     status: Mapped[str] = mapped_column(default="scheduled")  # "scheduled" | "fired" | "cancelled"
     source: Mapped[str] = mapped_column(default="manual")  # "manual" | "agent"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
-    owner: Mapped["User | None"] = relationship()
+    owner: Mapped["User"] = relationship()

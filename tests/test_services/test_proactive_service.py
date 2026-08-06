@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from src.db import session as db_session
-from src.db.models import Task
+from src.db.models import Conversation, Task
 from src.services import proactive_service
 
 
@@ -33,7 +33,21 @@ async def test_maybe_suggest_task_skips_llm_when_no_signal(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_maybe_suggest_task_creates_suggested_task(client, auth_headers, monkeypatch):
+async def test_maybe_suggest_task_creates_suggested_task(
+    client, auth_headers, personal_workspace, monkeypatch
+):
+    user = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
+    async with db_session.async_session_maker() as db:
+        conversation = Conversation(
+            workspace_id=personal_workspace["id"],
+            type="group",
+            name="Commitment test",
+            created_by=user["id"],
+        )
+        db.add(conversation)
+        await db.commit()
+        await db.refresh(conversation)
+
     fake_llm = AsyncMock()
     fake_llm.ainvoke.return_value = AsyncMock(
         content='{"has_commitment": true, "title": "Gửi báo cáo", "due_at": "2026-08-10T09:00:00"}'
@@ -41,15 +55,18 @@ async def test_maybe_suggest_task_creates_suggested_task(client, auth_headers, m
     monkeypatch.setattr(proactive_service, "get_llm", lambda: fake_llm)
 
     await proactive_service.maybe_suggest_task(
-        conversation_id="c1", sender_id="u1", content="đừng quên deadline gửi báo cáo thứ hai nhé"
+        conversation_id=conversation.id,
+        sender_id=user["id"],
+        content="đừng quên deadline gửi báo cáo thứ hai nhé",
     )
 
     async with db_session.async_session_maker() as db:
-        tasks = (await db.execute(select(Task).where(Task.owner_id == "u1"))).scalars().all()
+        tasks = (await db.execute(select(Task).where(Task.owner_id == user["id"]))).scalars().all()
     assert len(tasks) == 1
     assert tasks[0].title == "Gửi báo cáo"
     assert tasks[0].source == "proactive"
     assert tasks[0].status == "suggested"
+    assert tasks[0].workspace_id == personal_workspace["id"]
 
 
 @pytest.mark.asyncio

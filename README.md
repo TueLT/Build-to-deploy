@@ -10,7 +10,7 @@ Nhánh hiện tại tập trung vào chat realtime, authentication/admin, LangGr
 - [Workspace Authorization Design](docs/superpowers/specs/2026-08-03-workspace-authorization-foundation-design.md)
 - [Workspace Authorization Implementation Plan](docs/superpowers/plans/2026-08-03-workspace-authorization-foundation.md)
 
-Design workspace đã được duyệt nhưng chưa được mô tả là “đã triển khai” cho tới khi các task code, migration, REST/WebSocket authorization và frontend tương ứng đều vượt qua verification.
+Nền tảng workspace đã được triển khai xuyên suốt database, REST/WebSocket authorization, AI state và frontend. Mọi dữ liệu Task, Memory, Reminder, Calendar và usage đều được ràng buộc theo workspace; migration Alembic hiện tại là `20260805_04`.
 
 ## Hiện có gì
 
@@ -21,13 +21,13 @@ Design workspace đã được duyệt nhưng chưa được mô tả là “đ�
 - **Nhắn tin 1-1 và theo nhóm, real-time**: tạo cuộc trò chuyện 1-1 hoặc nhóm (chọn nhiều người), gửi/nhận tin nhắn tức thời qua WebSocket, xem lại lịch sử tin nhắn, đếm tin nhắn chưa đọc.
 - **AI Agent (chat với AI)**: endpoint `/api/v1/chat` (yêu cầu đăng nhập) dùng LangGraph, có tool gọi Google Calendar và tạo nhắc nhở với bước xác nhận (human-in-the-loop) trước khi thực hiện. Hỗ trợ 2 provider LLM (Google Gemini hoặc Groq, đổi qua `LLM_PROVIDER` trong `.env`) để dễ chuyển khi một bên hết quota.
 - **AI Assistant cá nhân** (`/assistant`): khung chat riêng nối thẳng vào agent thật ở trên (không phải dữ liệu mẫu) — hỏi tự do, khi agent muốn tạo lịch/nhắc việc sẽ hiện nút Xác nhận/Huỷ ngay trong chat.
-- **Phân quyền Admin**: tài khoản có 2 role (`user`/`admin`). Trang `/admin` (Dashboard, Users, Conversations) chỉ hiển thị và truy cập được với tài khoản `admin` — xem thống kê hệ thống, đổi role/khoá-mở khoá tài khoản, xem/xoá hội thoại để kiểm duyệt, và theo dõi lượng token AI đã dùng trong ngày (cảnh báo khi gần chạm ngân sách `DAILY_TOKEN_BUDGET`).
+- **Phân quyền Admin tách biệt**: quyền nền tảng dùng `platform_role`, quyền workspace dùng membership (`owner/admin/member/guest`). Platform admin quản lý tài khoản và thống kê nhưng không mặc nhiên đọc dữ liệu riêng tư. Muốn hỗ trợ Task/Memory/Reminder của một workspace, admin phải gửi yêu cầu có lý do và thời hạn; chủ workspace có thể approve/reject/revoke, mọi thao tác nhạy cảm được ghi audit log.
 - **Tóm tắt hội thoại theo yêu cầu**: trong trang Chat, bấm icon AI trên header → **Summarize** — AI đọc tin nhắn thật (theo scope 20/50 tin gần nhất đang chọn) và trả về bản tóm tắt.
 - **Trích xuất Task từ hội thoại**: cùng panel AI → **Extract tasks** — AI tìm việc cần làm/lịch hẹn trong hội thoại, lưu vào trang `/tasks` mục "AI suggestions"; người dùng bấm **Accept**/**Dismiss** để xác nhận. Panel AI còn có **Find schedule**, **Deadlines**, **Suggest reminder** (hiện nút Xác nhận/Huỷ ngay trong panel vì tạo reminder cần human-in-the-loop), cùng ô **Ask Orbit** để hỏi tự do về hội thoại đang xem.
-- **Lịch cá nhân (Google Calendar thật, đồng bộ 2 chiều, realtime)**: trang `/calendar` gọi thẳng Google Calendar API (cần tự cấu hình OAuth — xem `scripts/google_oauth_setup.py`) để xem, tạo, sửa và xoá sự kiện thật. Agent cũng dùng chung API này (`list/create/update/delete_calendar_event` tool) nên có thể quản lý lịch qua chat, không chỉ qua UI. Mọi thay đổi (từ UI, từ chat, hoặc tạo/sửa/xoá trực tiếp trong chính Google Calendar) đều đẩy qua WebSocket tới mọi người đang mở `/calendar` — không cần refresh. Thay đổi từ phía Google được bắt bằng cách polling định kỳ (`CALENDAR_POLL_INTERVAL_SECONDS`, mặc định 20s) chứ chưa dùng webhook thật của Google (cần domain public HTTPS mà project chưa deploy).
+- **Google Calendar theo workspace, đồng bộ 2 chiều, realtime**: cấu hình `GOOGLE_CALENDAR_WORKSPACE_ID` ánh xạ một Google Calendar với đúng một workspace. API và AI tool đều kiểm tra membership trước khi truy cập; sự kiện WebSocket chỉ gửi cho thành viên workspace đó. Thay đổi từ Google được bắt bằng incremental sync token và polling (`CALENDAR_POLL_INTERVAL_SECONDS`).
 - **Nhắc nhở bền vững + realtime**: trang `/reminders` tạo nhắc nhở thật, lưu DB, sống sót qua restart server (APScheduler + `SQLAlchemyJobStore`); khi đến giờ, đẩy thông báo realtime qua WebSocket dù đang ở trang nào.
 - **Hồ sơ cá nhân** (`/profile`): sửa tên/chức danh/timezone/tuỳ chọn thông báo và đổi mật khẩu — lưu thật vào database, không còn là dữ liệu mẫu.
-- **Memory cá nhân** (`/memory`): thêm/sửa/xoá "điều Orbit nên nhớ về bạn" (sở thích, thói quen, thông tin người liên quan...), lọc theo danh mục và tìm kiếm — lưu thật vào database.
+- **Memory có phạm vi rõ ràng** (`/memory`): thêm/sửa/xoá "điều Orbit nên nhớ về bạn" theo từng workspace. Agent chỉ tìm kiếm memory và task thuộc đúng user/workspace của lượt chat hiện tại.
 - **Agent chủ động (proactive), realtime**: mỗi tin nhắn mới trong Chat được rà tự động (pre-filter rẻ + LLM xác nhận) — nếu chứa cam kết/lịch hẹn/hạn chót, Orbit tự tạo gợi ý và đẩy thẳng vào `/tasks` mục "AI suggestions" qua WebSocket (không cần refresh) kèm toast, không cần người dùng chủ động yêu cầu. Toàn bộ thao tác Task (accept/dismiss/complete/xoá) cũng đồng bộ realtime giữa các tab/thiết bị.
 - **Múi giờ thống nhất Asia/Ho_Chi_Minh (Hà Nội)**: mọi nơi hiển thị ngày giờ (Chat, Task, Calendar, Reminder, Memory, Admin) đều quy về giờ Hà Nội bất kể múi giờ máy người xem, qua `Frontend/src/utils/datetime.js`. Backend cũng cố định giờ Hà Nội cho scheduler (reminder fire đúng giờ dù server chạy múi giờ khác) và mốc "hôm nay" của thống kê token.
 
@@ -155,7 +155,17 @@ python scripts/migrate_workspace_foundation.py --dry-run --bootstrap-owner-user-
 python scripts/migrate_workspace_foundation.py --bootstrap-owner-user-id <USER_ID>
 ```
 
-Migration thật chỉ được chạy sau khi dry-run trả `"can_run": true` và đã sao lưu database. Revision `20260803_01` backfill Personal Workspace, Organization Workspace mặc định, membership và workspace scope cho conversation cũ.
+Migration thật chỉ được chạy sau khi dry-run trả `"can_run": true` và đã sao lưu database. Chuỗi migration đến revision `20260805_04` backfill workspace scope cho conversation, Task, Memory, Reminder, Calendar sync state và usage log cũ, đồng thời bổ sung index/constraint cần thiết.
+
+### Checklist chạy production
+
+Production không tự gọi `create_all`; schema phải được nâng cấp có kiểm soát trước khi khởi động app:
+
+```bash
+alembic upgrade head
+```
+
+Đặt `APP_ENV=production`, dùng PostgreSQL, tạo `SECRET_KEY` ngẫu nhiên tối thiểu 32 byte, khai báo chính xác `CORS_ORIGINS` và API key tương ứng `LLM_PROVIDER`. Ứng dụng sẽ từ chối khởi động nếu còn SQLite, secret mẫu, CORS wildcard hoặc thiếu LLM credential trong production. Luôn sao lưu database và chạy migration trên staging trước.
 
 ### Lint và build kiểm tra
 

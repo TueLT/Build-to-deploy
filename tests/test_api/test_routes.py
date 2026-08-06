@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
@@ -55,9 +55,13 @@ async def test_chat_rejects_conversation_id_caller_is_not_a_participant_of(
     client, auth_headers, other_auth_headers
 ):
     # A third user's conversation with other_auth_headers' user - auth_headers' user is in neither.
-    third = await client.post(
+    await client.post(
         "/api/v1/auth/register",
         json={"email": "carol@example.com", "password": "password123", "display_name": "Carol"},
+    )
+    third = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "carol@example.com", "password": "password123"},
     )
     third_headers = {"Authorization": f"Bearer {third.json()['access_token']}"}
     other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
@@ -121,7 +125,7 @@ async def test_chat_surfaces_llm_error_instead_of_empty_response(client, auth_he
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "error"
-    assert data["response"] == "Rate limit reached"
+    assert data["response"] == "Dịch vụ AI tạm thời không khả dụng. Vui lòng thử lại sau."
 
 
 @pytest.mark.asyncio
@@ -158,6 +162,8 @@ async def test_chat_interrupts_and_resume_completes(client, auth_headers, monkey
     fake_service = MagicMock()
     fake_service.events.return_value.insert.return_value.execute.return_value = {"id": "evt-1"}
     monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
+    monkeypatch.setattr(calendar_service, "authorize_calendar_access", AsyncMock())
+    monkeypatch.setattr(calendar_service, "broadcast_change", AsyncMock())
 
     def _final_message(state):
         last = state["messages"][-1]

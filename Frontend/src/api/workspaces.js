@@ -14,3 +14,15 @@ export const addWorkspaceMember = (token, workspaceId, email, role = 'member') =
     token,
     body: { email, role },
   })
+
+export const listWorkspaceSupportGrants = (token, workspaceId) =>
+  apiFetch(`/workspaces/${workspaceId}/support-grants`, { token })
+
+export const approveWorkspaceSupportGrant = (token, workspaceId, grantId) =>
+  apiFetch(`/workspaces/${workspaceId}/support-grants/${grantId}/approve`, { method: 'POST', token })
+
+export const rejectWorkspaceSupportGrant = (token, workspaceId, grantId) =>
+  apiFetch(`/workspaces/${workspaceId}/support-grants/${grantId}/reject`, { method: 'POST', token })
+
+export const revokeWorkspaceSupportGrant = (token, workspaceId, grantId) =>
+  apiFetch(`/workspaces/${workspaceId}/support-grants/${grantId}/revoke`, { method: 'POST', token })

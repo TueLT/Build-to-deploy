@@ -27,8 +27,8 @@ async def _register(client, email: str) -> dict:
         "/api/v1/auth/register",
         json={"email": email, "password": "password123", "display_name": email.split("@")[0]},
     )
-    assert response.status_code == 200
-    return response.json()["user"]
+    assert response.status_code == 201
+    return response.json()
 
 
 @pytest.mark.asyncio
@@ -191,7 +191,15 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
         "conversation_participants",
         "messages",
     }.issubset(tables)
-    assert revision == "20260804_03"
+    assert {
+        "tasks",
+        "usage_logs",
+        "memories",
+        "calendar_sync_state",
+        "reminders",
+    }.issubset(tables)
+    assert "people_preferences" in tables
+    assert revision == "20260806_05"
 
 
 @pytest.mark.asyncio

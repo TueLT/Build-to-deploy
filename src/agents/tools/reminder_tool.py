@@ -1,11 +1,29 @@
+from typing import Annotated
+
 from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 from langgraph.types import interrupt
 
+from src.agents.state import AgentState
 from src.services import reminder_service
 
 
+def _agent_identity(state: AgentState | None) -> tuple[str, str]:
+    user_id = (state or {}).get("user_id")
+    workspace_id = (state or {}).get("workspace_id")
+    if not user_id or not workspace_id:
+        raise ValueError("Authenticated user and workspace context are required")
+    return user_id, workspace_id
+
+
 @tool
-async def create_reminder(title: str, due_at_iso: str, lead_minutes: int = 30, message: str = "") -> str:
+async def create_reminder(
+    title: str,
+    due_at_iso: str,
+    lead_minutes: int = 30,
+    message: str = "",
+    state: Annotated[AgentState, InjectedState] = None,  # type: ignore[assignment]
+) -> str:
     """Draft a reminder that fires lead_minutes before due_at_iso. Requires the user's
     explicit confirmation before it is actually scheduled.
 
@@ -21,8 +39,10 @@ async def create_reminder(title: str, due_at_iso: str, lead_minutes: int = 30, m
         return "Reminder was not scheduled (user declined)."
 
     draft.update(decision.get("edits") or {})
+    user_id, workspace_id = _agent_identity(state)
     reminder = await reminder_service.schedule_reminder(
-        owner_id=None,
+        workspace_id=workspace_id,
+        owner_id=user_id,
         title=draft["title"],
         due_at_iso=draft["due_at"],
         lead_minutes=draft["lead_minutes"],
@@ -33,9 +53,12 @@ async def create_reminder(title: str, due_at_iso: str, lead_minutes: int = 30, m
 
 
 @tool
-async def list_reminders() -> str:
+async def list_reminders(
+    state: Annotated[AgentState, InjectedState] = None,  # type: ignore[assignment]
+) -> str:
     """List currently scheduled reminders. Read-only, no confirmation needed."""
-    reminders = await reminder_service.list_reminders(owner_id=None)
+    user_id, workspace_id = _agent_identity(state)
+    reminders = await reminder_service.list_reminders(owner_id=user_id, workspace_id=workspace_id)
     if not reminders:
         return "No reminders scheduled."
     return "\n".join(f"- {r.title} ({r.status}, due {r.due_at.isoformat()})" for r in reminders)

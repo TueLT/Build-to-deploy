@@ -21,3 +21,12 @@ export const listExternalContacts = (token, workspaceId) =>
 
 export const createExternalContact = (token, workspaceId, body) =>
   apiFetch(`/workspaces/${workspaceId}/external-contacts`, { method: 'POST', token, body })
+
+export const listPeopleInsights = (token, workspaceId, { query, segment = 'all', limit = 100 } = {}) => {
+  const params = new URLSearchParams({ segment, limit: String(limit) })
+  if (query) params.set('q', query)
+  return apiFetch(`/workspaces/${workspaceId}/people-insights?${params}`, { token })
+}
+
+export const updatePeoplePreference = (token, workspaceId, userId, body) =>
+  apiFetch(`/workspaces/${workspaceId}/people-insights/${userId}`, { method: 'PATCH', token, body })

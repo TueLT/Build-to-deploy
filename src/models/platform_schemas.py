@@ -14,7 +14,7 @@ class PlatformStats(BaseModel):
 
 class SupportAccessGrantRequest(BaseModel):
     workspace_id: str
-    requested_scope: str = Field(min_length=1, max_length=120)
+    requested_scope: Literal["conversation:read", "personal_data:read", "personal_data:manage"]
     reason: str = Field(min_length=10, max_length=1000)
     duration_minutes: int = Field(ge=5, le=60)
 

@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom'
 import PageHeader from '../components/common/PageHeader'
 import NewReminderModal from '../components/reminder/NewReminderModal'
 import { useAuth } from '../context/AuthContext'
+import { useWorkspace } from '../context/WorkspaceContext'
 import { listReminders, cancelReminder } from '../api/reminders'
 import { getColor } from '../utils/avatar'
 import { formatDateTime } from '../utils/datetime'
@@ -12,28 +13,34 @@ const statusClass = { scheduled: 'primary', fired: 'success', cancelled: 'second
 
 export default function ReminderPage() {
   const { token } = useAuth()
+  const { workspaceId } = useWorkspace()
   const { subscribe } = useOutletContext()
   const [reminders, setReminders] = useState([])
   const [loading, setLoading] = useState(true)
   const [newOpen, setNewOpen] = useState(false)
+  const [error, setError] = useState('')
 
   const refresh = () => {
     setLoading(true)
-    listReminders(token).then(setReminders).finally(() => setLoading(false))
+    if (!workspaceId) return
+    setError('')
+    listReminders(token, workspaceId).then(setReminders).catch(err => setError(err.detail || 'Could not load reminders.')).finally(() => setLoading(false))
   }
 
-  useEffect(() => { refresh() }, [token])
+  useEffect(() => { refresh() }, [token, workspaceId])
 
   useEffect(() => subscribe((data) => {
     if (data.type !== 'reminder_fired') return
+    if (data.workspace_id && data.workspace_id !== workspaceId) return
     setReminders(prev => prev.map(r => r.id === data.reminder.id ? { ...r, status: 'fired' } : r))
-  }), [subscribe])
+  }), [subscribe, workspaceId])
 
   const onCreated = (reminder) => setReminders(prev => [...prev, reminder])
-  const onCancel = (reminder) => cancelReminder(token, reminder.id).then(refresh)
+  const onCancel = (reminder) => cancelReminder(token, workspaceId, reminder.id).then(refresh).catch(err => setError(err.detail || 'Could not cancel reminder.'))
 
   return <div className="page-container">
     <PageHeader eyebrow="Stay focused" title="Reminders" description="Gentle nudges for everything that matters." action={<button className="btn btn-primary" onClick={() => setNewOpen(true)}><i className="bi bi-plus-lg me-2"/>New reminder</button>}/>
+    {error && <div className="auth-error mb-3">{error}</div>}
     <div className="reminder-layout"><section className="content-card reminder-list"><div className="card-toolbar"><div><h3>Upcoming reminders</h3><span>{reminders.filter(r => r.status === 'scheduled').length} active reminders</span></div></div>
       {loading ? <p className="text-muted small p-3 mb-0">Loading...</p> : reminders.map(r => (
         <div className={`reminder-row ${r.status !== 'scheduled' ? 'disabled' : ''}`} key={r.id}>

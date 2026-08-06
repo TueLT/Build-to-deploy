@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { useLocation, useOutletContext } from 'react-router-dom'
 import ConversationList from '../components/chat/ConversationList'
 import ConversationHeader from '../components/chat/ConversationHeader'
 import MessageArea from '../components/chat/MessageArea'
@@ -14,16 +14,24 @@ import { useWorkspace } from '../context/WorkspaceContext'
 export default function ChatPage() {
   const { token, user } = useAuth()
   const { workspaceId } = useWorkspace()
+  const location = useLocation()
   const { sendJson, subscribe } = useOutletContext()
   const [mobileChat, setMobileChat] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [newConvoOpen, setNewConvoOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState(null)
+  const [selectedId, setSelectedId] = useState(() => location.state?.conversationId || null)
   const { conversations, setConversations } = useConversations(token, workspaceId)
   const { messages, setMessages } = useMessages(token, selectedId)
 
   const stateRef = useRef({ selectedId, userId: user?.id })
   stateRef.current = { selectedId, userId: user?.id }
+
+  useEffect(() => {
+    if (location.state?.conversationId) {
+      setSelectedId(location.state.conversationId)
+      setMobileChat(true)
+    }
+  }, [location.state?.conversationId])
 
   useEffect(() => subscribe((data) => {
     if (data.type !== 'new_message') return
@@ -69,7 +77,7 @@ export default function ChatPage() {
           <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Select a conversation or start a new one</p></div>
         )}
       </section>
-      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} messages={messages} conversationId={selectedId} />
+      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} messages={messages} conversationId={selectedId} workspaceId={workspaceId} />
       <NewConversationModal open={newConvoOpen} onClose={() => setNewConvoOpen(false)} onCreated={onCreated} />
     </div>
   )

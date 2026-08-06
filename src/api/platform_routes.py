@@ -1,16 +1,29 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import require_platform_admin
-from src.db.models import Conversation, Message, User, Workspace
+from src.db.models import Conversation, Message, SupportAccessGrant, User, Workspace
 from src.db.session import get_db
 from src.models.platform_schemas import PlatformStats, SupportAccessGrantOut, SupportAccessGrantRequest
 from src.services.authorization_service import request_support_access
 
 router = APIRouter(dependencies=[Depends(require_platform_admin)])
+
+
+@router.get("/support-grants", response_model=list[SupportAccessGrantOut])
+async def list_support_grants(
+    workspace_id: str | None = Query(default=None),
+    current_user: User = Depends(require_platform_admin),
+    db: AsyncSession = Depends(get_db),
+) -> list[SupportAccessGrantOut]:
+    stmt = select(SupportAccessGrant).where(SupportAccessGrant.platform_admin_id == current_user.id)
+    if workspace_id:
+        stmt = stmt.where(SupportAccessGrant.workspace_id == workspace_id)
+    grants = (await db.execute(stmt.order_by(SupportAccessGrant.created_at.desc()))).scalars().all()
+    return [SupportAccessGrantOut.model_validate(grant) for grant in grants]
 
 
 @router.get("/stats", response_model=PlatformStats)

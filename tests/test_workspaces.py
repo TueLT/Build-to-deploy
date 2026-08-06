@@ -7,19 +7,28 @@ from src.db.models import Workspace, WorkspaceMembership
 from src.services import workspace_service
 
 
-@pytest.mark.asyncio
-async def test_register_creates_exactly_one_personal_workspace(client):
+async def _register_and_login(client, email: str, display_name: str) -> tuple[dict, dict]:
+    password = "password123"
     registered = await client.post(
         "/api/v1/auth/register",
-        json={
-            "email": "workspace-owner@example.com",
-            "password": "password123",
-            "display_name": "Workspace Owner",
-        },
+        json={"email": email, "password": password, "display_name": display_name},
     )
-    assert registered.status_code == 200
-    payload = registered.json()
-    headers = {"Authorization": f"Bearer {payload['access_token']}"}
+    assert registered.status_code == 201
+    logged_in = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert logged_in.status_code == 200
+    return registered.json(), {"Authorization": f"Bearer {logged_in.json()['access_token']}"}
+
+
+@pytest.mark.asyncio
+async def test_register_creates_exactly_one_personal_workspace(client):
+    payload, headers = await _register_and_login(
+        client,
+        "workspace-owner@example.com",
+        "Workspace Owner",
+    )
 
     response = await client.get("/api/v1/workspaces", headers=headers)
 
@@ -27,31 +36,26 @@ async def test_register_creates_exactly_one_personal_workspace(client):
     workspaces = response.json()
     assert len(workspaces) == 1
     assert workspaces[0]["type"] == "personal"
-    assert workspaces[0]["personal_owner_user_id"] == payload["user"]["id"]
+    assert workspaces[0]["personal_owner_user_id"] == payload["id"]
 
 
 @pytest.mark.asyncio
 async def test_organization_workspace_is_listed_for_its_owner(client):
-    registered = await client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "organization-owner@example.com",
-            "password": "password123",
-            "display_name": "Organization Owner",
-        },
+    payload, headers = await _register_and_login(
+        client,
+        "organization-owner@example.com",
+        "Organization Owner",
     )
-    payload = registered.json()
 
     async with db_session.async_session_maker() as db:
         organization = await workspace_service.create_organization_workspace(
             db,
             name="Orbit Engineering",
-            owner_user_id=payload["user"]["id"],
+            owner_user_id=payload["id"],
         )
         await db.commit()
         organization_id = organization.id
 
-    headers = {"Authorization": f"Bearer {payload['access_token']}"}
     response = await client.get("/api/v1/workspaces", headers=headers)
 
     assert response.status_code == 200
@@ -73,7 +77,7 @@ async def test_last_owner_cannot_be_demoted(client):
             "display_name": "Last Owner",
         },
     )
-    owner_id = registered.json()["user"]["id"]
+    owner_id = registered.json()["id"]
 
     async with db_session.async_session_maker() as db:
         organization = await workspace_service.create_organization_workspace(
@@ -101,16 +105,15 @@ async def test_last_owner_cannot_be_demoted(client):
 
 @pytest.mark.asyncio
 async def test_personal_workspace_rejects_membership(client):
-    owner = await client.post(
-        "/api/v1/auth/register",
-        json={"email": "personal-owner@example.com", "password": "password123", "display_name": "Personal Owner"},
+    owner_payload, headers = await _register_and_login(
+        client,
+        "personal-owner@example.com",
+        "Personal Owner",
     )
     other = await client.post(
         "/api/v1/auth/register",
         json={"email": "other-member@example.com", "password": "password123", "display_name": "Other Member"},
     )
-    owner_payload = owner.json()
-    headers = {"Authorization": f"Bearer {owner_payload['access_token']}"}
     personal_workspace = (await client.get("/api/v1/workspaces", headers=headers)).json()[0]
 
     async with db_session.async_session_maker() as db:
@@ -118,9 +121,9 @@ async def test_personal_workspace_rejects_membership(client):
             await workspace_service.add_workspace_member(
                 db,
                 workspace_id=personal_workspace["id"],
-                user_id=other.json()["user"]["id"],
+                user_id=other.json()["id"],
                 role="member",
-                invited_by_user_id=owner_payload["user"]["id"],
+                invited_by_user_id=owner_payload["id"],
             )
 
         assert exc_info.value.status_code == 409
@@ -153,12 +156,11 @@ async def test_organization_workspace_requires_active_owner(client):
 
 @pytest.mark.asyncio
 async def test_user_can_create_organization_workspace(client):
-    registered = await client.post(
-        "/api/v1/auth/register",
-        json={"email": "workspace-creator@example.com", "password": "password123", "display_name": "Creator"},
+    payload, headers = await _register_and_login(
+        client,
+        "workspace-creator@example.com",
+        "Creator",
     )
-    payload = registered.json()
-    headers = {"Authorization": f"Bearer {payload['access_token']}"}
 
     response = await client.post(
         "/api/v1/workspaces",
@@ -175,7 +177,7 @@ async def test_user_can_create_organization_workspace(client):
             await db.execute(
                 select(WorkspaceMembership).where(
                     WorkspaceMembership.workspace_id == organization["id"],
-                    WorkspaceMembership.user_id == payload["user"]["id"],
+                    WorkspaceMembership.user_id == payload["id"],
                 )
             )
         ).scalar_one()
