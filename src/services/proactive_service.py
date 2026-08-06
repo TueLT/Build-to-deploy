@@ -15,11 +15,16 @@ logger = logging.getLogger(__name__)
 
 # Cheap pre-filter so we don't burn an LLM call on every "ok"/"thanks" message - only messages
 # that at least look like they might mention a time/commitment go on to the real (LLM) check.
+# Deliberately erring toward more false positives (harmless - the LLM step below just answers
+# has_commitment: false) rather than false negatives, which silently drop a real commitment with
+# no visible error anywhere - e.g. "5 giờ chiều nay" (digit BEFORE "giờ", "chiều nay" not "...mai")
+# used to slip through entirely before these patterns were added.
 _SIGNAL_PATTERN = re.compile(
     r"tomorrow|tonight|next (mon|tue|wed|thu|fri|sat|sun)|deadline|due (date|by)|meeting|appointment|"
     r"remind|schedule|\d\s?(am|pm)|"
-    r"ngày mai|tối nay|sáng mai|chiều mai|tuần sau|thứ (hai|ba|tư|năm|sáu|bảy)|chủ nhật|hạn chót|"
-    r"cuộc họp|họp lúc|hẹn|nhắc (tôi|mình|nhở)|lịch|lúc \d|giờ \d",
+    r"ngày mai|hôm nay|sáng nay|trưa nay|chiều nay|tối nay|sáng mai|chiều mai|tối mai|tuần sau|"
+    r"thứ (hai|ba|tư|năm|sáu|bảy)|chủ nhật|hạn chót|"
+    r"cuộc họp|họp lúc|hẹn|mời|rủ|nhắc (tôi|mình|nhở)|lịch|lúc \d|giờ \d|\d{1,2}\s?(giờ|h)\d{0,2}\b",
     re.IGNORECASE,
 )
 

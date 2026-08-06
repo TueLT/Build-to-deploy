@@ -163,7 +163,10 @@ graph LR
   suggested/pending/in_progress/completed/dismissed, source manual/proactive), `Reminder` (status
   scheduled/fired/cancelled), `Memory` (ghi chú cá nhân người dùng tự thêm — category/title/detail,
   **khác** với agent checkpoint memory ở trên), `UsageLog` (token mỗi lần gọi LLM),
-  `CalendarSyncState` (1 dòng, lưu `syncToken` cho polling đồng bộ Google Calendar). Ngoài ra
+  `GoogleCalendarCredential` (1 dòng/user — `refresh_token_enc`/`access_token_enc` mã hoá Fernet,
+  `sync_token` cho polling đồng bộ, `google_email` để hiện UI; tồn tại = user đó đã Connect Google
+  Calendar riêng của họ — trước đây là `CalendarSyncState` dùng chung 1 dòng "default" cho cả app
+  hồi Calendar còn là 1 tài khoản chia sẻ, không mã hoá gì cả). Ngoài ra
   APScheduler tự quản bảng `apscheduler_jobs`, và khi dùng Postgres, LangGraph tự quản các bảng
   `checkpoints`/`checkpoint_blobs`/`checkpoint_writes`/`checkpoint_migrations`.
 
@@ -242,6 +245,8 @@ ngoài `ci.yml` (lint + test trên GitHub Actions). Đây là hạng mục lớn
 | Frontend framework | React + Vite | Giữ nguyên so với đề bài gợi ý Next.js — tránh viết lại toàn bộ frontend không tương xứng lợi ích |
 | Realtime | WebSocket thuần (FastAPI) | Dùng chung 1 kênh cho chat, reminder-fired, proactive-suggestion, calendar sync — không mở kênh song song |
 | Scheduler | APScheduler (`SQLAlchemyJobStore`) | Bền vững qua restart, dùng chung cho reminder-fire và calendar-poll thay vì đổi hẳn sang BullMQ/Node |
-| Đồng bộ Google Calendar | Polling định kỳ với `syncToken` (không phải webhook `events.watch`) | Webhook thật của Google cần domain public HTTPS mà project chưa deploy — polling là lựa chọn thực tế, có thể nâng cấp lên webhook sau khi deploy |
+| Đồng bộ Google Calendar | Polling định kỳ với `syncToken`, lặp riêng theo từng user **đang online** đã Connect (không phải webhook `events.watch`) | Webhook thật của Google cần domain public HTTPS mà project chưa deploy — polling là lựa chọn thực tế, có thể nâng cấp lên webhook sau khi deploy. Chỉ poll user đang online (không phải mọi user đã Connect) để không tốn quota Google cho thay đổi lịch của người không mở app — họ tự fetch lại khi mở `/calendar` |
+| Google Calendar OAuth | Per-user, redirect thật (`GET /calendar/oauth/url` → Google → `GET /calendar/oauth/callback` ở backend), OAuth Client "Web application" tách biệt với client đăng nhập, `state` ký JWT mang `user_id` | Yêu cầu đề bài "lịch cá nhân" — user phải thấy đúng lịch của họ, không phải 1 lịch dùng chung cho cả app. Tách 2 OAuth Client vì đăng nhập chỉ verify ID token (không cần secret), Calendar cần authorization-code + refresh_token (bắt buộc có secret) — không phải xin quyền Calendar ngay lúc đăng nhập |
+| Mã hoá refresh token | Fernet (`src/auth/crypto.py`), key `CREDENTIAL_ENCRYPTION_KEY` | Refresh token Calendar là bí mật dài hạn — lộ ra là đọc/ghi được lịch của user vô thời hạn tới khi họ tự revoke, khác `password_hash` (một chiều) hay JWT `secret_key` (không phải thứ đọc trực tiếp ra hành động trên tài khoản Google người khác) |
 
 Tiến độ triển khai theo giai đoạn và các hạng mục còn lại: xem [ROADMAP.md](ROADMAP.md).

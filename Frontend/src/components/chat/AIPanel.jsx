@@ -93,9 +93,13 @@ export default function AIPanel({ open, onClose, messages = [], conversationId =
       const res = await chatWithAgent(token, { message: 'Extract tasks from this conversation.', messages: scopedMessages(), conversation_id: conversationId })
       if (handleAgentResult(res)) return
       const items = parseJsonArray(res.response)
+      // source: 'proactive' (not 'manual') even though a person clicked the button - these titles
+      // came from the LLM reading the conversation, same provenance as the background detector, so
+      // they get the same treatment: Accept in Tasks auto-creates the Calendar event + Reminder
+      // (task_routes.py::_add_to_calendar_and_reminder gates on source == "proactive").
       const settled = await Promise.allSettled(items.map(item => createTask(token, {
         title: item.title, due_at: item.due_at || null, priority: item.priority || 'Medium',
-        conversation_id: conversationId, source: 'manual',
+        conversation_id: conversationId, source: 'proactive',
       })))
       const added = settled.filter(r => r.status === 'fulfilled').length
       setResultTitle('Tasks extracted')

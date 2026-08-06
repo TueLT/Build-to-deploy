@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
@@ -155,7 +155,7 @@ async def test_chat_interrupts_and_resume_completes(client, auth_headers, monkey
 
     fake_service = MagicMock()
     fake_service.events.return_value.insert.return_value.execute.return_value = {"id": "evt-1"}
-    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
+    monkeypatch.setattr(calendar_service, "_service", AsyncMock(return_value=fake_service))
 
     def _final_message(state):
         last = state["messages"][-1]
@@ -236,7 +236,7 @@ async def test_chat_resume_not_blocked_by_budget(client, auth_headers, monkeypat
 
     fake_service = MagicMock()
     fake_service.events.return_value.insert.return_value.execute.return_value = {"id": "evt-1"}
-    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
+    monkeypatch.setattr(calendar_service, "_service", AsyncMock(return_value=fake_service))
 
     def _final_message(state):
         last = state["messages"][-1]
