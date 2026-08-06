@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
-from src.agents.graph import agent
+from src.agents import graph as agent_graph
 from src.config import get_settings
 from src.services import reminder_service
 
@@ -55,7 +55,7 @@ async def test_create_reminder_interrupts_then_schedules(
     monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
 
     config = _config()
-    result = await agent.ainvoke(
+    result = await agent_graph.agent.ainvoke(
         {
             "messages": [HumanMessage(content="remind me")],
             "user_id": user["id"],
@@ -69,7 +69,7 @@ async def test_create_reminder_interrupts_then_schedules(
     assert interrupts[0].value["type"] == "reminder"
     assert not recorded_jobs
 
-    result2 = await agent.ainvoke(Command(resume={"approved": True}), config)
+    result2 = await agent_graph.agent.ainvoke(Command(resume={"approved": True}), config)
     final = result2["messages"][-1]
     assert "scheduled to fire" in final.content
     assert len(recorded_jobs) == 1

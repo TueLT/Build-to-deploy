@@ -199,7 +199,8 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
         "reminders",
     }.issubset(tables)
     assert "people_preferences" in tables
-    assert revision == "20260806_05"
+    assert revision == "20260806_06"
+    assert {"google_identities", "ai_permissions"}.issubset(tables)
 
 
 @pytest.mark.asyncio

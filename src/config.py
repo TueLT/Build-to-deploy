@@ -21,9 +21,10 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
 
     # LLM
-    llm_provider: Literal["google", "groq"] = "google"
+    llm_provider: Literal["google", "groq", "openai"] = "google"
     google_api_key: str = ""
     groq_api_key: str = ""
+    openai_api_key: str = ""
     model_name: str = "gemini-2.5-flash"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     daily_token_budget: int = Field(default=200_000, ge=0)
@@ -40,6 +41,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 1440
     initial_admin_email: str = ""
     bootstrap_owner_user_id: str = ""
+    # "Sign in with Google" - Web application OAuth Client ID (audience for ID-token verification).
+    # Distinct from google_credentials_path/google_token_path below (those are for the Calendar
+    # integration's single shared Desktop-app token, unrelated to per-user login). No client secret
+    # needed - only ID-token verification, never an authorization-code exchange.
+    google_oauth_client_id: str = ""
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
@@ -73,6 +79,8 @@ class Settings(BaseSettings):
             raise ValueError("GOOGLE_API_KEY is required when LLM_PROVIDER=google in production")
         if self.llm_provider == "groq" and not self.groq_api_key:
             raise ValueError("GROQ_API_KEY is required when LLM_PROVIDER=groq in production")
+        if self.llm_provider == "openai" and not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY is required when LLM_PROVIDER=openai in production")
         return self
 
 

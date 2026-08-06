@@ -5,7 +5,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
-from src.agents.graph import agent
+from src.agents import graph as agent_graph
 from src.services import calendar_service
 
 
@@ -63,7 +63,7 @@ async def test_create_calendar_event_interrupts_then_creates(monkeypatch, fake_l
     monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
 
     config = _config()
-    result = await agent.ainvoke(_agent_input("schedule the review"), config)
+    result = await agent_graph.agent.ainvoke(_agent_input("schedule the review"), config)
 
     interrupts = result.get("__interrupt__")
     assert interrupts is not None
@@ -71,7 +71,7 @@ async def test_create_calendar_event_interrupts_then_creates(monkeypatch, fake_l
     assert interrupts[0].value["draft"]["summary"] == "Launch review"
     fake_service.events.return_value.insert.assert_not_called()
 
-    result2 = await agent.ainvoke(Command(resume={"approved": True}), config)
+    result2 = await agent_graph.agent.ainvoke(Command(resume={"approved": True}), config)
     final = result2["messages"][-1]
     assert "Event created" in final.content
     fake_service.events.return_value.insert.assert_called_once()
@@ -90,9 +90,9 @@ async def test_create_calendar_event_declined(monkeypatch, fake_llm_factory):
     monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
 
     config = _config()
-    await agent.ainvoke(_agent_input("schedule the review"), config)
+    await agent_graph.agent.ainvoke(_agent_input("schedule the review"), config)
 
-    result2 = await agent.ainvoke(Command(resume={"approved": False}), config)
+    result2 = await agent_graph.agent.ainvoke(Command(resume={"approved": False}), config)
     final = result2["messages"][-1]
     assert "not created" in final.content
     fake_service.events.return_value.insert.assert_not_called()
@@ -113,14 +113,14 @@ async def test_update_calendar_event_interrupts_then_updates(monkeypatch, fake_l
     monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
 
     config = _config()
-    result = await agent.ainvoke(_agent_input("move the review"), config)
+    result = await agent_graph.agent.ainvoke(_agent_input("move the review"), config)
 
     interrupts = result.get("__interrupt__")
     assert interrupts is not None
     assert interrupts[0].value["type"] == "calendar_event_update"
     fake_service.events.return_value.patch.assert_not_called()
 
-    result2 = await agent.ainvoke(Command(resume={"approved": True}), config)
+    result2 = await agent_graph.agent.ainvoke(Command(resume={"approved": True}), config)
     final = result2["messages"][-1]
     assert "Event updated" in final.content
     fake_service.events.return_value.patch.assert_called_once()
@@ -137,14 +137,14 @@ async def test_delete_calendar_event_interrupts_then_deletes(monkeypatch, fake_l
     monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
 
     config = _config()
-    result = await agent.ainvoke(_agent_input("cancel the review"), config)
+    result = await agent_graph.agent.ainvoke(_agent_input("cancel the review"), config)
 
     interrupts = result.get("__interrupt__")
     assert interrupts is not None
     assert interrupts[0].value["type"] == "calendar_event_delete"
     fake_service.events.return_value.delete.assert_not_called()
 
-    result2 = await agent.ainvoke(Command(resume={"approved": True}), config)
+    result2 = await agent_graph.agent.ainvoke(Command(resume={"approved": True}), config)
     final = result2["messages"][-1]
     assert "deleted" in final.content.lower()
     fake_service.events.return_value.delete.assert_called_once()
@@ -159,9 +159,9 @@ async def test_delete_calendar_event_declined(monkeypatch, fake_llm_factory):
     monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
 
     config = _config()
-    await agent.ainvoke(_agent_input("cancel the review"), config)
+    await agent_graph.agent.ainvoke(_agent_input("cancel the review"), config)
 
-    result2 = await agent.ainvoke(Command(resume={"approved": False}), config)
+    result2 = await agent_graph.agent.ainvoke(Command(resume={"approved": False}), config)
     final = result2["messages"][-1]
     assert "not deleted" in final.content
     fake_service.events.return_value.delete.assert_not_called()

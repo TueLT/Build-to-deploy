@@ -42,6 +42,20 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class GoogleIdentity(Base):
+    """Link a user to a verified Google account used for authentication."""
+
+    __tablename__ = "google_identities"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    google_sub: Mapped[str] = mapped_column(unique=True, index=True)  # Google's stable subject id
+    email: Mapped[str] = mapped_column(default="")  # snapshot at link time, for audit only
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    user: Mapped["User"] = relationship()
+
+
 class Workspace(Base):
     __tablename__ = "workspaces"
     __table_args__ = (
@@ -338,6 +352,20 @@ class ConversationParticipant(Base):
     user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
 
 
+class AIPermission(Base):
+    """Per (conversation, user) consent for the AI agent to read that conversation's messages.
+
+    Keyed per-user rather than per-conversation: each participant grants/revokes independently for
+    themselves, no consensus from other members required."""
+
+    __tablename__ = "ai_permissions"
+
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    granted: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class Message(Base):
     __tablename__ = "messages"
 
@@ -425,7 +453,7 @@ class Reminder(Base):
     __tablename__ = "reminders"
     __table_args__ = (
         CheckConstraint("status IN ('scheduled', 'fired', 'cancelled')", name="ck_reminder_status"),
-        CheckConstraint("source IN ('manual', 'agent')", name="ck_reminder_source"),
+        CheckConstraint("source IN ('manual', 'agent', 'proactive')", name="ck_reminder_source"),
         Index("ix_reminders_workspace_owner_status", "workspace_id", "owner_id", "status"),
         Index("ix_reminders_workspace_fire_at", "workspace_id", "fire_at"),
     )
@@ -438,7 +466,7 @@ class Reminder(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     fire_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(default="scheduled")  # "scheduled" | "fired" | "cancelled"
-    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "agent"
+    source: Mapped[str] = mapped_column(default="manual")  # "manual" | "agent" | "proactive"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 

@@ -13,6 +13,14 @@ def get_llm() -> BaseChatModel:
             api_key=settings.groq_api_key,
             temperature=settings.llm_temperature,
         )
+    if settings.llm_provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=settings.model_name,
+            api_key=settings.openai_api_key,
+            temperature=settings.llm_temperature,
+        )
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     return ChatGoogleGenerativeAI(

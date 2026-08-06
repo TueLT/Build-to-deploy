@@ -24,3 +24,9 @@ export const sendMessage = (token, conversationId, content) =>
 
 export const markRead = (token, conversationId) =>
   apiFetch(`/conversations/${conversationId}/read`, { method: 'POST', token })
+
+export const getAiPermission = (token, conversationId) =>
+  apiFetch(`/conversations/${conversationId}/ai-permission`, { token })
+
+export const setAiPermission = (token, conversationId, granted) =>
+  apiFetch(`/conversations/${conversationId}/ai-permission`, { method: 'PUT', token, body: { granted } })

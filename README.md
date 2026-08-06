@@ -10,20 +10,23 @@ Nhánh hiện tại tập trung vào chat realtime, authentication/admin, LangGr
 - [Workspace Authorization Design](docs/superpowers/specs/2026-08-03-workspace-authorization-foundation-design.md)
 - [Workspace Authorization Implementation Plan](docs/superpowers/plans/2026-08-03-workspace-authorization-foundation.md)
 
-Nền tảng workspace đã được triển khai xuyên suốt database, REST/WebSocket authorization, AI state và frontend. Mọi dữ liệu Task, Memory, Reminder, Calendar và usage đều được ràng buộc theo workspace; migration Alembic hiện tại là `20260805_04`.
+Nền tảng workspace đã được triển khai xuyên suốt database, REST/WebSocket authorization, AI state và frontend. Mọi dữ liệu Task, Memory, Reminder, Calendar và usage đều được ràng buộc theo workspace; migration Alembic hiện tại là `20260806_06`.
 
 ## Hiện có gì
 
 ### Đã hoạt động thật (có backend, có database)
 
-- **Đăng ký / Đăng nhập / Đăng xuất**: tài khoản lưu thật trong database (SQLite hoặc PostgreSQL), mật khẩu hash bằng bcrypt, xác thực bằng JWT. Route bên trong ứng dụng (`/assistant`, `/chat`, `/tasks`, ...) được bảo vệ — chưa đăng nhập sẽ tự chuyển về `/login`.
-- **Agent nhớ hội thoại bền vững qua PostgreSQL**: khi `DATABASE_URL` là Postgres, agent dùng `AsyncPostgresSaver` — hội thoại/interrupt sống sót qua restart backend (SQLite thì mất, dùng `MemorySaver` tạm). Trên Windows, bắt buộc chạy bằng `python scripts/run_dev.py` thay vì `uvicorn` CLI trực tiếp — xem mục "Cách chạy web" bên dưới.
+- **Đăng ký / Đăng nhập / Đăng xuất**: tài khoản lưu thật trong database PostgreSQL, mật khẩu hash bằng bcrypt, xác thực bằng JWT. Route bên trong ứng dụng (`/assistant`, `/chat`, `/tasks`, ...) được bảo vệ — chưa đăng nhập sẽ tự chuyển về `/login`.
+- **Đăng nhập bằng Google**: nút "Sign in with Google" trên `/login` và `/register` (cùng 1 nút xử lý cả đăng nhập lẫn đăng ký lần đầu). Backend xác minh ID token của Google (`src/auth/google_oauth.py`), không cần client secret. Tài khoản Google được lưu trong bảng `google_identities` riêng (không đụng bảng `users`/mật khẩu hiện có); nếu email trùng tài khoản mật khẩu có sẵn thì tự liên kết — nhưng chỉ khi Google xác nhận `email_verified`. Cần tự tạo Google OAuth Client ID (xem mục "Cách chạy web" bước 2) mới bật được nút này.
+- **Agent nhớ hội thoại bền vững qua PostgreSQL**: agent dùng `AsyncPostgresSaver` — hội thoại/interrupt sống sót qua restart backend. Trên Windows, bắt buộc chạy bằng `python scripts/run_dev.py` thay vì `uvicorn` CLI trực tiếp — xem mục "Cách chạy web" bên dưới.
 - **Nhắn tin 1-1 và theo nhóm, real-time**: tạo cuộc trò chuyện 1-1 hoặc nhóm (chọn nhiều người), gửi/nhận tin nhắn tức thời qua WebSocket, xem lại lịch sử tin nhắn, đếm tin nhắn chưa đọc.
-- **AI Agent (chat với AI)**: endpoint `/api/v1/chat` (yêu cầu đăng nhập) dùng LangGraph, có tool gọi Google Calendar và tạo nhắc nhở với bước xác nhận (human-in-the-loop) trước khi thực hiện. Hỗ trợ 2 provider LLM (Google Gemini hoặc Groq, đổi qua `LLM_PROVIDER` trong `.env`) để dễ chuyển khi một bên hết quota.
+- **AI Agent (chat với AI)**: endpoint `/api/v1/chat` (yêu cầu đăng nhập) dùng LangGraph, có tool gọi Google Calendar và tạo nhắc nhở với bước xác nhận (human-in-the-loop) trước khi thực hiện. Hỗ trợ 3 provider LLM (Google Gemini, Groq, hoặc OpenAI — đổi qua `LLM_PROVIDER` trong `.env`) để dễ chuyển khi một bên hết quota.
 - **AI Assistant cá nhân** (`/assistant`): khung chat riêng nối thẳng vào agent thật ở trên (không phải dữ liệu mẫu) — hỏi tự do, khi agent muốn tạo lịch/nhắc việc sẽ hiện nút Xác nhận/Huỷ ngay trong chat.
 - **Phân quyền Admin tách biệt**: quyền nền tảng dùng `platform_role`, quyền workspace dùng membership (`owner/admin/member/guest`). Platform admin quản lý tài khoản và thống kê nhưng không mặc nhiên đọc dữ liệu riêng tư. Muốn hỗ trợ Task/Memory/Reminder của một workspace, admin phải gửi yêu cầu có lý do và thời hạn; chủ workspace có thể approve/reject/revoke, mọi thao tác nhạy cảm được ghi audit log.
+- **Cảnh báo + tự chặn khi vượt hạn mức token/chi phí**: khi lượng dùng vượt ngưỡng cấu hình, platform admin đang online nhận cảnh báo realtime; các lượt gọi LLM mới bị chặn khi hết ngân sách nhưng lượt xác nhận đang chờ vẫn được hoàn tất.
 - **Tóm tắt hội thoại theo yêu cầu**: trong trang Chat, bấm icon AI trên header → **Summarize** — AI đọc tin nhắn thật (theo scope 20/50 tin gần nhất đang chọn) và trả về bản tóm tắt.
 - **Trích xuất Task từ hội thoại**: cùng panel AI → **Extract tasks** — AI tìm việc cần làm/lịch hẹn trong hội thoại, lưu vào trang `/tasks` mục "AI suggestions"; người dùng bấm **Accept**/**Dismiss** để xác nhận. Panel AI còn có **Find schedule**, **Deadlines**, **Suggest reminder** (hiện nút Xác nhận/Huỷ ngay trong panel vì tạo reminder cần human-in-the-loop), cùng ô **Ask Orbit** để hỏi tự do về hội thoại đang xem.
+- **Task Inbox ưu tiên** (`/tasks/inbox`): gom gợi ý AI cần quyết định, task quá hạn, sắp đến hạn và task ưu tiên cao thành các nhóm dễ xử lý.
 - **Google Calendar theo workspace, đồng bộ 2 chiều, realtime**: cấu hình `GOOGLE_CALENDAR_WORKSPACE_ID` ánh xạ một Google Calendar với đúng một workspace. API và AI tool đều kiểm tra membership trước khi truy cập; sự kiện WebSocket chỉ gửi cho thành viên workspace đó. Thay đổi từ Google được bắt bằng incremental sync token và polling (`CALENDAR_POLL_INTERVAL_SECONDS`).
 - **Nhắc nhở bền vững + realtime**: trang `/reminders` tạo nhắc nhở thật, lưu DB, sống sót qua restart server (APScheduler + `SQLAlchemyJobStore`); khi đến giờ, đẩy thông báo realtime qua WebSocket dù đang ở trang nào.
 - **Hồ sơ cá nhân** (`/profile`): sửa tên/chức danh/timezone/tuỳ chọn thông báo và đổi mật khẩu — lưu thật vào database, không còn là dữ liệu mẫu.
@@ -33,7 +36,7 @@ Nền tảng workspace đã được triển khai xuyên suốt database, REST/W
 
 ### Công cụ đánh giá (dev, không phải tính năng người dùng)
 
-- `scripts/eval_extract_tasks.py` — đo Precision/Recall/F1 của việc trích xuất task trên bộ dữ liệu tay (8 case tiếng Việt + Anh, có cả case không có task để đo độ chính xác). Gọi LLM thật nên không nằm trong `pytest tests/` — chạy tay: `python scripts/eval_extract_tasks.py`. Kết quả gần nhất (model `openai/gpt-oss-20b` qua Groq): **Precision/Recall/F1 = 100%** (8/8 case), ổn định qua nhiều lần chạy.
+- `scripts/eval_extract_tasks.py` — đo Precision/Recall/F1 của việc trích xuất **tiêu đề** task, và riêng **độ chính xác ngày giờ** (`due_at` có resolve đúng "ngày mai"/"thứ Sáu này" theo ngày chạy thật không — hai thứ này lệch pha nhau: tiêu đề đúng không có nghĩa ngày đúng) trên bộ dữ liệu tay (8 case tiếng Việt + Anh, có cả case không có task để đo độ chính xác). Gọi LLM thật nên không nằm trong `pytest tests/` — chạy tay: `python scripts/eval_extract_tasks.py`. Kết quả gần nhất (model `gpt-4o-mini` qua OpenAI): **Title F1 = 100%, Date accuracy = 100%** (8/8 case, 7/7 case có ngày).
 
 ### Chưa xong
 
@@ -48,7 +51,7 @@ Nền tảng workspace đã được triển khai xuyên suốt database, REST/W
 │   ├── agents/           # Agent LangGraph (planner, tools, state)
 │   ├── api/               # REST routes: auth, chat (người-với-người), agent chat
 │   ├── auth/              # Hash mật khẩu, tạo/kiểm tra JWT
-│   ├── db/                # SQLAlchemy models + session (SQLite/PostgreSQL)
+│   ├── db/                # SQLAlchemy models + session (PostgreSQL)
 │   ├── models/             # Pydantic schemas
 │   ├── services/           # chat_service, scheduler, llm, usage_service
 │   ├── websocket/          # Kênh real-time cho chat
@@ -72,6 +75,8 @@ Cần chạy **song song 2 server** — backend (cổng 8000) và frontend (cổ
 
 - Python 3.11+
 - Node.js 18+ và npm
+- PostgreSQL đang chạy (local hoặc Docker) — bắt buộc, dự án không còn hỗ trợ SQLite. Tạo sẵn 1
+  database (ví dụ `orbit`), sẽ dùng địa chỉ này cho `DATABASE_URL` ở bước 2.
 - Đã clone repo và `cd` vào thư mục gốc dự án
 
 ### 2. Chạy Backend
@@ -92,11 +97,17 @@ pip install -r requirements.txt
 # Tạo file cấu hình (chỉ cần làm 1 lần)
 cp .env.example .env
 # Mở .env, điền GOOGLE_API_KEY (lấy tại https://aistudio.google.com/apikey) nếu muốn dùng tính năng AI chat (tóm tắt, calendar, nhắc nhở).
-#   Nếu tài khoản Google chưa có quota free-tier (lỗi 429/quota=0 khi gọi), đổi sang Groq: đặt
-#   LLM_PROVIDER=groq, điền GROQ_API_KEY (lấy tại https://console.groq.com/keys), MODEL_NAME=openai/gpt-oss-20b.
-# DATABASE_URL mặc định là sqlite:///./data/app.db, không cần cài Postgres. Đổi sang
-#   postgresql://... nếu muốn agent nhớ hội thoại bền vững qua các lần restart backend (SQLite thì mất).
+#   Nếu tài khoản Google chưa có quota free-tier (lỗi 429/quota=0 khi gọi), đổi provider:
+#   - Groq: LLM_PROVIDER=groq, GROQ_API_KEY (lấy tại https://console.groq.com/keys), MODEL_NAME=openai/gpt-oss-20b.
+#   - OpenAI: LLM_PROVIDER=openai, OPENAI_API_KEY (lấy tại https://platform.openai.com/api-keys), MODEL_NAME=gpt-4o-mini.
+# Sửa DATABASE_URL trỏ vào database Postgres đã tạo ở bước 1 (postgresql://user:pass@host:5432/dbname) — bắt buộc, không có giá trị mặc định.
 # Điền INITIAL_ADMIN_EMAIL nếu muốn tài khoản đăng ký với email đó tự động có quyền admin.
+# Muốn bật nút "Đăng nhập bằng Google": tạo 1 OAuth Client ID loại "Web application" tại
+#   https://console.cloud.google.com/apis/credentials (khác với credential "Desktop app" đang
+#   dùng cho Google Calendar — không dùng chung), Authorized JavaScript origins:
+#   http://localhost:5173. Điền Client ID vào GOOGLE_OAUTH_CLIENT_ID ở đây, và giá trị y hệt vào
+#   VITE_GOOGLE_CLIENT_ID trong Frontend/.env (bước 3) — không điền thì nút Google chỉ ẩn/không hoạt
+#   động, các tính năng khác không ảnh hưởng.
 
 # Chạy server
 uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
@@ -104,7 +115,7 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 Nếu có `make` (macOS/Linux, hoặc cài Make trên Windows): dùng `make run` thay cho lệnh `uvicorn` ở trên.
 
-**Windows + PostgreSQL**: dùng `python scripts/run_dev.py` thay cho lệnh `uvicorn` ở trên (cùng `--reload`, cùng cổng 8000). Lý do: agent memory bền vững (`AsyncPostgresSaver`) cần `SelectorEventLoop`, nhưng CLI `uvicorn` trên Windows luôn chọn `ProactorEventLoop` trước cả khi app được import, không có cờ nào sửa được — `run_dev.py` gọi `uvicorn.run()` trực tiếp bằng Python để chỉ định đúng loại event loop. Với SQLite thì dùng lệnh nào cũng như nhau.
+**Windows**: luôn dùng `python scripts/run_dev.py` thay cho lệnh `uvicorn` ở trên (cùng `--reload`, cùng cổng 8000) — không phải tuỳ chọn. Lý do: agent memory bền vững (`AsyncPostgresSaver`) cần `SelectorEventLoop`, nhưng CLI `uvicorn` trên Windows luôn chọn `ProactorEventLoop` trước cả khi app được import, không có cờ nào sửa được — `run_dev.py` gọi `uvicorn.run()` trực tiếp bằng Python để chỉ định đúng loại event loop.
 
 Kiểm tra backend đã chạy: mở `http://localhost:8000/health` phải trả về `{"status":"ok",...}`. Swagger UI (danh sách toàn bộ API) ở `http://localhost:8000/docs`.
 
@@ -118,7 +129,7 @@ npm install
 npm run dev
 ```
 
-Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi backend tại `http://localhost:8000/api/v1` — nếu backend chạy ở địa chỉ khác, tạo file `Frontend/.env` từ `Frontend/.env.example` và sửa `VITE_API_BASE_URL`/`VITE_WS_BASE_URL`.
+Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi backend tại `http://localhost:8000/api/v1` — nếu backend chạy ở địa chỉ khác, tạo file `Frontend/.env` từ `Frontend/.env.example` và sửa `VITE_API_BASE_URL`/`VITE_WS_BASE_URL`. Muốn bật nút "Đăng nhập bằng Google" thì cũng cần tạo `Frontend/.env` và điền `VITE_GOOGLE_CLIENT_ID` (cùng giá trị `GOOGLE_OAUTH_CLIENT_ID` đã điền ở bước 2).
 
 ### 4. Dùng thử
 
@@ -129,11 +140,22 @@ Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi 
 5. Muốn thử trang **Admin**: đăng ký một tài khoản với email trùng `INITIAL_ADMIN_EMAIL` đã đặt trong `.env` (hoặc đổi role một tài khoản có sẵn thành `admin` trực tiếp trong DB) — tài khoản đó sẽ thấy mục "Admin" trong Sidebar, vào được `/admin`.
 6. Muốn thử **AI Summarize / Extract tasks / Find schedule / Deadlines / Ask Orbit**: cần điền `GOOGLE_API_KEY` (hoặc Groq, xem bước 2) thật trong `.env`. Trong 1 cuộc trò chuyện có vài tin nhắn, bấm icon AI trên header (⭐) rồi thử từng quick action, hoặc gõ câu hỏi tự do vào ô "Ask Orbit".
 7. Muốn thử **AI Assistant cá nhân** (`/assistant`): vào trang này và chat trực tiếp — nếu bạn yêu cầu tạo lịch/nhắc việc, agent sẽ hỏi lại xác nhận ngay trong khung chat trước khi tạo thật.
-8. Muốn xem **theo dõi token AI**: vào `/admin` (cần tài khoản admin, xem bước 5) — 2 stat card "AI tokens used today"/"AI requests today" và banner cảnh báo khi dùng ≥80% ngân sách `DAILY_TOKEN_BUDGET`.
+8. Muốn xem **theo dõi token AI**: vào `/admin` (cần tài khoản admin, xem bước 5) — 2 stat card "AI tokens used today"/"AI requests today" và banner cảnh báo khi dùng ≥80% ngân sách `DAILY_TOKEN_BUDGET`. Hạ tạm `DAILY_TOKEN_BUDGET` (ví dụ `=50`) trong `.env` rồi restart backend nếu muốn thấy toast cảnh báo realtime (`usage_budget_alert` qua WebSocket) xuất hiện ngay khi đang ở bất kỳ trang nào, không cần mở `/admin` — và xác nhận `/chat` bị chặn hẳn (không chỉ cảnh báo) một khi đã vượt hẳn ngân sách.
 9. Muốn thử **Agent chủ động**: gửi 1 tin nhắn kiểu "nhớ họp lúc 3h chiều mai nhé" trong trang Chat — vài giây sau sẽ có toast "Orbit spotted a commitment" ở góc phải, và gợi ý xuất hiện trong `/tasks` mục "AI suggestions".
 10. Muốn thử **Memory**: vào `/memory`, bấm "Add memory" để lưu một điều bạn muốn Orbit nhớ, sửa/xoá qua menu 3 chấm trên mỗi thẻ.
+11. Muốn thử **Task Inbox ưu tiên**: vào `/tasks/inbox` (hoặc mục "Inbox" trong Sidebar) — task quá hạn/sắp đến hạn/priority cao/cần quyết định được nhóm riêng khỏi danh sách task đầy đủ ở `/tasks`.
+12. Muốn thử **Đăng nhập bằng Google**: cần đã điền `GOOGLE_OAUTH_CLIENT_ID`/`VITE_GOOGLE_CLIENT_ID` thật (xem bước 2, 3). Vào `/login` hoặc `/register`, bấm nút Google bên dưới nút Sign in/Create account — lần đầu sẽ tự tạo tài khoản mới (role admin nếu email trùng `INITIAL_ADMIN_EMAIL`), lần sau đăng nhập lại đúng tài khoản đó.
 
 ### Chạy test backend
+
+Test chạy trên một database Postgres riêng (không đụng tới database dev) — tạo 1 lần:
+
+```bash
+psql -U postgres -c "CREATE DATABASE orbit_test;"
+```
+
+Mặc định test kết nối `postgresql://postgres:123456@localhost:5432/orbit_test`; đổi bằng biến môi
+trường `TEST_DATABASE_URL` nếu Postgres local dùng user/password khác.
 
 ```bash
 pytest tests/ -v
@@ -190,7 +212,7 @@ Docker Compose hiện chỉ chạy backend tại cổng `8000`; frontend chạy 
 
 | Layer | Công nghệ |
 | --- | --- |
-| AI Agent | LangGraph + LangChain (Google Gemini hoặc Groq, đổi qua `LLM_PROVIDER`) |
+| AI Agent | LangGraph + LangChain (Google Gemini, Groq hoặc OpenAI, đổi qua `LLM_PROVIDER`) |
 | Backend | FastAPI, Pydantic 2, SQLAlchemy 2 async + SQLite/PostgreSQL, JWT (PyJWT) + bcrypt, WebSocket |
 | Migration | Alembic (bao gồm workspace, conversation principals và relationships) |
 | Agent memory | LangGraph checkpointer — `MemorySaver` (SQLite, mất khi restart) hoặc `AsyncPostgresSaver` (bền vững, khi `DATABASE_URL` là Postgres) |

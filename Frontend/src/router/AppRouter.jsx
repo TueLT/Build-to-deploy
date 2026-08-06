@@ -8,6 +8,7 @@ const LoginPage = lazy(() => import('../pages/LoginPage'))
 const RegisterPage = lazy(() => import('../pages/RegisterPage'))
 const ChatPage = lazy(() => import('../pages/ChatPage'))
 const TaskPage = lazy(() => import('../pages/TaskPage'))
+const TaskInboxPage = lazy(() => import('../pages/TaskInboxPage'))
 const CalendarPage = lazy(() => import('../pages/CalendarPage'))
 const ReminderPage = lazy(() => import('../pages/ReminderPage'))
 const MemoryPage = lazy(() => import('../pages/MemoryPage'))
@@ -40,6 +41,7 @@ export default function AppRouter() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/relationships" element={<RelationshipsPage />} />
               <Route path="/tasks" element={<TaskPage />} />
+              <Route path="/tasks/inbox" element={<TaskInboxPage />} />
               <Route path="/calendar" element={<CalendarPage />} />
               <Route path="/reminders" element={<ReminderPage />} />
               <Route path="/memory" element={<MemoryPage />} />

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from src.config import get_settings
 from src.db.base import Base
@@ -28,6 +29,8 @@ _is_sqlite = async_database_url.startswith("sqlite+")
 engine_options = {"pool_pre_ping": True}
 if _is_sqlite:
     engine_options["connect_args"] = {"check_same_thread": False}
+elif settings.app_env == "test":
+    engine_options["poolclass"] = NullPool
 else:
     engine_options.update(
         pool_size=settings.db_pool_size,
@@ -67,5 +70,3 @@ async def _add_missing_user_columns(conn) -> None:
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        if _is_sqlite:
-            await _add_missing_user_columns(conn)

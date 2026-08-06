@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import Conversation, ConversationParticipant, Message, User, WorkspaceMembership
+from src.db.models import AIPermission, Conversation, ConversationParticipant, Message, User, WorkspaceMembership
 from src.models.auth_schemas import UserPublic
 from src.models.chat_schemas import ConversationSummary, MessageOut
 from src.services.authorization_service import (
@@ -42,6 +42,37 @@ async def assert_participant(db: AsyncSession, conversation_id: str, user_id: st
 
 async def get_participant_ids(db: AsyncSession, conversation_id: str) -> list[str]:
     return await get_authorized_participant_ids(db, conversation_id)
+
+
+async def get_ai_permission(db: AsyncSession, conversation_id: str, user_id: str) -> AIPermission | None:
+    return (
+        await db.execute(
+            select(AIPermission).where(
+                AIPermission.conversation_id == conversation_id,
+                AIPermission.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def set_ai_permission(db: AsyncSession, conversation_id: str, user_id: str, granted: bool) -> AIPermission:
+    permission = await get_ai_permission(db, conversation_id, user_id)
+    if permission is None:
+        permission = AIPermission(conversation_id=conversation_id, user_id=user_id, granted=granted)
+        db.add(permission)
+    else:
+        permission.granted = granted
+    await db.commit()
+    await db.refresh(permission)
+    return permission
+
+
+async def assert_ai_permission(db: AsyncSession, conversation_id: str, user_id: str) -> None:
+    permission = await get_ai_permission(db, conversation_id, user_id)
+    if permission is None or not permission.granted:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="AI permission not granted for this conversation"
+        )
 
 
 async def create_message(db: AsyncSession, conversation_id: str, sender_id: str, content: str) -> Message:

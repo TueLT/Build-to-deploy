@@ -22,7 +22,7 @@ from src.main import app
 
 @pytest_asyncio.fixture
 async def client(monkeypatch):
-    """Async HTTP client for testing API endpoints, backed by an isolated in-memory test DB."""
+    """Async HTTP client backed by an isolated in-memory database."""
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
@@ -37,9 +37,6 @@ async def client(monkeypatch):
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    # The websocket handler can't use FastAPI's per-request Depends() (it needs a fresh
-    # session per inbound frame over one long-lived connection), so it reads the module-level
-    # session maker directly - patch that too so websocket tests hit the same in-memory DB.
     monkeypatch.setattr("src.db.session.async_session_maker", test_session_maker)
 
     transport = ASGITransport(app=app)
