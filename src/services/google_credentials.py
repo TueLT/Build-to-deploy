@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -20,6 +21,15 @@ _AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
 _STATE_PURPOSE = "calendar_oauth"
 _STATE_TTL_MINUTES = 10
+
+# oauthlib refuses to exchange a code (or refresh a token) unless every URL involved is HTTPS -
+# raises oauthlib.oauth2.rfc6749.errors.InsecureTransportError otherwise. Correct default for
+# production, but GOOGLE_CALENDAR_REDIRECT_URI is necessarily http://localhost during local dev
+# (Google doesn't accept https://localhost as a redirect URI), so this would always fail the
+# token exchange with a generic-looking error unless we opt in to the http exception explicitly -
+# scoped to only when the configured redirect really is http://, never in production.
+if get_settings().google_calendar_redirect_uri.startswith("http://"):
+    os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
 
 
 class CalendarNotConnected(Exception):  # noqa: N818 - matches docs/PER_USER_CALENDAR.md's exact name
@@ -56,6 +66,17 @@ def _build_flow(state: str | None = None) -> Flow:
         scopes=SCOPES,
         redirect_uri=settings.google_calendar_redirect_uri,
         state=state,
+        # google-auth-oauthlib defaults to PKCE (autogenerate_code_verifier=True): it would
+        # generate a code_verifier here and send its code_challenge to Google, but that verifier
+        # lives only on this in-memory Flow object - build_authorization_url() and exchange_code()
+        # each create their OWN Flow in two completely separate requests (URL generation vs. the
+        # later /calendar/oauth/callback), so the verifier from the first Flow is gone by the time
+        # the second needs it, and Google rejects the exchange with "invalid_grant: Missing code
+        # verifier." We're a confidential client (Client Secret, not a public/mobile app) where
+        # PKCE isn't required, and `state` (a signed JWT, see make_oauth_state) already carries the
+        # user identity + CSRF protection across that gap, so disable it instead of adding a store
+        # for a verifier we don't otherwise need.
+        autogenerate_code_verifier=False,
     )
 
 
