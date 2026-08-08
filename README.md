@@ -152,6 +152,24 @@ Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi 
 12. Muốn thử **Đăng nhập bằng Google**: cần đã điền `GOOGLE_OAUTH_CLIENT_ID`/`VITE_GOOGLE_CLIENT_ID` thật (xem bước 2, 3). Vào `/login` hoặc `/register`, bấm nút Google bên dưới nút Sign in/Create account — lần đầu sẽ tự tạo tài khoản mới (role admin nếu email trùng `INITIAL_ADMIN_EMAIL`), lần sau đăng nhập lại đúng tài khoản đó.
 13. Muốn thử **Calendar (per-user)**: cần đã điền `GOOGLE_CALENDAR_CLIENT_ID`/`GOOGLE_CALENDAR_CLIENT_SECRET`/`GOOGLE_CALENDAR_REDIRECT_URI`/`CREDENTIAL_ENCRYPTION_KEY` thật (xem bước 2 — client riêng, khác client đăng nhập, cần Authorized redirect URI khớp chính xác). Vào `/calendar`, bấm **Connect Google Calendar** (mở popup thật tới Google, không phải giả lập), chọn tài khoản Google, đồng ý quyền truy cập — popup tự đóng, sau đó xem/tạo/sửa/xoá sự kiện thật trên đúng Calendar của tài khoản Google vừa chọn. Đăng nhập bằng 2 tài khoản khác nhau và tự Connect 2 Google account khác nhau ở mỗi bên để thấy rõ mỗi người có Calendar riêng, không dùng chung — tạo sự kiện bên A không hiện bên B.
 
+### 5. Test Calendar cùng nhiều thành viên trong nhóm
+
+Calendar là tính năng **per-user** (mỗi người tự connect đúng Google Calendar của mình), nhưng cả nhóm **dùng chung 1 OAuth Client** (`GOOGLE_CALENDAR_CLIENT_ID`/`SECRET`) — không cần ai tạo Google Cloud project riêng, và không cần deploy online mới test được.
+
+1. **Một người trong nhóm** tạo Google Cloud project + OAuth Client theo đúng hướng dẫn ở bước 2 (mục "Connect Google Calendar"). Ở phần OAuth consent screen ("Audience" trong Console bản mới) → **Test users**, add **email Gmail của tất cả thành viên sẽ test** (tối đa 100, app đang ở chế độ Testing) — không phải chỉ email của người tạo.
+2. Người đó gửi `GOOGLE_CALENDAR_CLIENT_ID` + `GOOGLE_CALENDAR_CLIENT_SECRET` cho cả nhóm qua kênh riêng tư (chat nhóm) — **không** đưa lên GitHub/PR, không commit vào `.env`.
+3. Mỗi thành viên còn lại `git pull` rồi tự chạy backend + frontend trên máy mình như bước 1-3 ở trên, với:
+   - `DATABASE_URL` trỏ vào **database Postgres riêng trên máy họ** (không dùng chung DB với người khác — mỗi người có dữ liệu độc lập, kể cả token Calendar đã mã hoá).
+   - `GOOGLE_CALENDAR_CLIENT_ID`/`GOOGLE_CALENDAR_CLIENT_SECRET` = giá trị nhận ở bước 2 (dùng chung cho cả nhóm).
+   - `GOOGLE_CALENDAR_REDIRECT_URI` giữ nguyên mặc định `http://localhost:8000/api/v1/calendar/oauth/callback` — ai cũng chạy backend ở `localhost:8000` trên máy mình nên không cần đổi.
+   - `CREDENTIAL_ENCRYPTION_KEY` **tự sinh riêng** cho máy mình (không cần trùng với người khác, vì mỗi người có DB riêng ở trên).
+4. Mỗi người tự đăng ký 1 tài khoản Orbit riêng (bước 4.1), vào `/calendar` → **Connect Google Calendar** → chọn đúng Gmail đã được add làm Test user ở bước 1.
+
+Lỗi thường gặp khi test theo nhóm:
+- Bấm Connect ra lỗi `access_denied` ngay ở màn hình Google → email dùng để đăng nhập Google **không nằm trong Test users** (quay lại bước 1, add thêm).
+- Backend báo lỗi ngay khi bấm Connect, không mở được popup Google → quên điền hoặc quên **restart backend** sau khi sửa `GOOGLE_CALENDAR_CLIENT_ID`/`SECRET` trong `.env`.
+- Popup Google đóng lại nhưng báo "Could not connect Google Calendar." → xem log ở terminal đang chạy `python scripts/run_dev.py` ngay lúc đó để biết lý do cụ thể (thường in kèm traceback ở dòng `Failed to exchange the authorization code`).
+
 ### Chạy test backend
 
 Test chạy trên một database Postgres riêng (không đụng tới database dev) — tạo 1 lần:
