@@ -16,6 +16,21 @@ def _iso(dt: datetime) -> str:
     return dt.isoformat()
 
 
+def format_local_timestamp(iso_value: str) -> str | None:
+    """Render a message's ISO timestamp in local calendar_timezone, same style as the "current
+    datetime" the planner already grounds the LLM with (planner_node._build_system_prompt) - used
+    both by _format_messages (api/routes.py) and the search_messages agent tool, so every path
+    that hands message content to the LLM presents timestamps the same way."""
+    try:
+        dt = datetime.fromisoformat(iso_value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    local = dt.astimezone(ZoneInfo(get_settings().calendar_timezone))
+    return local.strftime("%A, %Y-%m-%d %H:%M")
+
+
 def serialize_message(message: Message, sender: User) -> MessageOut:
     return MessageOut(
         id=message.id,
@@ -274,6 +289,41 @@ async def get_scoped_messages(
     else:
         rows = []
 
+    return [
+        ChatMessage(role="user", sender=sender.display_name, content=message.content, timestamp=_iso(message.created_at))
+        for message, sender in rows
+    ]
+
+
+# ---------------------------------------------------------------- Agent "search old messages" tool
+
+
+def _escape_ilike(value: str) -> str:
+    """Escape ILIKE wildcard/escape chars so a literal '%'/'_' in the query is matched literally,
+    not treated as a wildcard."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def search_messages(db: AsyncSession, conversation_id: str, query: str, limit: int = 20) -> list[ChatMessage]:
+    """Case-insensitive substring search over one conversation's message history, for the agent's
+    search_messages tool (src/agents/tools/search_tool.py) - plain Postgres ILIKE, not semantic
+    search (the project deliberately doesn't run a vector store, see ARCHITECTURE.md). Selects the
+    `limit` most recent matches, then re-orders them chronologically (oldest first) for
+    readability - same convention get_scoped_messages' latest_n branch above already uses."""
+    if not query.strip():
+        return []
+    limit = max(1, min(limit, 50))  # defensive clamp - limit ultimately comes from the LLM's tool call
+    stmt = (
+        select(Message, User)
+        .join(User, User.id == Message.sender_id)
+        .where(
+            Message.conversation_id == conversation_id,
+            Message.content.ilike(f"%{_escape_ilike(query)}%", escape="\\"),
+        )
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    rows = list(reversed((await db.execute(stmt)).all()))
     return [
         ChatMessage(role="user", sender=sender.display_name, content=message.content, timestamp=_iso(message.created_at))
         for message, sender in rows

@@ -189,3 +189,94 @@ async def test_today_is_not_capped_at_fifty(client, auth_headers, other_auth_hea
         result = await chat_service.get_scoped_messages(db, conv_id, alice_id, MessageScope(kind="today"))
 
     assert len(result) == 60
+
+
+@pytest.mark.asyncio
+async def test_search_messages_case_insensitive_substring_match(client, auth_headers, other_auth_headers):
+    alice_id = await _get_user_id("alice@example.com")
+    bob_id = await _get_user_id("bob@example.com")
+    now = datetime.now(UTC)
+    conv_id = await _seed_conversation(alice_id, bob_id, [(alice_id, "the Deadline is Friday", now)])
+
+    async with db_session.async_session_maker() as db:
+        result = await chat_service.search_messages(db, conv_id, "deadline")
+
+    assert [m.content for m in result] == ["the Deadline is Friday"]
+
+
+@pytest.mark.asyncio
+async def test_search_messages_no_match_returns_empty(client, auth_headers, other_auth_headers):
+    alice_id = await _get_user_id("alice@example.com")
+    bob_id = await _get_user_id("bob@example.com")
+    now = datetime.now(UTC)
+    conv_id = await _seed_conversation(alice_id, bob_id, [(alice_id, "hello there", now)])
+
+    async with db_session.async_session_maker() as db:
+        result = await chat_service.search_messages(db, conv_id, "deadline")
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_search_messages_orders_newest_first_then_chronological_and_respects_limit(
+    client, auth_headers, other_auth_headers
+):
+    alice_id = await _get_user_id("alice@example.com")
+    bob_id = await _get_user_id("bob@example.com")
+    now = datetime.now(UTC)
+    msgs = [(alice_id, f"deadline msg{i}", now - timedelta(minutes=30 - i)) for i in range(30)]
+    conv_id = await _seed_conversation(alice_id, bob_id, msgs)
+
+    async with db_session.async_session_maker() as db:
+        result = await chat_service.search_messages(db, conv_id, "deadline", limit=20)
+
+    assert len(result) == 20
+    # The 20 most recent matches (msg10..msg29), in ascending chronological order.
+    assert [m.content for m in result] == [f"deadline msg{i}" for i in range(10, 30)]
+
+
+@pytest.mark.asyncio
+async def test_search_messages_scoped_to_conversation(client, auth_headers, other_auth_headers):
+    alice_id = await _get_user_id("alice@example.com")
+    bob_id = await _get_user_id("bob@example.com")
+    now = datetime.now(UTC)
+    await _seed_conversation(alice_id, bob_id, [(alice_id, "secret codename deadline", now)])
+    other_conv_id = await _seed_conversation(alice_id, bob_id, [(alice_id, "unrelated chit chat", now)])
+
+    async with db_session.async_session_maker() as db:
+        result = await chat_service.search_messages(db, other_conv_id, "deadline")
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_search_messages_blank_query_returns_empty(client, auth_headers, other_auth_headers):
+    alice_id = await _get_user_id("alice@example.com")
+    bob_id = await _get_user_id("bob@example.com")
+    now = datetime.now(UTC)
+    conv_id = await _seed_conversation(alice_id, bob_id, [(alice_id, "anything", now)])
+
+    async with db_session.async_session_maker() as db:
+        result = await chat_service.search_messages(db, conv_id, "   ")
+
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_search_messages_escapes_percent_in_query(client, auth_headers, other_auth_headers):
+    alice_id = await _get_user_id("alice@example.com")
+    bob_id = await _get_user_id("bob@example.com")
+    now = datetime.now(UTC)
+    conv_id = await _seed_conversation(
+        alice_id,
+        bob_id,
+        [
+            (alice_id, "discount is 10% today", now - timedelta(minutes=1)),
+            (alice_id, "discount is 10x today", now),
+        ],
+    )
+
+    async with db_session.async_session_maker() as db:
+        result = await chat_service.search_messages(db, conv_id, "10%")
+
+    assert [m.content for m in result] == ["discount is 10% today"]

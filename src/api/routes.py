@@ -1,6 +1,4 @@
-from datetime import UTC, datetime
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -9,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents import graph as agent_graph
 from src.auth.dependencies import get_current_user
-from src.config import get_settings
 from src.db.models import User
 from src.db.session import get_db
 from src.models.schemas import ChatMessage, ChatRequest, ChatResponse, InterruptPayload, ResumeRequest
@@ -29,24 +26,10 @@ def _check_thread_owner(thread_id: str, current_user: User) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your conversation")
 
 
-def _format_timestamp(iso_value: str) -> str | None:
-    """Render a message's ISO timestamp in local calendar_timezone, same style as the "current
-    datetime" the planner already grounds the LLM with (planner_node._build_system_prompt) - so
-    the agent can actually reason about "today"/"yesterday"/"this week" scoped context correctly."""
-    try:
-        dt = datetime.fromisoformat(iso_value)
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=UTC)
-    local = dt.astimezone(ZoneInfo(get_settings().calendar_timezone))
-    return local.strftime("%A, %Y-%m-%d %H:%M")
-
-
 def _format_messages(messages: list[ChatMessage]) -> str:
     lines = []
     for m in messages:
-        ts = _format_timestamp(m.timestamp) if m.timestamp else None
+        ts = chat_service.format_local_timestamp(m.timestamp) if m.timestamp else None
         who = f"{m.sender or m.role}" + (f" [{ts}]" if ts else "")
         lines.append(f"{who}: {m.content}")
     return "\n".join(lines)
@@ -118,7 +101,12 @@ async def chat(
         context_text = _format_messages(scoped) if scoped else ""
     else:
         context_text = _format_messages(request.messages) if request.messages else ""
-    inputs = {"messages": [HumanMessage(content=request.message)], "context": context_text, "user_id": current_user.id}
+    inputs = {
+        "messages": [HumanMessage(content=request.message)],
+        "context": context_text,
+        "user_id": current_user.id,
+        "conversation_id": request.conversation_id,
+    }
     try:
         result = await agent_graph.agent.ainvoke(inputs, config)
     except Exception as e:

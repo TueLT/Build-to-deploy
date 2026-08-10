@@ -5,8 +5,9 @@
 Orbit là AI agent nhúng trong ứng dụng chat: FastAPI + LangGraph ở backend, React + Vite ở
 frontend, **PostgreSQL** làm database duy nhất (không còn hỗ trợ SQLite, xem mục Database). Backend
 có auth thật (JWT + bcrypt), nhắn tin 1-1/nhóm realtime qua WebSocket, phân
-quyền role user/admin, và agent LangGraph (LLM: Google Gemini hoặc Groq, đổi qua `.env`) với các
-tool có human-in-the-loop (calendar, reminder) cùng tool tóm tắt/trích xuất task. Toàn bộ tính
+quyền role user/admin, và agent LangGraph (LLM: Google Gemini, Groq, hoặc OpenAI, đổi qua `.env`)
+với các tool có human-in-the-loop (calendar, reminder) cùng tool tóm tắt/trích xuất task/tìm kiếm
+tin cũ. Toàn bộ tính
 năng người dùng (Tasks, Calendar, Reminders, Memory, Profile, AI Assistant, Admin) đã nối API thật
 — không còn trang nào dùng mock data.
 
@@ -103,12 +104,17 @@ graph TB
   (`summarize_conversation`, `extract_tasks`) dừng ngay sau khi chạy — dùng thẳng output làm câu trả
   lời, không gọi LLM lần 2 để "relay" lại (từng gây lỗi 400 do model tự hallucinate cú pháp tool call).
 - **State:** `AgentState` (TypedDict, `total=False`) — `messages` (reducer `add_messages`),
-  `context`, `summary`, `error`, `user_id`, ... (`src/agents/state.py`).
+  `context`, `summary`, `error`, `user_id`, `conversation_id` (chỉ set từ `routes.py`, không bao giờ
+  do LLM cung cấp — cho tool cần biết đang ở hội thoại nào mà không thể bị "spoof"), ...
+  (`src/agents/state.py`).
 - **Nodes:** `planner_node` (`src/agents/nodes/planner_node.py`) — bind `ALL_TOOLS`, inject ngày
   giờ hiện tại theo `calendar_timezone` vào system prompt (tránh agent đoán sai "tomorrow"/"next
   Monday"), ghi token usage qua `usage_service.log_usage`, bắt exception vào `state["error"]`.
-- **Tools** (`src/agents/tools/`, registry `ALL_TOOLS` trong `tools/__init__.py`):
+- **Tools** (`src/agents/tools/`, registry `ALL_TOOLS` trong `tools/__init__.py`, 9 tool):
   - `summarize_conversation`, `extract_tasks` — đọc `state["context"]`, không cần xác nhận.
+  - `search_messages` — tìm tin nhắn cũ trong đúng hội thoại đang chat theo từ khoá (Postgres
+    `ILIKE`, không phải semantic search — dự án chủ động không dùng vector store), đọc-only, không
+    cần xác nhận; `conversation_id` lấy từ `state`, không phải tham số LLM tự truyền.
   - `create_calendar_event` / `list_calendar_events` / `update_calendar_event` /
     `delete_calendar_event` — Google Calendar thật qua `google-api-python-client`; mọi thao tác có
     tác dụng phụ đều bắt buộc `interrupt()` chờ xác nhận người dùng trước khi gọi API thật.
