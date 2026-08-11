@@ -32,10 +32,12 @@ thành.
 
 ## Còn lại — theo độ ưu tiên
 
-1. **Deploy online thật** — hạng mục lớn nhất còn thiếu. Backend lên Render/Railway (hoặc VPS),
-   frontend lên Vercel, Postgres quản lý (Supabase/Railway Postgres); thêm
-   `.github/workflows/deploy.yml`. Đây cũng là điều kiện để nâng cấp đồng bộ Calendar từ polling lên
-   webhook `events.watch` thật của Google (cần domain public HTTPS).
+1. **Deploy online thật** — hạng mục lớn nhất còn thiếu. Stack đã chốt: backend lên Render, Postgres
+   quản lý trên Supabase, frontend lên Vercel; CD qua `.github/workflows/deploy.yml`, gate sau khi CI
+   pass trên `main`. Code (Dockerfile, `render.yaml`, workflows, `Frontend/vercel.json`) đã sẵn sàng —
+   còn lại là các bước thao tác dashboard, xem hướng dẫn đầy đủ ở [docs/deploy.md](docs/deploy.md).
+   Đây cũng là điều kiện để nâng cấp đồng bộ Calendar từ polling lên webhook `events.watch` thật của
+   Google (cần domain public HTTPS).
 2. **Mở rộng eval harness** — bộ 8 case tay hiện tại chỉ đủ làm bằng chứng ban đầu; nên thêm case
    thật từ hội thoại người dùng (ẩn danh) để đo chính xác hơn trước khi báo cáo con số cuối.
 3. **Rate limiting** — chưa có trên bất kỳ endpoint nào; cần trước khi mở public thật (mục 1).

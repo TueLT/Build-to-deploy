@@ -212,5 +212,6 @@ pytest tests/ -v
 - [Frontend/detai.md](Frontend/detai.md) — đề bài / yêu cầu gốc của dự án.
 - [ARCHITECTURE.md](ARCHITECTURE.md) — kiến trúc hệ thống hiện tại và các quyết định công nghệ.
 - [ROADMAP.md](ROADMAP.md) — bảng đối chiếu từng yêu cầu đề bài với trạng thái thật hiện tại + việc còn lại theo độ ưu tiên.
+- [docs/deploy.md](docs/deploy.md) — hướng dẫn deploy production (Render + Supabase + Vercel + CD qua GitHub Actions), từng bước dashboard theo đúng thứ tự + checklist verify end-to-end.
 - [WORKLOG.md](WORKLOG.md) — nhật ký công việc theo ngày của cả nhóm.
 - [docs/guide/](docs/guide/) — tài liệu khóa học AI20K (setup, LangGraph, FastAPI, testing, deploy).
