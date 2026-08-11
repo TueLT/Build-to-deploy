@@ -62,14 +62,23 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
 
         settings = get_settings()
         llm = get_llm()
+        # Without today's date, the LLM has to guess the current date from its training data when
+        # resolving relative expressions ("hôm nay", "tối nay", "ngày mai") - observed in practice
+        # to land on the wrong YEAR half the time (e.g. resolving "tối nay" to 2023 instead of the
+        # real current year), silently producing a due_at years in the past. Same fix already
+        # applied in planner_node.py/task_tool.py for the manual Extract tasks flow - mirror it here.
+        now = datetime.now(ZoneInfo(settings.calendar_timezone))
         prompt = (
             "A message was just sent in a team chat app. Decide whether it describes a personal "
             "commitment, appointment, or deadline for the person who sent it - something worth "
             "reminding them about later. Output ONLY JSON, no prose, no markdown code fence, with "
             'exactly these keys: "has_commitment" (boolean), "title" (short string in Vietnamese - '
             'tiếng Việt, only meaningful if has_commitment is true), "due_at" (ISO 8601 datetime '
-            "string if a specific date/time was mentioned, otherwise null). If unsure, or it's just "
-            'casual conversation with no real commitment, output {"has_commitment": false}.\n\n'
+            'string if a specific date/time was mentioned, otherwise null - resolve relative dates/'
+            'times ("hôm nay", "ngày mai", "tuần sau") against the current date and time, which is '
+            f"{now.strftime('%A, %Y-%m-%d %H:%M')} ({settings.calendar_timezone})). If unsure, or "
+            "it's just casual conversation with no real commitment, output "
+            '{"has_commitment": false}.\n\n'
             f"Message: {content}"
         )
         result = await llm.ainvoke(prompt)
