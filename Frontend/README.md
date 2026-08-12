@@ -29,6 +29,17 @@ Frontend hiện được tách thành hai ứng dụng riêng, cùng gọi backe
 | User | `Frontend/user` | `5173` | Chat, tasks, calendar, reminders, memory và profile |
 | Admin | `Frontend/admin` | `5174` | Đăng nhập admin và quản trị users, conversations, user data |
 
+Backend phải chạy trước ở terminal riêng từ thư mục gốc repo. Project dùng PostgreSQL bắt buộc; kiểm tra
+`DATABASE_URL` trong file `.env` rồi chạy:
+
+```powershell
+cd ..
+python scripts/run_dev.py
+```
+
+Trên Windows không dùng `uvicorn src.main:app --reload` trực tiếp vì agent dùng `AsyncPostgresSaver`
+và cần `SelectorEventLoop`. Trên macOS/Linux có thể dùng `uvicorn src.main:app --reload --host 0.0.0.0 --port 8000`.
+
 Mở hai terminal từ đúng thư mục frontend:
 
 ```powershell

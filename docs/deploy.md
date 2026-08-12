@@ -76,16 +76,18 @@ CI chưa từng thực sự chạy được.
 8. **Verify backend sống**: `curl https://<render-url>/health` → kỳ vọng
    `{"status":"ok","env":"production"}`. Lỗi/treo lâu → xem Render Logs tab tìm traceback từ
    `init_db()` (sai `DATABASE_URL`/SSL) hoặc `init_checkpointer()` (sai psycopg conninfo).
-9. **Tạo Vercel project**: vercel.com → Add New → Project → import repo → **Root Directory =
-   `Frontend`** (bắt buộc, không phải root repo) → Framework Preset tự nhận "Vite" (Build Command
+9. **Tạo Vercel project cho User frontend**: vercel.com → Add New → Project → import repo →
+   **Root Directory = `Frontend/user`** → Framework Preset tự nhận "Vite" (Build Command
    `npm run build`, Output `dist` tự điền) → trước khi Deploy, thêm Environment Variables:
    - `VITE_API_BASE_URL` = `https://<render-url>/api/v1`
    - `VITE_WS_BASE_URL` = `wss://<render-url>/api/v1/ws` (chú ý `wss://` không phải `ws://`)
    - `VITE_GOOGLE_CLIENT_ID` = cùng giá trị `GOOGLE_OAUTH_CLIENT_ID` đã set ở bước 5
 
-   Deploy. Xác nhận URL ra đúng dự đoán ở bước 1 (nếu Vercel tự thêm hậu tố do trùng tên, quay lại
-   sửa `CORS_ORIGINS`/`FRONTEND_ORIGIN` ở bước 5 cho khớp URL thật).
-10. **Verify frontend build đúng SPA routing**: mở thẳng `https://<vercel-url>/tasks/inbox` (không
+   Deploy. Nếu cần giao diện Admin online, tạo **Vercel project thứ hai** với Root Directory
+   `Frontend/admin`, cùng hai biến `VITE_API_BASE_URL`/`VITE_WS_BASE_URL`, rồi thêm cả hai domain
+   vào `CORS_ORIGINS` và chọn domain Admin cho `FRONTEND_ORIGIN` nếu dùng OAuth Calendar từ Admin.
+   Cập nhật `CORS_ORIGINS`/`FRONTEND_ORIGIN` để khớp các URL thật.
+10. **Verify frontend build đúng SPA routing**: mở thẳng `https://<user-vercel-url>/tasks/inbox` (không
     qua điều hướng từ trang chủ) hoặc F5 giữa chừng ở 1 route con → phải load được app, không phải
     404 của Vercel (xác nhận [Frontend/vercel.json](../Frontend/vercel.json) áp dụng đúng —
     `AppRouter.jsx` dùng `BrowserRouter`, không có rewrite sẽ 404 mọi route con).

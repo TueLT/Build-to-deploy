@@ -13,10 +13,36 @@
 - tạo nhắc việc có bước xác nhận của người dùng;
 - quản trị người dùng và kiểm duyệt hội thoại.
 
-Repository gồm hai ứng dụng chạy độc lập:
+Repository gồm backend và hai ứng dụng frontend chạy độc lập:
 
-- **Frontend:** React 18 + Vite trong `Frontend/`, mặc định chạy tại `http://localhost:5173`.
-- **Backend:** FastAPI + LangGraph trong `src/`, mặc định chạy tại `http://localhost:8000`.
+- **User frontend:** React 18 + Vite trong `Frontend/user/`, chạy tại `http://localhost:5173`.
+- **Admin frontend:** React 18 + Vite trong `Frontend/admin/`, chạy tại `http://localhost:5174`.
+- **Backend:** FastAPI + LangGraph trong `src/`, chạy tại `http://localhost:8000`.
+
+### Chạy local
+
+Backend dùng PostgreSQL bắt buộc qua `DATABASE_URL` trong `.env`. Từ thư mục gốc repo:
+
+```powershell
+# Terminal 1 — backend (Windows)
+python scripts/run_dev.py
+```
+
+Trên macOS/Linux có thể dùng `uvicorn src.main:app --reload --host 0.0.0.0 --port 8000`.
+
+```powershell
+# Terminal 2 — User frontend
+cd Frontend\user
+npm.cmd install
+npm.cmd run dev
+
+# Terminal 3 — Admin frontend
+cd ..\admin
+npm.cmd install
+npm.cmd run dev
+```
+
+Mở User tại `http://localhost:5173`; Admin tại `http://localhost:5174`.
 
 ### Quy ước trạng thái
 
@@ -56,15 +82,14 @@ flowchart TB
         subgraph AI["LangGraph Agent"]
             Planner["Planner<br/>LLM + tool calling"]
             Tools["Tools<br/>Summary / Calendar / Reminder"]
-            Checkpoint["MemorySaver<br/>trạng thái thread trong RAM"]
+            Checkpoint["AsyncPostgresSaver<br/>checkpoint bền vững"]
         end
 
         Scheduler["APScheduler"]
     end
 
     subgraph DATA["Dữ liệu nội bộ"]
-        SQLite[("SQLite<br/>users / conversations / participants / messages")]
-        ReminderMemory[("Reminder store<br/>trong RAM")]
+        PostgreSQL[("PostgreSQL<br/>users / conversations / messages / checkpoints")]
     end
 
     subgraph EXT["Dịch vụ bên ngoài"]
@@ -87,9 +112,9 @@ flowchart TB
     App --> ChatAPI
     App --> AdminAPI
     App --> AgentAPI
-    AuthAPI --> SQLite
-    ChatAPI --> ChatService --> SQLite
-    AdminAPI --> SQLite
+    AuthAPI --> PostgreSQL
+    ChatAPI --> ChatService --> PostgreSQL
+    AdminAPI --> PostgreSQL
     WSGateway --> ChatService
     WSGateway --> WSManager
     ChatService --> WSManager
@@ -102,6 +127,7 @@ flowchart TB
     Tools --> Scheduler
     Scheduler --> ReminderMemory
     Planner --- Checkpoint
+    Checkpoint --> PostgreSQL
 ```
 
 ## 3. Các khối kiến trúc
@@ -127,7 +153,8 @@ FastAPI cung cấp ba nhóm xử lý chính:
 2. **WebSocket:** nhận/gửi tin nhắn thời gian thực cho các thành viên hội thoại.
 3. **Lifespan services:** khởi tạo database và bật/tắt APScheduler cùng vòng đời ứng dụng.
 
-Business logic của chat được tách vào `src/services/chat_service.py`. SQLAlchemy async làm việc với SQLite qua session trong `src/db/session.py`.
+Business logic của chat được tách vào `src/services/chat_service.py`. SQLAlchemy async làm việc với
+PostgreSQL qua session trong `src/db/session.py`.
 
 ### 3.3 AI Agent
 
@@ -203,7 +230,8 @@ erDiagram
     }
 ```
 
-Database mặc định là `sqlite:///./data/app.db`. Hiện chưa có bảng cho task, calendar, reminder, memory, quyền đọc hội thoại của AI hoặc thống kê chi phí LLM.
+Database là PostgreSQL, được cấu hình bằng `DATABASE_URL` trong `.env`. Schema ứng dụng và các bảng
+checkpoint của LangGraph được khởi tạo khi backend khởi động.
 
 ## 4. Tài liệu chức năng
 
@@ -334,7 +362,7 @@ Tất cả endpoint nghiệp vụ nằm dưới prefix `/api/v1`, ngoại trừ 
 1. Frontend mở WebSocket bằng JWT.
 2. Backend giải mã JWT, kiểm tra user và đăng ký kết nối theo `user_id`.
 3. Client gửi `conversation_id` và `content`.
-4. Backend kiểm tra membership, ghi `Message` vào SQLite và cập nhật thời gian hội thoại.
+4. Backend kiểm tra membership, ghi `Message` vào PostgreSQL và cập nhật thời gian hội thoại.
 5. Connection manager broadcast payload `new_message` tới các thành viên.
 6. Frontend cập nhật vùng chat, đưa hội thoại lên đầu và tăng unread count khi cần.
 
@@ -365,7 +393,7 @@ Các biến môi trường quan trọng:
 | --- | --- |
 | `GROQ_API_KEY` | Gọi LLM Groq |
 | `MODEL_NAME` | Model LLM, mặc định `llama-3.3-70b-versatile` |
-| `DATABASE_URL` | Kết nối database, mặc định SQLite |
+| `DATABASE_URL` | Kết nối PostgreSQL bắt buộc; ví dụ local `postgresql://postgres:123456@localhost:5432/orbit_1` |
 | `SECRET_KEY` | Ký JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Thời hạn JWT |
 | `ADMIN_BOOTSTRAP_KEY` | Khóa dùng một lần để tạo admin đầu tiên từ Admin frontend |
@@ -405,7 +433,8 @@ Các biến môi trường quan trọng:
 | LangGraph graph, node và tools | `src/agents/` |
 | LLM, scheduler và chat services | `src/services/` |
 | Pydantic schemas | `src/models/` |
-| React app | `Frontend/src/` |
+| Shared React source | `Frontend/src/` |
+| User app entry/routing | `Frontend/user/src/` |
+| Admin app entry/routing | `Frontend/admin/src/` |
 | Frontend API clients | `Frontend/src/api/` |
-| Frontend routing | `Frontend/src/router/` |
 | Backend tests | `tests/` |

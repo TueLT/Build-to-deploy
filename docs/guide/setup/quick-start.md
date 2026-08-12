@@ -28,14 +28,42 @@ cp .env.example .env
 # → Mở .env và điền API keys
 ```
 
-### Bước 3: Verify Setup
+### Bước 3: Chạy Backend và Frontend
 
 ```bash
-# Chạy server
-uvicorn src.main:app --reload
+# Backend — từ thư mục gốc repo
+# Windows PowerShell:
+python scripts/run_dev.py
+
+# macOS/Linux có thể dùng:
+# uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 
 # Mở browser: http://localhost:8000/docs
 # → Phải thấy Swagger UI
+```
+
+Mở hai terminal khác để chạy frontend:
+
+```powershell
+# User frontend
+cd Frontend\user
+npm.cmd install
+npm.cmd run dev
+```
+
+```powershell
+# Admin frontend
+cd Frontend\admin
+npm.cmd install
+npm.cmd run dev
+```
+
+Mở User tại `http://localhost:5173` và Admin tại `http://localhost:5174`.
+
+Project dùng PostgreSQL bắt buộc. Trước khi chạy backend, kiểm tra `.env` có `DATABASE_URL`, ví dụ:
+
+```env
+DATABASE_URL=postgresql://postgres:123456@localhost:5432/orbit_1
 ```
 
 ### Bước 4: Git Setup

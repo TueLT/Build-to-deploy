@@ -34,7 +34,7 @@ Dự án AI20K Build Phase: một AI agent nhúng trong ứng dụng chat, giúp
 
 ## Kiến trúc
 
-> **Backend nằm ở thư mục [`src/`](src/) ở gốc repo** (FastAPI + LangGraph), tách biệt hoàn toàn với frontend ở [`Frontend/`](Frontend/) (React + Vite). Chạy backend bằng lệnh `uvicorn src.main:app ...` từ thư mục gốc repo, không phải từ bên trong `src/`.
+> **Backend nằm ở thư mục [`src/`](src/) ở gốc repo** (FastAPI + LangGraph), tách biệt hoàn toàn với hai frontend ở [`Frontend/user/`](Frontend/user/) và [`Frontend/admin/`](Frontend/admin/) (React + Vite). Trên Windows, chạy backend bằng `python scripts/run_dev.py` từ thư mục gốc repo.
 
 ```
 ├── src/                  # Backend — FastAPI + LangGraph
@@ -115,15 +115,21 @@ cp .env.example .env
 #   Không điền GOOGLE_CALENDAR_CLIENT_ID/SECRET thì nút Connect vẫn hiện nhưng bấm vào báo lỗi rõ
 #   ràng thay vì mở được màn hình Google; các tính năng khác không ảnh hưởng.
 
-# Chạy server
-uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+# Chạy backend
+# Windows PowerShell (bắt buộc dùng launcher này để chọn SelectorEventLoop):
+python scripts/run_dev.py
+
+# macOS/Linux:
+# uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Nếu có `make` (macOS/Linux, hoặc cài Make trên Windows): dùng `make run` thay cho lệnh `uvicorn` ở trên.
+Nếu có `make` (macOS/Linux, hoặc cài Make trên Windows), có thể dùng `make run`.
 
 **Windows**: luôn dùng `python scripts/run_dev.py` thay cho lệnh `uvicorn` ở trên (cùng `--reload`, cùng cổng 8000) — không phải tuỳ chọn. Lý do: agent memory bền vững (`AsyncPostgresSaver`) cần `SelectorEventLoop`, nhưng CLI `uvicorn` trên Windows luôn chọn `ProactorEventLoop` trước cả khi app được import, không có cờ nào sửa được — `run_dev.py` gọi `uvicorn.run()` trực tiếp bằng Python để chỉ định đúng loại event loop.
 
 Kiểm tra backend đã chạy: mở `http://localhost:8000/health` phải trả về `{"status":"ok",...}`. Swagger UI (danh sách toàn bộ API) ở `http://localhost:8000/docs`.
+
+Giữ backend chạy trong một terminal riêng, sau đó mở thêm hai terminal để chạy User frontend và Admin frontend.
 
 ### 3. Chạy Frontend
 

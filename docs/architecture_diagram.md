@@ -34,5 +34,5 @@ graph LR
 | Backend | FastAPI | API server |
 | Agent | LangGraph | AI agent orchestration |
 | LLM | OpenAI/Gemini | Language model |
-| Database | PostgreSQL/SQLite | Data persistence |
+| Database | PostgreSQL | Data persistence and LangGraph checkpoints |
 | Vector Store | ChromaDB | RAG / embeddings |
