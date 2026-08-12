@@ -209,6 +209,18 @@ def _backfill(connection, owner_user_id: str | None) -> None:
         sa.text("SELECT id FROM migration_states WHERE migration_key = 'workspace_foundation_v1'")
     ).scalar_one_or_none()
     if state_exists is None:
+        migration_state_columns = _column_names(connection, "migration_states")
+        if "migration_version" in migration_state_columns:
+            connection.execute(
+                sa.text(
+                    "INSERT INTO migration_states "
+                    "(id, migration_key, migration_version, status, error_code, started_at, completed_at) "
+                    "VALUES (:id, 'workspace_foundation_v1', 'workspace_foundation_v1', "
+                    "'completed', NULL, :started_at, :completed_at)"
+                ),
+                {"id": _uuid(), "started_at": now, "completed_at": now},
+            )
+            return
         connection.execute(
             sa.text(
                 "INSERT INTO migration_states "

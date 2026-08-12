@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
 const nav = [
-  ['assistant', 'bi-stars', 'AI Assistant'], ['chat', 'bi-chat-dots', 'Chats'], ['relationships', 'bi-people', 'People'], ['tasks', 'bi-check2-square', 'Tasks'],
+  ['assistant', 'bi-stars', 'AI Assistant'], ['chat', 'bi-chat-dots', 'Chats'], ['tasks', 'bi-check2-square', 'Tasks'],
   ['tasks/inbox', 'bi-inbox', 'Inbox'],
   ['calendar', 'bi-calendar4-week', 'Calendar'], ['reminders', 'bi-bell', 'Reminders'],
   ['memory', 'bi-stars', 'Memory'], ['profile', 'bi-person', 'Profile'],
@@ -10,13 +10,8 @@ const nav = [
 
 const getInitials = (name) => (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 
-const adminNav = [
-  ['admin', 'bi-speedometer2', 'Dashboard'], ['admin/users', 'bi-people', 'Users'],
-  ['admin/user-data', 'bi-database', 'User data'],
-]
-
 export default function Sidebar({ open, onClose }) {
-  const { user, isAdmin } = useAuth()
+  const { user } = useAuth()
   return (
     <>
       <div className={`sidebar-backdrop ${open ? 'show' : ''}`} onClick={onClose} />
@@ -31,14 +26,6 @@ export default function Sidebar({ open, onClose }) {
               <i className={`bi ${icon}`} /><span>{label}</span>{label === 'AI Assistant' && <span className="new-pill">New</span>}
             </NavLink>
           ))}
-          {isAdmin && import.meta.env.VITE_APP_KIND !== 'user' && <>
-            <div className="nav-caption">Admin</div>
-            {adminNav.map(([path, icon, label]) => (
-              <NavLink key={path} to={`/${path}`} end onClick={onClose} className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>
-                <i className={`bi ${icon}`} /><span>{label}</span>
-              </NavLink>
-            ))}
-          </>}
         </nav>
         <div className="sidebar-bottom">
           <div className="ai-usage"><div className="d-flex align-items-center gap-2 mb-2"><i className="bi bi-stars" /><strong>AI credits</strong><span>72%</span></div><div className="progress"><div className="progress-bar" style={{width:'72%'}} /></div><small>Resets in 12 days</small></div>

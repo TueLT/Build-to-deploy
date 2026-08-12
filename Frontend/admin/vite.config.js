@@ -7,6 +7,10 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    // Keep hooks from shared source on the same React runtime as the app renderer.
+    dedupe: ['react', 'react-dom'],
+  },
   server: {
     fs: { allow: [rootDir, path.resolve(rootDir, '..')] },
   },

@@ -22,7 +22,11 @@ export default function TaskPage() {
 
   const refresh = () => {
     setLoading(true)
-    if (!workspaceId) return
+    if (!token || !workspaceId) {
+      setTasks([])
+      setLoading(false)
+      return
+    }
     setError('')
     listTasks(token, workspaceId).then(setTasks).catch(err => setError(err.detail || 'Could not load tasks.')).finally(() => setLoading(false))
   }
