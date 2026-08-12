@@ -21,6 +21,7 @@ from src.models.auth_schemas import (
     UpdateProfileRequest,
     UserPublic,
 )
+from src.services.audit_service import record_audit_event
 from src.services.workspace_service import create_personal_workspace
 
 router = APIRouter()
@@ -61,7 +62,16 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     )
     db.add(user)
     await db.flush()
-    await create_personal_workspace(db, user)
+    workspace = await create_personal_workspace(db, user)
+    await record_audit_event(
+        db,
+        actor=user,
+        action="auth.account_registered",
+        target_type="user",
+        target_id=user.id,
+        workspace_id=workspace.id,
+        metadata={"method": "password"},
+    )
     await db.commit()
     await db.refresh(user)
 
@@ -108,7 +118,16 @@ async def register_admin(request: AdminRegisterRequest, db: AsyncSession = Depen
     )
     db.add(user)
     await db.flush()
-    await create_personal_workspace(db, user)
+    workspace = await create_personal_workspace(db, user)
+    await record_audit_event(
+        db,
+        actor=user,
+        action="auth.admin_account_registered",
+        target_type="user",
+        target_id=user.id,
+        workspace_id=workspace.id,
+        metadata={"method": "password"},
+    )
     await db.commit()
     await db.refresh(user)
 
@@ -124,6 +143,16 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Au
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
 
+    await record_audit_event(
+        db,
+        actor=user,
+        action="auth.login_succeeded",
+        target_type="session",
+        target_id=None,
+        workspace_id=None,
+        metadata={"method": "password"},
+    )
+    await db.commit()
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))
 
@@ -139,6 +168,16 @@ async def admin_login(request: LoginRequest, db: AsyncSession = Depends(get_db))
     if user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
+    await record_audit_event(
+        db,
+        actor=user,
+        action="auth.admin_login_succeeded",
+        target_type="session",
+        target_id=None,
+        workspace_id=None,
+        metadata={"method": "password"},
+    )
+    await db.commit()
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))
 
@@ -194,6 +233,16 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
 
+    await record_audit_event(
+        db,
+        actor=user,
+        action="auth.login_succeeded",
+        target_type="session",
+        target_id=None,
+        workspace_id=None,
+        metadata={"method": "google"},
+    )
+    await db.commit()
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))
 
@@ -212,6 +261,15 @@ async def update_me(
     updates = request.model_dump(exclude_unset=True)
     for field, value in updates.items():
         setattr(current_user, field, value)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="profile.updated",
+        target_type="user",
+        target_id=current_user.id,
+        workspace_id=None,
+        metadata={"fields": sorted(updates)},
+    )
     await db.commit()
     await db.refresh(current_user)
     return _to_public(current_user)
@@ -226,4 +284,12 @@ async def change_password(
     if not verify_password(request.current_password, current_user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
     current_user.password_hash = hash_password(request.new_password)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="auth.password_changed",
+        target_type="user",
+        target_id=current_user.id,
+        workspace_id=None,
+    )
     await db.commit()

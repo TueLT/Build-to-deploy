@@ -17,6 +17,7 @@ from src.models.chat_schemas import (
     SendMessageRequest,
 )
 from src.services import chat_service, proactive_service
+from src.services.audit_service import record_audit_event
 from src.services.authorization_service import require_conversation_access
 from src.services.workspace_service import resolve_workspace_for_user
 from src.websocket.manager import manager
@@ -205,7 +206,18 @@ async def update_conversation_ai_permission(
     db: AsyncSession = Depends(get_db),
 ) -> AIPermissionOut:
     await chat_service.assert_participant(db, conversation_id, current_user.id)
+    conversation = await db.get(Conversation, conversation_id)
     permission = await chat_service.set_ai_permission(db, conversation_id, current_user.id, request.granted)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="ai.permission_changed",
+        target_type="conversation",
+        target_id=conversation_id,
+        workspace_id=conversation.workspace_id if conversation else None,
+        metadata={"granted": request.granted},
+    )
+    await db.commit()
     return AIPermissionOut(
         conversation_id=conversation_id, granted=permission.granted, updated_at=permission.updated_at.isoformat()
     )

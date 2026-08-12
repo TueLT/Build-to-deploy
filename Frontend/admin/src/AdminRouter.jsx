@@ -4,10 +4,10 @@ import { useAuth } from '../../src/context/AuthContext'
 import AdminShell from './AdminShell'
 import AdminLoginPage from './AdminLoginPage'
 import AdminRegisterPage from './AdminRegisterPage'
-import AdminDashboardPage from './AdminDashboardPage'
+import AdminAIManagementPage from './AdminAIManagementPage'
+import AdminAIUsagePage from './AdminAIUsagePage'
+import AdminAuditLogPage from './AdminAuditLogPage'
 import AdminUsersPage from '../../src/pages/admin/AdminUsersPage'
-import AdminConversationsPage from '../../src/pages/admin/AdminConversationsPage'
-import AdminUserDataPage from '../../src/pages/admin/AdminUserDataPage'
 
 function AdminGuard() {
   const { user, loading, isAdmin, logout } = useAuth()
@@ -28,10 +28,11 @@ export default function AdminRouter() {
         <Route path="/register" element={<AdminRegisterPage />} />
         <Route element={<AdminGuard />}>
           <Route element={<AdminShell />}>
-            <Route index element={<AdminDashboardPage />} />
+            <Route index element={<Navigate to="/users" replace />} />
             <Route path="users" element={<AdminUsersPage />} />
-            <Route path="conversations" element={<AdminConversationsPage />} />
-            <Route path="user-data" element={<AdminUserDataPage />} />
+            <Route path="ai-management" element={<AdminAIManagementPage />} />
+            <Route path="ai-usage" element={<AdminAIUsagePage />} />
+            <Route path="audit-log" element={<AdminAuditLogPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

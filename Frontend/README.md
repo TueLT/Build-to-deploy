@@ -133,10 +133,10 @@ sau đó đăng nhập tại `http://localhost:5174/login`. Đăng ký User khô
 | --- | --- |
 | Đăng nhập Admin | `/login` |
 | Tạo admin đầu tiên | `/register` |
-| Dashboard | `/` |
 | Users | `/users` |
-| Conversations | `/conversations` |
-| User data | `/user-data` |
+| AI Management | `/ai-management` |
+| AI Usage | `/ai-usage` |
+| Audit Log | `/audit-log` |
 
 ## Build phiên bản production
 

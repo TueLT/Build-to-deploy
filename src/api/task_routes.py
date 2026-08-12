@@ -12,6 +12,7 @@ from src.db.models import Conversation, Task, User
 from src.db.session import get_db
 from src.models.task_schemas import TaskCreateRequest, TaskOut, UpdateTaskStatusRequest
 from src.services import calendar_service, reminder_service
+from src.services.audit_service import record_audit_event
 from src.services.authorization_service import require_conversation_access
 from src.services.google_credentials import CalendarNotConnected
 from src.services.workspace_service import resolve_workspace_for_user
@@ -111,6 +112,16 @@ async def create_task(
         source=request.source,
     )
     db.add(task)
+    await db.flush()
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="task.created",
+        target_type="task",
+        target_id=task.id,
+        workspace_id=workspace.id,
+        metadata={"source": task.source, "priority": task.priority},
+    )
     await db.commit()
     await db.refresh(task)
     out = _to_out(task, due_at_override=due_at)
@@ -162,7 +173,17 @@ async def update_task_status(
         and task.source == "proactive"
         and task.due_at is not None
     )
+    previous_status = task.status
     task.status = request.status
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="task.status_changed",
+        target_type="task",
+        target_id=task.id,
+        workspace_id=task.workspace_id,
+        metadata={"from_status": previous_status, "to_status": request.status},
+    )
     await db.commit()
     await db.refresh(task)
     out = _to_out(task)
@@ -179,6 +200,15 @@ async def delete_task(
     task_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> None:
     task = await _get_own_task_or_404(task_id, current_user, db)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="task.deleted",
+        target_type="task",
+        target_id=task.id,
+        workspace_id=task.workspace_id,
+        metadata={"status": task.status, "source": task.source},
+    )
     await db.delete(task)
     await db.commit()
     await manager.broadcast_to_users([current_user.id], {"type": "task_deleted", "task_id": task_id})

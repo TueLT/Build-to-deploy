@@ -2,10 +2,10 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../src/context/AuthContext'
 
 const links = [
-  ['/', 'bi-speedometer2', 'Dashboard'],
   ['/users', 'bi-people', 'Users'],
-  ['/conversations', 'bi-chat-square-text', 'Conversations'],
-  ['/user-data', 'bi-database', 'User data'],
+  ['/ai-management', 'bi-robot', 'AI Management'],
+  ['/ai-usage', 'bi-bar-chart-line', 'AI Usage'],
+  ['/audit-log', 'bi-shield-check', 'Audit Log'],
 ]
 
 export default function AdminShell() {

@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -15,6 +15,31 @@ logger = logging.getLogger(__name__)
 # one push per crossing per day, not one on every single request once already over the line.
 _WARNING_PCT = 80
 _EXCEEDED_PCT = 100
+
+# Standard paid-tier text-token prices in USD per one million tokens. These are estimates for the
+# models documented by this project; provider invoices remain the source of truth. Unknown models
+# stay explicitly unpriced instead of inheriting a potentially incorrect rate.
+_PRICING_PER_MILLION: dict[tuple[str, str], tuple[float, float]] = {
+    ("google", "gemini-2.5-flash"): (0.30, 2.50),
+    ("openai", "gpt-4o-mini"): (0.15, 0.60),
+    ("groq", "openai/gpt-oss-20b"): (0.075, 0.30),
+}
+
+
+def _estimate_cost(
+    provider: str,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    total_tokens: int,
+) -> tuple[float, int]:
+    normalized_model = model.lower().removeprefix("models/")
+    prices = _PRICING_PER_MILLION.get((provider.lower(), normalized_model))
+    if prices is None:
+        return 0.0, total_tokens
+    input_price, output_price = prices
+    cost = prompt_tokens / 1_000_000 * input_price + completion_tokens / 1_000_000 * output_price
+    return cost, 0
 
 
 def _midnight_local_as_utc() -> datetime:
@@ -96,14 +121,129 @@ async def _maybe_alert_budget(*, before_tokens: int, after_tokens: int) -> None:
 async def get_usage_today(workspace_id: str | None = None) -> dict:
     since = _midnight_local_as_utc()
     async with db_session.async_session_maker() as db:
-        stmt = select(func.coalesce(func.sum(UsageLog.total_tokens), 0), func.count(UsageLog.id)).where(
-            UsageLog.created_at >= since
+        stmt = select(
+            UsageLog.provider,
+            UsageLog.model,
+            func.coalesce(func.sum(UsageLog.prompt_tokens), 0),
+            func.coalesce(func.sum(UsageLog.completion_tokens), 0),
+            func.coalesce(func.sum(UsageLog.total_tokens), 0),
+            func.count(UsageLog.id),
+        ).where(
+            UsageLog.created_at >= since,
         )
         if workspace_id:
             stmt = stmt.where(UsageLog.workspace_id == workspace_id)
-        result = await db.execute(stmt)
-        total_tokens, request_count = result.one()
-    return {"total_tokens": total_tokens, "request_count": request_count, "since": since}
+        rows = (await db.execute(stmt.group_by(UsageLog.provider, UsageLog.model))).all()
+
+    prompt_tokens = sum(row[2] for row in rows)
+    completion_tokens = sum(row[3] for row in rows)
+    total_tokens = sum(row[4] for row in rows)
+    request_count = sum(row[5] for row in rows)
+    estimated_cost_usd = 0.0
+    unpriced_tokens = 0
+    for provider, model, prompt, completion, total, _requests in rows:
+        cost, unpriced = _estimate_cost(provider, model, prompt, completion, total)
+        estimated_cost_usd += cost
+        unpriced_tokens += unpriced
+
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "request_count": request_count,
+        "estimated_cost_usd": round(estimated_cost_usd, 6),
+        "unpriced_tokens": unpriced_tokens,
+        "since": since,
+    }
+
+
+async def get_usage_report(days: int = 7) -> dict:
+    settings = get_settings()
+    tz = ZoneInfo(settings.calendar_timezone)
+    today = datetime.now(tz).date()
+    since_local = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days - 1)
+    since = since_local.astimezone(UTC)
+    async with db_session.async_session_maker() as db:
+        rows = (
+            await db.execute(
+                select(
+                    UsageLog.provider,
+                    UsageLog.model,
+                    UsageLog.prompt_tokens,
+                    UsageLog.completion_tokens,
+                    UsageLog.total_tokens,
+                    UsageLog.created_at,
+                ).where(UsageLog.created_at >= since)
+            )
+        ).all()
+
+    daily = {
+        (today - timedelta(days=offset)).isoformat(): {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "request_count": 0,
+            "estimated_cost_usd": 0.0,
+            "unpriced_tokens": 0,
+        }
+        for offset in range(days - 1, -1, -1)
+    }
+    models: dict[tuple[str, str], dict] = {}
+    for provider, model, prompt, completion, total, created_at in rows:
+        timestamp = created_at.replace(tzinfo=UTC) if created_at.tzinfo is None else created_at
+        day_key = timestamp.astimezone(tz).date().isoformat()
+        if day_key not in daily:
+            continue
+        cost, unpriced = _estimate_cost(provider, model, prompt, completion, total)
+        day = daily[day_key]
+        day["prompt_tokens"] += prompt
+        day["completion_tokens"] += completion
+        day["total_tokens"] += total
+        day["request_count"] += 1
+        day["estimated_cost_usd"] += cost
+        day["unpriced_tokens"] += unpriced
+
+        model_usage = models.setdefault(
+            (provider, model),
+            {
+                "provider": provider,
+                "model": model,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "request_count": 0,
+                "estimated_cost_usd": 0.0,
+                "unpriced_tokens": 0,
+            },
+        )
+        model_usage["prompt_tokens"] += prompt
+        model_usage["completion_tokens"] += completion
+        model_usage["total_tokens"] += total
+        model_usage["request_count"] += 1
+        model_usage["estimated_cost_usd"] += cost
+        model_usage["unpriced_tokens"] += unpriced
+
+    daily_rows = []
+    for day_key, values in daily.items():
+        values["estimated_cost_usd"] = round(values["estimated_cost_usd"], 6)
+        daily_rows.append({"date": day_key, **values})
+    model_rows = sorted(models.values(), key=lambda item: item["total_tokens"], reverse=True)
+    for values in model_rows:
+        values["estimated_cost_usd"] = round(values["estimated_cost_usd"], 6)
+
+    totals = {
+        key: sum(row[key] for row in daily_rows)
+        for key in (
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "request_count",
+            "estimated_cost_usd",
+            "unpriced_tokens",
+        )
+    }
+    totals["estimated_cost_usd"] = round(totals["estimated_cost_usd"], 6)
+    return {"days": days, "since": since, "totals": totals, "daily": daily_rows, "models": model_rows}
 
 
 async def is_over_budget() -> bool:

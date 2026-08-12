@@ -2,6 +2,22 @@ import { apiFetch } from './client'
 
 export const getStats = (token) => apiFetch('/admin/stats', { token })
 
+export const getSystemHealth = (token) => apiFetch('/admin/system-health', { token })
+
+export const getAIManagement = (token) => apiFetch('/admin/ai-management', { token })
+
+export const updateAIManagement = (token, configuration) =>
+  apiFetch('/admin/ai-management', { method: 'PATCH', token, body: configuration })
+
+export const getAIUsage = (token, days = 7) => apiFetch(`/admin/ai-usage?days=${days}`, { token })
+
+export const listAuditLog = (token, { q = '', actorType = '', limit = 50, offset = 0 } = {}) => {
+  const params = new URLSearchParams({ limit, offset })
+  if (q) params.set('q', q)
+  if (actorType) params.set('actor_type', actorType)
+  return apiFetch(`/admin/audit-log?${params}`, { token })
+}
+
 export const listUsers = (token, q) =>
   apiFetch(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`, { token })
 
@@ -10,35 +26,3 @@ export const updateUserRole = (token, userId, role) =>
 
 export const updateUserStatus = (token, userId, is_active) =>
   apiFetch(`/admin/users/${userId}/status`, { method: 'PATCH', token, body: { is_active } })
-
-export const listConversations = (token) => apiFetch('/admin/conversations', { token })
-
-export const getConversationMessages = (token, conversationId) =>
-  apiFetch(`/admin/conversations/${conversationId}/messages`, { token })
-
-export const deleteConversation = (token, conversationId) =>
-  apiFetch(`/admin/conversations/${conversationId}`, { method: 'DELETE', token })
-
-const scopedParams = (workspaceId, ownerId) => {
-  const params = new URLSearchParams({ workspace_id: workspaceId })
-  if (ownerId) params.set('owner_id', ownerId)
-  return params.toString()
-}
-
-export const listTasks = (token, workspaceId, ownerId) =>
-  apiFetch(`/admin/tasks?${scopedParams(workspaceId, ownerId)}`, { token })
-
-export const deleteTask = (token, workspaceId, taskId) =>
-  apiFetch(`/admin/tasks/${taskId}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', token })
-
-export const listReminders = (token, workspaceId, ownerId) =>
-  apiFetch(`/admin/reminders?${scopedParams(workspaceId, ownerId)}`, { token })
-
-export const deleteReminder = (token, workspaceId, reminderId) =>
-  apiFetch(`/admin/reminders/${reminderId}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', token })
-
-export const listMemories = (token, workspaceId, ownerId) =>
-  apiFetch(`/admin/memories?${scopedParams(workspaceId, ownerId)}`, { token })
-
-export const deleteMemory = (token, workspaceId, memoryId) =>
-  apiFetch(`/admin/memories/${memoryId}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', token })

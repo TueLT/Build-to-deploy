@@ -6,6 +6,7 @@ from src.auth.dependencies import get_current_user
 from src.db.models import Memory, User
 from src.db.session import get_db
 from src.models.memory_schemas import MemoryCreateRequest, MemoryOut, MemoryUpdateRequest
+from src.services.audit_service import record_audit_event
 from src.services.workspace_service import resolve_workspace_for_user
 
 router = APIRouter()
@@ -63,6 +64,16 @@ async def create_memory(
         detail=request.detail,
     )
     db.add(memory)
+    await db.flush()
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="memory.created",
+        target_type="memory",
+        target_id=memory.id,
+        workspace_id=workspace.id,
+        metadata={"category": memory.category},
+    )
     await db.commit()
     await db.refresh(memory)
     return _to_out(memory)
@@ -76,8 +87,18 @@ async def update_memory(
     db: AsyncSession = Depends(get_db),
 ) -> MemoryOut:
     memory = await _get_own_memory_or_404(memory_id, current_user, db)
-    for field, value in request.model_dump(exclude_unset=True).items():
+    changes = request.model_dump(exclude_unset=True)
+    for field, value in changes.items():
         setattr(memory, field, value)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="memory.updated",
+        target_type="memory",
+        target_id=memory.id,
+        workspace_id=memory.workspace_id,
+        metadata={"fields": sorted(changes)},
+    )
     await db.commit()
     await db.refresh(memory)
     return _to_out(memory)
@@ -88,5 +109,14 @@ async def delete_memory(
     memory_id: str, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> None:
     memory = await _get_own_memory_or_404(memory_id, current_user, db)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="memory.deleted",
+        target_type="memory",
+        target_id=memory.id,
+        workspace_id=memory.workspace_id,
+        metadata={"category": memory.category},
+    )
     await db.delete(memory)
     await db.commit()

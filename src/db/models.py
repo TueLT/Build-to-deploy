@@ -282,6 +282,17 @@ class AuditLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
 
+class PlatformSetting(Base):
+    """Small, non-secret platform configuration managed from the Admin application."""
+
+    __tablename__ = "platform_settings"
+
+    key: Mapped[str] = mapped_column(primary_key=True)
+    value_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    updated_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
     __table_args__ = (CheckConstraint("type IN ('direct', 'group')", name="ck_conversation_type"),)

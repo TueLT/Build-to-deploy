@@ -6,6 +6,7 @@ from src.db.models import User
 from src.db.session import get_db
 from src.models.reminder_schemas import ReminderCreateRequest, ReminderOut
 from src.services import reminder_service
+from src.services.audit_service import record_audit_event
 from src.services.workspace_service import resolve_workspace_for_user
 
 router = APIRouter()
@@ -45,6 +46,16 @@ async def create_reminder(
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="reminder.created",
+        target_type="reminder",
+        target_id=reminder.id,
+        workspace_id=workspace.id,
+        metadata={"source": "manual"},
+    )
+    await db.commit()
     return ReminderOut.model_validate(reminder, from_attributes=True)
 
 
@@ -61,3 +72,12 @@ async def cancel_reminder(
     )
     if not cancelled:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="reminder.cancelled",
+        target_type="reminder",
+        target_id=reminder_id,
+        workspace_id=workspace.id,
+    )
+    await db.commit()
