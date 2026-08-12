@@ -6,10 +6,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
-from src.db.models import AIPermission, Conversation, ConversationParticipant, Message, User
+from src.db.models import AIPermission, Conversation, ConversationParticipant, Message, User, WorkspaceMembership
 from src.models.auth_schemas import UserPublic
 from src.models.chat_schemas import ConversationSummary, MessageOut
 from src.models.schemas import ChatMessage, MessageScope
+from src.services.authorization_service import (
+    get_authorized_participant_ids,
+    require_workspace_member,
+)
+from src.services.workspace_service import resolve_workspace_for_user
 
 
 def _iso(dt: datetime) -> str:
@@ -56,7 +61,7 @@ async def _get_participant(db: AsyncSession, conversation_id: str, user_id: str)
 async def assert_participant(db: AsyncSession, conversation_id: str, user_id: str) -> None:
     participant = await _get_participant(db, conversation_id, user_id)
     if participant is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Conversation access denied")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
     return participant
 
 

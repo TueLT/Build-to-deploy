@@ -10,9 +10,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
 
+from alembic import command  # noqa: E402
 from src.config import get_settings  # noqa: E402
 from src.db.models import MigrationState  # noqa: E402
 from src.db.session import async_session_maker, engine  # noqa: E402
@@ -45,7 +45,7 @@ async def _prepare_state(status: str, error_code: str | None = None) -> None:
 def main() -> int:
     args = _parse_args()
     settings = get_settings()
-    configured_owner = (args.bootstrap_owner_user_id or settings.bootstrap_owner_user_id).strip() or None
+    configured_owner = (args.bootstrap_owner_user_id or os.getenv("BOOTSTRAP_OWNER_USER_ID", "")).strip() or None
     report = asyncio.run(_preflight(configured_owner))
     print(json.dumps(asdict(report), ensure_ascii=False, sort_keys=True))
     if not report.can_run:

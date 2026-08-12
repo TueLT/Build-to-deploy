@@ -20,7 +20,6 @@ def _agent_input(message):
 
 
 def _allow_calendar(monkeypatch):
-    monkeypatch.setattr(calendar_service, "authorize_calendar_access", AsyncMock())
     monkeypatch.setattr(calendar_service, "broadcast_change", AsyncMock())
 
 
@@ -112,7 +111,7 @@ async def test_create_calendar_event_declined(monkeypatch, fake_llm_factory):
 
 
 @pytest.mark.asyncio
-async def test_create_calendar_event_not_connected(monkeypatch, fake_llm_factory):
+async def test_create_calendar_event_not_connected(client, monkeypatch, fake_llm_factory):
     """No GoogleCalendarCredential row for this user - real (unmocked) credential-resolution path
     should surface as a friendly tool message, not a crash."""
     llm = _script_tool_call(

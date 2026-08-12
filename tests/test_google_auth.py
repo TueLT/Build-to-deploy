@@ -52,7 +52,7 @@ async def test_google_auth_links_existing_verified_email(client, monkeypatch):
         "/api/v1/auth/register",
         json={"email": "linkme@example.com", "password": "password123", "display_name": "Link Me"},
     )
-    original_user_id = register_resp.json()["id"]
+    original_user_id = register_resp.json()["user"]["id"]
 
     monkeypatch.setattr(
         google_oauth,

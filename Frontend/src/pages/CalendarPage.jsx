@@ -8,6 +8,7 @@ import PageHeader from '../components/common/PageHeader'
 import NewEventModal from '../components/calendar/NewEventModal'
 import ConnectCalendarCard from '../components/calendar/ConnectCalendarCard'
 import { useAuth } from '../context/AuthContext'
+import { useWorkspace } from '../context/WorkspaceContext'
 import {
   listCalendarEvents, deleteCalendarEvent,
   getCalendarConnection, disconnectCalendar,
@@ -29,7 +30,7 @@ export default function CalendarPage() {
 
   const refresh = () => {
     setLoading(true); setError('')
-    listCalendarEvents(token)
+    listCalendarEvents(token, workspaceId)
       .then(list => { setConnected(true); setEvents(list.map(e => ({ ...e, color: getColor(e.id) }))) })
       .catch(err => {
         if (err.status === 409) { setConnected(false); setEvents([]) } // not connected, not an error

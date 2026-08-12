@@ -49,10 +49,6 @@ def _online(user_id: str):
     return _Ctx()
 
 
-def _enable_calendar(monkeypatch, workspace_id):
-    monkeypatch.setattr(calendar_service.get_settings(), "google_calendar_workspace_id", workspace_id)
-
-
 @pytest.mark.asyncio
 async def test_list_events_requires_auth(client):
     resp = await client.get("/api/v1/calendar/events")
@@ -68,7 +64,7 @@ async def test_events_returns_409_when_not_connected(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_list_events_maps_google_events(client, auth_headers, monkeypatch):
+async def test_list_events_maps_google_events(client, auth_headers, personal_workspace, monkeypatch):
     async def _fake_service(user_id):
         assert user_id  # route must actually pass the caller's id down
         fake = MagicMock()
@@ -100,7 +96,7 @@ async def test_list_events_maps_google_events(client, auth_headers, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_list_events_upstream_error_returns_502(client, auth_headers, monkeypatch):
+async def test_list_events_upstream_error_returns_502(client, auth_headers, personal_workspace, monkeypatch):
     async def _boom(user_id):
         raise RuntimeError("token expired")
 
@@ -114,7 +110,6 @@ async def test_list_events_upstream_error_returns_502(client, auth_headers, monk
 
 @pytest.mark.asyncio
 async def test_create_event(client, auth_headers, personal_workspace, monkeypatch):
-    _enable_calendar(monkeypatch, personal_workspace["id"])
     captured = {}
     fake_service = MagicMock()
 

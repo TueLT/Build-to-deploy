@@ -39,9 +39,15 @@ def _to_public(user: User) -> UserPublic:
     )
 
 
-@router.post("/register", response_model=AuthResponse)
+def _initial_role_for(_email: str) -> str:
+    """Public signup never grants platform-admin access."""
+    return "user"
+
+
+@router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
 async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
-    existing = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
+    normalized_email = str(request.email).lower()
+    existing = (await db.execute(select(User).where(User.email == normalized_email))).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
@@ -50,9 +56,12 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
         email=normalized_email,
         password_hash=hash_password(request.password),
         display_name=request.display_name,
-        role="user",
+        role=role,
+        platform_role="platform_admin" if role == "admin" else "user",
     )
     db.add(user)
+    await db.flush()
+    await create_personal_workspace(db, user)
     await db.commit()
     await db.refresh(user)
 
@@ -85,15 +94,17 @@ async def register_admin(request: AdminRegisterRequest, db: AsyncSession = Depen
             detail="An admin account already exists. Ask an existing admin to promote another account.",
         )
 
-    existing = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
+    normalized_email = str(request.email).lower()
+    existing = (await db.execute(select(User).where(User.email == normalized_email))).scalar_one_or_none()
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
     user = User(
-        email=request.email,
+        email=normalized_email,
         password_hash=hash_password(request.password),
         display_name=request.display_name,
         role="admin",
+        platform_role="platform_admin",
     )
     db.add(user)
     await db.flush()
@@ -101,7 +112,8 @@ async def register_admin(request: AdminRegisterRequest, db: AsyncSession = Depen
     await db.commit()
     await db.refresh(user)
 
-    return _to_public(user)
+    token = create_access_token(user.id)
+    return AuthResponse(access_token=token, user=_to_public(user))
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -163,7 +175,6 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
                 detail="Email not verified by Google; sign in with your password instead",
             )
         if user is None:
-            role = _initial_role_for(email)
             user = User(
                 email=email,
                 # Unusable, never-shared password - password_hash stays NOT NULL without adding a

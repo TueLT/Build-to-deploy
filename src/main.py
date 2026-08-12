@@ -31,14 +31,13 @@ async def lifespan(app: FastAPI):
         await init_db()
     await init_checkpointer()
     scheduler.start()
-    if settings.google_calendar_workspace_id:
-        scheduler.add_job(
-            calendar_service.poll_calendar_changes,
-            "interval",
-            seconds=settings.calendar_poll_interval_seconds,
-            id=f"calendar_poll:{settings.google_calendar_workspace_id}",
-            replace_existing=True,
-        )
+    scheduler.add_job(
+        calendar_service.poll_calendar_changes,
+        "interval",
+        seconds=settings.calendar_poll_interval_seconds,
+        id="calendar_poll",
+        replace_existing=True,
+    )
     yield
     scheduler.shutdown(wait=False)
     await close_checkpointer()

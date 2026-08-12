@@ -20,6 +20,7 @@ class AgentState(TypedDict, total=False):
     error: str
     metadata: dict
     user_id: str | None  # id of the user driving this run, for tools that push WS updates to them
+    workspace_id: str | None  # active workspace resolved and authorized by the API route
     # id of the real 1-1/group conversation this run is about, if any - for tools scoped to it
     # (e.g. search_messages). Only ever set in routes.py from the already-authorized
     # request.conversation_id, never LLM-supplied - same trust model as user_id above.

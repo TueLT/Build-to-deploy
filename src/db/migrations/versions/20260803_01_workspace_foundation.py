@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import sqlalchemy as sa
-from alembic import op
 
+from alembic import op
 from src.db import models  # noqa: F401
 from src.db.base import Base
 

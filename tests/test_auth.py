@@ -9,9 +9,9 @@ async def test_register_success(client):
     )
     assert resp.status_code == 201
     body = resp.json()
-    assert "access_token" not in body
-    assert body["email"] == "new@example.com"
-    assert body["display_name"] == "New User"
+    assert "access_token" in body
+    assert body["user"]["email"] == "new@example.com"
+    assert body["user"]["display_name"] == "New User"
 
 
 @pytest.mark.asyncio
@@ -47,7 +47,7 @@ async def test_admin_bootstrap_creates_admin_without_user_registration(client, m
         "/api/v1/auth/register",
         json={"email": "normal@example.com", "password": "password123", "display_name": "Normal"},
     )
-    assert normal_signup.status_code == 200
+    assert normal_signup.status_code == 201
     assert normal_signup.json()["user"]["role"] == "user"
 
 

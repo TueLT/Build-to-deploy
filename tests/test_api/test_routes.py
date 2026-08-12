@@ -142,8 +142,20 @@ async def test_chat_with_scope_queries_db_instead_of_trusting_client_messages(
 
     other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
     other_id = other_me.json()["id"]
+    workspace = (
+        await client.post(
+            "/api/v1/workspaces", json={"name": "Scoped conversation"}, headers=auth_headers
+        )
+    ).json()
+    await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        json={"email": other_me.json()["email"], "role": "member"},
+        headers=auth_headers,
+    )
     conv = await client.post(
-        "/api/v1/conversations", json={"type": "direct", "participant_ids": [other_id]}, headers=auth_headers
+        "/api/v1/conversations",
+        json={"type": "direct", "participant_ids": [other_id], "workspace_id": workspace["id"]},
+        headers=auth_headers,
     )
     conversation_id = conv.json()["id"]
     await client.put(

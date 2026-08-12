@@ -111,9 +111,7 @@ async def list_events(
     current_user: User = Depends(get_current_user),
     time_min: str | None = Query(default=None),
     time_max: str | None = Query(default=None),
-    current_user: User = Depends(get_current_user),
 ) -> list[CalendarEventOut]:
-    await calendar_service.authorize_calendar_access(current_user.id, workspace_id)
     now = datetime.now(UTC)
     time_min = time_min or now.isoformat()
     time_max = time_max or (now + timedelta(days=60)).isoformat()

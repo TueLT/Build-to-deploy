@@ -113,7 +113,7 @@ async def test_deactivated_user_loses_access(client, admin_auth_headers, auth_he
 
 
 @pytest.mark.asyncio
-async def test_platform_admin_cannot_list_view_or_delete_private_conversations(
+async def test_platform_admin_can_list_view_and_delete_conversations(
     client,
     admin_auth_headers,
     auth_headers,
@@ -143,14 +143,27 @@ async def test_platform_admin_cannot_list_view_or_delete_private_conversations(
             headers=auth_headers,
         )
     ).json()
+    message = await client.post(
+        f"/api/v1/conversations/{conv['id']}/messages",
+        json={"content": "admin-visible message"},
+        headers=auth_headers,
+    )
+    assert message.status_code == 200
 
     resp = await client.get("/api/v1/admin/conversations", headers=admin_auth_headers)
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    listed = next(item for item in resp.json() if item["id"] == conv["id"])
+    assert listed["participant_count"] == 2
+    assert listed["message_count"] == 1
 
     resp = await client.get(f"/api/v1/admin/conversations/{conv['id']}/messages", headers=admin_auth_headers)
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert resp.json()[0]["content"] == "admin-visible message"
 
     resp = await client.delete(f"/api/v1/admin/conversations/{conv['id']}", headers=admin_auth_headers)
+    assert resp.status_code == 204
+
+    resp = await client.get(f"/api/v1/admin/conversations/{conv['id']}/messages", headers=admin_auth_headers)
     assert resp.status_code == 404
 
 
@@ -273,7 +286,7 @@ async def test_admin_can_list_and_delete_reminders_and_cancels_scheduler_job(
     created = (
         await client.post(
             "/api/v1/reminders",
-            json={"title": "Admin-visible reminder", "due_at_iso": "2026-08-10T15:00:00"},
+            json={"title": "Admin-visible reminder", "due_at_iso": "2099-08-10T15:00:00"},
             headers=auth_headers,
         )
     ).json()

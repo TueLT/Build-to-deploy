@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from alembic import command
 from alembic.config import Config
 from sqlalchemy import func, select
 
+from alembic import command
 from src.db import session as db_session
 from src.db.models import MigrationState, User, Workspace
 
@@ -28,7 +28,7 @@ async def _register(client, email: str) -> dict:
         json={"email": email, "password": "password123", "display_name": email.split("@")[0]},
     )
     assert response.status_code == 201
-    return response.json()
+    return response.json()["user"]
 
 
 @pytest.mark.asyncio
@@ -195,7 +195,7 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
         "tasks",
         "usage_logs",
         "memories",
-        "calendar_sync_state",
+        "google_calendar_credentials",
         "reminders",
     }.issubset(tables)
     assert "people_preferences" in tables

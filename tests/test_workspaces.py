@@ -19,7 +19,7 @@ async def _register_and_login(client, email: str, display_name: str) -> tuple[di
         json={"email": email, "password": password},
     )
     assert logged_in.status_code == 200
-    return registered.json(), {"Authorization": f"Bearer {logged_in.json()['access_token']}"}
+    return registered.json()["user"], {"Authorization": f"Bearer {logged_in.json()['access_token']}"}
 
 
 @pytest.mark.asyncio
@@ -77,7 +77,7 @@ async def test_last_owner_cannot_be_demoted(client):
             "display_name": "Last Owner",
         },
     )
-    owner_id = registered.json()["id"]
+    owner_id = registered.json()["user"]["id"]
 
     async with db_session.async_session_maker() as db:
         organization = await workspace_service.create_organization_workspace(
@@ -121,7 +121,7 @@ async def test_personal_workspace_rejects_membership(client):
             await workspace_service.add_workspace_member(
                 db,
                 workspace_id=personal_workspace["id"],
-                user_id=other.json()["id"],
+                user_id=other.json()["user"]["id"],
                 role="member",
                 invited_by_user_id=owner_payload["id"],
             )

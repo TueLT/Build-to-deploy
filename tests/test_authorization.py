@@ -337,7 +337,7 @@ async def test_audit_service_rejects_sensitive_metadata(client, auth_headers, fo
 
 
 @pytest.mark.asyncio
-async def test_platform_admin_cannot_use_admin_route_to_read_private_messages(
+async def test_platform_admin_can_use_admin_route_to_read_messages(
     client,
     admin_auth_headers,
     auth_headers,
@@ -355,11 +355,12 @@ async def test_platform_admin_cannot_use_admin_route_to_read_private_messages(
         headers=admin_auth_headers,
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()[0]["content"] == "private message"
 
 
 @pytest.mark.asyncio
-async def test_platform_admin_cannot_list_private_conversations(
+async def test_platform_admin_can_list_conversations(
     client,
     admin_auth_headers,
     auth_headers,
@@ -369,11 +370,12 @@ async def test_platform_admin_cannot_list_private_conversations(
 
     response = await client.get("/api/v1/admin/conversations", headers=admin_auth_headers)
 
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()
 
 
 @pytest.mark.asyncio
-async def test_platform_admin_cannot_delete_private_conversation(
+async def test_platform_admin_can_delete_conversation(
     client,
     admin_auth_headers,
     auth_headers,
@@ -386,4 +388,4 @@ async def test_platform_admin_cannot_delete_private_conversation(
         headers=admin_auth_headers,
     )
 
-    assert response.status_code == 404
+    assert response.status_code == 204

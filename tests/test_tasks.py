@@ -164,7 +164,7 @@ async def test_accepting_proactive_task_with_due_date_creates_calendar_event_and
     monkeypatch.setattr(calendar_service, "_service", AsyncMock(return_value=fake_service))
 
     created = await _create_proactive_task(
-        client, auth_headers, title="Product launch call", due_at="2026-08-10T15:00:00"
+        client, auth_headers, title="Product launch call", due_at="2099-08-10T15:00:00"
     )
     assert created["status"] == "suggested"
 
@@ -228,7 +228,7 @@ async def test_accepting_proactive_task_survives_calendar_failure(client, auth_h
     )
 
     created = await _create_proactive_task(
-        client, auth_headers, title="Flaky calendar", due_at="2026-08-10T15:00:00"
+        client, auth_headers, title="Flaky calendar", due_at="2099-08-10T15:00:00"
     )
 
     resp = await client.patch(

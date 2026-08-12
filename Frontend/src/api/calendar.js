@@ -15,7 +15,7 @@ export const createCalendarEvent = (token, { workspace_id, summary, start_iso, e
 export const updateCalendarEvent = (token, workspaceId, eventId, { summary, start_iso, end_iso, description } = {}) =>
   apiFetch(`/calendar/events/${eventId}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'PATCH', token, body: { summary, start_iso, end_iso, description } })
 
-export const deleteCalendarEvent = (token, eventId) =>
+export const deleteCalendarEvent = (token, _workspaceId, eventId) =>
   apiFetch(`/calendar/events/${eventId}`, { method: 'DELETE', token })
 
 export const getCalendarConnection = (token) => apiFetch('/calendar/connection', { token })

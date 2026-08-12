@@ -12,6 +12,7 @@ from sqlalchemy.pool import StaticPool
 # importing application modules so the agent uses its isolated in-memory checkpointer.
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["SECRET_KEY"] = "test-only-secret-key-with-at-least-32-bytes"
+os.environ["CREDENTIAL_ENCRYPTION_KEY"] = "Uc71afyZ76TsyFDJ-5XTdXEQNfXxdOsYKjfUV-EC88g="
 
 import src.db.session as db_session
 from src.db.base import Base

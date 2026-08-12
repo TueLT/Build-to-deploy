@@ -46,7 +46,7 @@ async def test_create_reminder_interrupts_then_schedules(
         lambda func, trigger, run_date, args, id: recorded_jobs.append({"run_date": run_date, "reminder_id": args[0]}),
     )
 
-    due_at = "2026-08-10T15:00:00"
+    due_at = "2099-08-10T15:00:00"
     llm = _script_tool_call(
         fake_llm_factory,
         "create_reminder",
@@ -101,7 +101,7 @@ async def test_fire_reminder_marks_status_and_pushes_to_owner(
         workspace_id=personal_workspace["id"],
         owner_id=user["id"],
         title="Test",
-        due_at_iso="2026-08-10T15:00:00",
+        due_at_iso="2099-08-10T15:00:00",
         lead_minutes=30,
     )
 
@@ -143,7 +143,7 @@ async def test_schedule_reminder_without_owner_is_rejected(client, personal_work
             workspace_id=personal_workspace["id"],
             owner_id=None,
             title="Agent reminder",
-            due_at_iso="2026-08-10T15:00:00",
+            due_at_iso="2099-08-10T15:00:00",
             lead_minutes=30,
         )
 

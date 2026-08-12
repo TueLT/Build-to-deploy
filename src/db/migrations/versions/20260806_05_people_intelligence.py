@@ -1,6 +1,7 @@
 """Add sparse private preferences for the people-intelligence layer."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260806_05"

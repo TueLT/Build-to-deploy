@@ -1,10 +1,10 @@
 from asyncio import run
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from alembic import context
 from src.config import get_settings
 from src.db import models  # noqa: F401
 from src.db.base import Base

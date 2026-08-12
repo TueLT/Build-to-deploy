@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from src.config import get_settings
 from src.db import session as db_session
-from src.db.models import Conversation, ConversationParticipant, Message, User
+from src.db.models import Conversation, ConversationParticipant, Message, User, Workspace
 from src.models.schemas import MessageScope
 from src.services import chat_service
 
@@ -25,7 +25,12 @@ async def _seed_conversation(
     queries deterministically instead of racing the real clock."""
     last_read_ats = last_read_ats or {}
     async with db_session.async_session_maker() as db:
-        conversation = Conversation(type="direct", name=None, created_by=alice_id)
+        workspace = (
+            await db.execute(
+                select(Workspace).where(Workspace.type == "personal", Workspace.personal_owner_user_id == alice_id)
+            )
+        ).scalar_one()
+        conversation = Conversation(workspace_id=workspace.id, type="direct", name=None, created_by=alice_id)
         db.add(conversation)
         await db.flush()
         for uid in (alice_id, bob_id):

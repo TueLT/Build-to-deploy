@@ -1,16 +1,18 @@
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.auth.dependencies import require_admin
 from src.config import get_settings
-from src.db.models import Conversation, Memory, Message, Reminder, Task, User
+from src.db.models import AIPermission, Conversation, ConversationParticipant, Memory, Message, Reminder, Task, User
 from src.db.session import get_db
 from src.models.admin_schemas import (
+    AdminConversationOut,
     AdminMemoryOut,
+    AdminMessageOut,
     AdminReminderOut,
     AdminStats,
     AdminTaskOut,
@@ -127,6 +129,106 @@ async def update_user_status(
     await db.commit()
     await db.refresh(user)
     return AdminUserOut.model_validate(user, from_attributes=True)
+
+
+@router.get("/conversations", response_model=list[AdminConversationOut])
+async def list_all_conversations(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminConversationOut]:
+    participant_count = (
+        select(func.count(ConversationParticipant.id))
+        .where(ConversationParticipant.conversation_id == Conversation.id)
+        .correlate(Conversation)
+        .scalar_subquery()
+    )
+    message_count = (
+        select(func.count(Message.id))
+        .where(Message.conversation_id == Conversation.id)
+        .correlate(Conversation)
+        .scalar_subquery()
+    )
+    rows = (
+        await db.execute(
+            select(Conversation, participant_count, message_count)
+            .order_by(Conversation.updated_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    return [
+        AdminConversationOut(
+            id=conversation.id,
+            type=conversation.type,
+            name=conversation.name,
+            created_by=conversation.created_by,
+            created_at=conversation.created_at,
+            participant_count=participants,
+            message_count=messages,
+        )
+        for conversation, participants, messages in rows
+    ]
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=list[AdminMessageOut])
+async def get_conversation_messages_admin(
+    conversation_id: str,
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> list[AdminMessageOut]:
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    rows = (
+        await db.execute(
+            select(Message, User)
+            .join(User, User.id == Message.sender_id)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.asc())
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    return [
+        AdminMessageOut(
+            id=message.id,
+            sender_id=message.sender_id,
+            sender_display_name=sender.display_name,
+            content=message.content,
+            created_at=message.created_at,
+        )
+        for message, sender in rows
+    ]
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation_admin(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> None:
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="platform.conversation_deleted",
+        target_type="conversation",
+        target_id=conversation.id,
+        workspace_id=conversation.workspace_id,
+        metadata={"conversation_type": conversation.type},
+    )
+    await db.execute(update(Task).where(Task.conversation_id == conversation_id).values(conversation_id=None))
+    await db.execute(delete(AIPermission).where(AIPermission.conversation_id == conversation_id))
+    await db.execute(delete(Message).where(Message.conversation_id == conversation_id))
+    await db.execute(delete(ConversationParticipant).where(ConversationParticipant.conversation_id == conversation_id))
+    await db.delete(conversation)
+    await db.commit()
 
 
 @router.get("/tasks", response_model=list[AdminTaskOut])

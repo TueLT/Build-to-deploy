@@ -14,7 +14,7 @@ const actions = [
 
 // Every option here is resolved server-side against the DB (chat_service.get_scoped_messages) -
 // none of these filter the already-loaded `messages` prop (that array is at most the last 50
-// anyway, see Frontend/src/hooks/useMessages.js, which isn't enough for e.g. "This week").
+// anyway, see the shared hooks/useMessages.js implementation, which isn't enough for e.g. "This week").
 const scopeOptions = [
   ['20 latest messages', { kind: 'latest_n', count: 20 }],
   ['50 latest messages', { kind: 'latest_n', count: 50 }],
@@ -167,8 +167,6 @@ export default function AIPanel({
         message: 'Find the most important deadline or appointment in this conversation and draft a reminder for it (ask me to confirm first).',
         scope: buildScope(),
         conversation_id: conversationId,
-        workspace_id: workspaceId,
-        context_limit: scopeToCount[scope],
       })
       if (handleAgentResult(res)) return
       setResultTitle('Suggest reminder'); setResult(res.response || 'No deadline or appointment found to remind about.')

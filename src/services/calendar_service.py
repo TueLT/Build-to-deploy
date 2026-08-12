@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -119,11 +118,13 @@ def to_out_dict(event: dict) -> dict:
     and the WebSocket push (REST route + agent tool both need to notify the same way)."""
     start = event.get("start", {})
     end = event.get("end", {})
+    start_value = start.get("dateTime") or start.get("date")
+    end_value = end.get("dateTime") or end.get("date")
     return {
         "id": event["id"],
         "title": event.get("summary", "(No title)"),
-        "start": start.get("dateTime") or start.get("date"),
-        "end": end.get("dateTime") or end.get("date"),
+        "start": start_value.isoformat() if isinstance(start_value, datetime) else start_value,
+        "end": end_value.isoformat() if isinstance(end_value, datetime) else end_value,
         "url": event.get("htmlLink"),
     }
 

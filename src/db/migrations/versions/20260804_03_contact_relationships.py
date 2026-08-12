@@ -1,6 +1,7 @@
 """Add private workspace relationship records."""
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260804_03"

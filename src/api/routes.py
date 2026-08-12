@@ -130,6 +130,7 @@ async def chat(
         "messages": [HumanMessage(content=request.message)],
         "context": context_text,
         "user_id": current_user.id,
+        "workspace_id": workspace_id,
         "conversation_id": request.conversation_id,
     }
     try:
@@ -146,7 +147,7 @@ async def resume_chat(
 ) -> ChatResponse:
     """Resume an interrupted agent run with the user's confirm/reject decision."""
     _check_thread_owner(request.thread_id, current_user)
-    config = {"configurable": {"thread_id": f"{current_user.id}:{request.thread_id}"}}
+    config = {"configurable": {"thread_id": request.thread_id}}
     try:
         result = await agent_graph.agent.ainvoke(
             Command(resume={"approved": request.approved, "edits": request.edits}), config

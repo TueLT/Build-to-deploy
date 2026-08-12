@@ -12,7 +12,9 @@ from src.db.models import Conversation, Task, User
 from src.db.session import get_db
 from src.models.task_schemas import TaskCreateRequest, TaskOut, UpdateTaskStatusRequest
 from src.services import calendar_service, reminder_service
+from src.services.authorization_service import require_conversation_access
 from src.services.google_credentials import CalendarNotConnected
+from src.services.workspace_service import resolve_workspace_for_user
 from src.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
