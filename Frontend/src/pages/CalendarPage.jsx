@@ -17,6 +17,7 @@ import { HANOI_TZ, formatDateTime } from '../utils/datetime'
 
 export default function CalendarPage() {
   const { token } = useAuth()
+  const { workspaceId, workspace } = useWorkspace()
   const { subscribe } = useOutletContext()
   const [connected, setConnected] = useState(null) // null = not checked yet
   const [events, setEvents] = useState([])
@@ -55,15 +56,16 @@ export default function CalendarPage() {
   // owner. Source: this UI, another tab, the agent in chat, or a direct edit in Google Calendar
   // itself (caught by syncToken polling while this user is online).
   useEffect(() => subscribe((data) => {
+    if (data.workspace_id && data.workspace_id !== workspaceId) return
     if (data.type === 'calendar_event_created' || data.type === 'calendar_event_updated') upsertEvent(data.event)
     if (data.type === 'calendar_event_deleted') removeEvent(data.event_id)
-  }), [subscribe])
+  }), [subscribe, workspaceId])
 
   const removeSelected = async () => {
     if (!selected || deleting) return
     setDeleting(true)
     try {
-      await deleteCalendarEvent(token, selected.id)
+      await deleteCalendarEvent(token, workspaceId, selected.id)
       removeEvent(selected.id)
       setSelected(null)
     } catch (err) {

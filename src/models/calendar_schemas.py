@@ -12,11 +12,18 @@ class CalendarEventOut(BaseModel):
 
 
 class CalendarEventCreateRequest(BaseModel):
+    workspace_id: str
     summary: str = Field(..., min_length=1, max_length=200)
-    start_iso: str
-    end_iso: str
-    description: str = ""
-    attendees: list[str] | None = None
+    start_iso: datetime
+    end_iso: datetime
+    description: str = Field(default="", max_length=5000)
+    attendees: list[EmailStr] | None = None
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.end_iso <= self.start_iso:
+            raise ValueError("end_iso must be later than start_iso")
+        return self
 
 
 class CalendarEventUpdateRequest(BaseModel):

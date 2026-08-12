@@ -43,7 +43,15 @@ function describeInterrupt(interrupt) {
   return 'Xác nhận hành động này?'
 }
 
-export default function AIPanel({ open, onClose, messages = [], conversationId = null, granted = false, onToggleGrant }) {
+export default function AIPanel({
+  open,
+  onClose,
+  messages = [],
+  conversationId = null,
+  workspaceId = null,
+  granted = false,
+  onToggleGrant,
+}) {
   const { token } = useAuth()
   const [scope, setScope] = useState('20 latest messages')
   const [customSince, setCustomSince] = useState('')
@@ -159,6 +167,8 @@ export default function AIPanel({ open, onClose, messages = [], conversationId =
         message: 'Find the most important deadline or appointment in this conversation and draft a reminder for it (ask me to confirm first).',
         scope: buildScope(),
         conversation_id: conversationId,
+        workspace_id: workspaceId,
+        context_limit: scopeToCount[scope],
       })
       if (handleAgentResult(res)) return
       setResultTitle('Suggest reminder'); setResult(res.response || 'No deadline or appointment found to remind about.')

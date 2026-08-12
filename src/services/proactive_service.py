@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from src.config import get_settings
 from src.db import session as db_session
-from src.db.models import Task
+from src.db.models import Conversation, Task
 from src.services import chat_service, usage_service
 from src.services.llm import get_llm
 from src.websocket.manager import manager
@@ -61,6 +61,11 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
             return
 
         settings = get_settings()
+        async with db_session.async_session_maker() as db:
+            conversation = await db.get(Conversation, conversation_id)
+            if conversation is None:
+                return
+            workspace_id = conversation.workspace_id
         llm = get_llm()
         # Without today's date, the LLM has to guess the current date from its training data when
         # resolving relative expressions ("hôm nay", "tối nay", "ngày mai") - observed in practice
@@ -83,7 +88,11 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
         )
         result = await llm.ainvoke(prompt)
         await usage_service.log_usage(
-            provider=settings.llm_provider, model=settings.model_name, usage_metadata=result.usage_metadata
+            provider=settings.llm_provider,
+            model=settings.model_name,
+            usage_metadata=result.usage_metadata,
+            user_id=sender_id,
+            workspace_id=workspace_id,
         )
         data = json.loads(_strip_fence(result.content))
         if not data.get("has_commitment"):
@@ -101,6 +110,7 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
 
         async with db_session.async_session_maker() as db:
             task = Task(
+                workspace_id=workspace_id,
                 owner_id=sender_id,
                 conversation_id=conversation_id,
                 title=(data.get("title") or content)[:200],
@@ -118,6 +128,7 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
                 "type": "task_suggested",
                 "task": {
                     "id": task.id,
+                    "workspace_id": task.workspace_id,
                     "conversation_id": task.conversation_id,
                     "title": task.title,
                     "due_at": task.due_at.isoformat() if task.due_at else None,
@@ -125,6 +136,7 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
                     "status": task.status,
                     "source": task.source,
                     "created_at": task.created_at.isoformat(),
+                    "updated_at": task.updated_at.isoformat(),
                 },
             },
         )

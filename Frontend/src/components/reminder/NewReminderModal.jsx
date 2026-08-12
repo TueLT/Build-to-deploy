@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useAuth } from '../../context/AuthContext'
+import { useWorkspace } from '../../context/WorkspaceContext'
 import { createReminder } from '../../api/reminders'
 
 export default function NewReminderModal({ open, onClose, onCreated }) {
   const { token } = useAuth()
+  const { workspaceId } = useWorkspace()
   const [title, setTitle] = useState('')
   const [dueAt, setDueAt] = useState('')
   const [leadMinutes, setLeadMinutes] = useState(30)
@@ -15,12 +17,13 @@ export default function NewReminderModal({ open, onClose, onCreated }) {
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!title.trim() || !dueAt) return
+    if (!workspaceId || !title.trim() || !dueAt) return
     setSubmitting(true); setError('')
     try {
       const reminder = await createReminder(token, {
+        workspace_id: workspaceId,
         title: title.trim(),
-        due_at_iso: `${dueAt}:00`,
+        due_at_iso: new Date(dueAt).toISOString(),
         lead_minutes: Number(leadMinutes) || 0,
         message: message.trim(),
       })

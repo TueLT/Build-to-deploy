@@ -9,6 +9,7 @@ class ConversationCreateRequest(BaseModel):
     type: Literal["direct", "group"]
     participant_ids: list[str] = Field(..., min_length=1)
     name: str | None = None
+    workspace_id: str | None = None
 
 
 class MessageOut(BaseModel):
@@ -22,6 +23,7 @@ class MessageOut(BaseModel):
 
 class ConversationSummary(BaseModel):
     id: str
+    workspace_id: str
     type: Literal["direct", "group"]
     name: str
     participants: list[UserPublic]

@@ -3,14 +3,17 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, status
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents import graph as agent_graph
 from src.auth.dependencies import get_current_user
-from src.db.models import User
+from src.db.models import Conversation, Message, User
 from src.db.session import get_db
 from src.models.schemas import ChatMessage, ChatRequest, ChatResponse, InterruptPayload, ResumeRequest
 from src.services import chat_service, usage_service
+from src.services.authorization_service import require_conversation_access
+from src.services.workspace_service import resolve_workspace_for_user
 
 router = APIRouter()
 
@@ -33,6 +36,19 @@ def _format_messages(messages: list[ChatMessage]) -> str:
         who = f"{m.sender or m.role}" + (f" [{ts}]" if ts else "")
         lines.append(f"{who}: {m.content}")
     return "\n".join(lines)
+
+
+async def _conversation_context(db: AsyncSession, conversation_id: str, limit: int = 50) -> str:
+    rows = (
+        await db.execute(
+            select(Message, User)
+            .join(User, User.id == Message.sender_id)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
+    return "\n".join(f"{sender.display_name}: {message.content}" for message, sender in reversed(rows))
 
 
 def _build_chat_response(result: dict, thread_id: str) -> ChatResponse:
@@ -67,14 +83,23 @@ async def chat(
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     """Chat với AI agent."""
-    if request.conversation_id:
-        # Don't trust the client's word that `messages` came from a conversation it's allowed to
-        # see - verify current_user is actually a participant before the agent processes them.
-        await chat_service.assert_participant(db, request.conversation_id, current_user.id)
-        # Being a participant isn't consent for the AI to read this conversation - that's a
-        # separate, explicit per-user grant (AIPanel's Grant/Revoke permission toggle).
+    if request.conversation_id is not None:
+        await require_conversation_access(db, current_user, request.conversation_id, "viewer")
+        conversation = await db.get(Conversation, request.conversation_id)
+        if conversation is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+        if request.workspace_id is not None and request.workspace_id != conversation.workspace_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="conversation_id does not belong to workspace_id",
+            )
+        workspace_id = conversation.workspace_id
+    else:
+        workspace = await resolve_workspace_for_user(db, current_user.id, request.workspace_id)
+        workspace_id = workspace.id
+    if request.conversation_id is not None:
+        # Conversation membership and AI consent are separate checks.
         await chat_service.assert_ai_permission(db, request.conversation_id, current_user.id)
-
     thread_id = request.thread_id or str(uuid4())
     _check_thread_owner(thread_id, current_user)
 
@@ -109,22 +134,25 @@ async def chat(
     }
     try:
         result = await agent_graph.agent.ainvoke(inputs, config)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="AI service is temporarily unavailable")
     return _build_chat_response(result, thread_id)
 
 
 @router.post("/chat/resume", response_model=ChatResponse)
-async def resume_chat(request: ResumeRequest, current_user: User = Depends(get_current_user)) -> ChatResponse:
+async def resume_chat(
+    request: ResumeRequest,
+    current_user: User = Depends(get_current_user),
+) -> ChatResponse:
     """Resume an interrupted agent run with the user's confirm/reject decision."""
     _check_thread_owner(request.thread_id, current_user)
-    config = {"configurable": {"thread_id": request.thread_id}}
+    config = {"configurable": {"thread_id": f"{current_user.id}:{request.thread_id}"}}
     try:
         result = await agent_graph.agent.ainvoke(
             Command(resume={"approved": request.approved, "edits": request.edits}), config
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=500, detail="AI service is temporarily unavailable")
     return _build_chat_response(result, request.thread_id)
 
 

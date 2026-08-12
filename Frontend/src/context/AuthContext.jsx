@@ -78,7 +78,7 @@ export function AuthProvider({ children }) {
 
   const changePassword = (passwords) => authApi.changePassword(token, passwords)
 
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = user?.platform_role === 'platform_admin'
 
   return (
     <AuthContext.Provider

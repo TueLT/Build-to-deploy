@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
@@ -13,6 +13,15 @@ _USER_ID = "test-user-calendar-tool"
 
 def _config():
     return {"configurable": {"thread_id": str(uuid4())}}
+
+
+def _agent_input(message):
+    return {"messages": [HumanMessage(content=message)], "user_id": "user-1", "workspace_id": "workspace-1"}
+
+
+def _allow_calendar(monkeypatch):
+    monkeypatch.setattr(calendar_service, "authorize_calendar_access", AsyncMock())
+    monkeypatch.setattr(calendar_service, "broadcast_change", AsyncMock())
 
 
 def _script_tool_call(fake_llm_factory, tool_name: str, args: dict):
@@ -47,6 +56,7 @@ def _mock_service(monkeypatch, fake_service):
 
 @pytest.mark.asyncio
 async def test_create_calendar_event_interrupts_then_creates(monkeypatch, fake_llm_factory):
+    _allow_calendar(monkeypatch)
     fake_service = MagicMock()
     fake_service.events.return_value.insert.return_value.execute.return_value = {
         "id": "evt-abc",
@@ -124,6 +134,7 @@ async def test_create_calendar_event_not_connected(monkeypatch, fake_llm_factory
 
 @pytest.mark.asyncio
 async def test_update_calendar_event_interrupts_then_updates(monkeypatch, fake_llm_factory):
+    _allow_calendar(monkeypatch)
     fake_service = MagicMock()
     fake_service.events.return_value.patch.return_value.execute.return_value = {
         "id": "evt-1", "summary": "Launch review (moved)", "htmlLink": "https://calendar.google.com/event?eid=evt1",
@@ -153,6 +164,7 @@ async def test_update_calendar_event_interrupts_then_updates(monkeypatch, fake_l
 
 @pytest.mark.asyncio
 async def test_delete_calendar_event_interrupts_then_deletes(monkeypatch, fake_llm_factory):
+    _allow_calendar(monkeypatch)
     fake_service = MagicMock()
     fake_service.events.return_value.delete.return_value.execute.return_value = {}
     _mock_service(monkeypatch, fake_service)
