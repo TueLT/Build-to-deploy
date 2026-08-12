@@ -35,8 +35,8 @@ dùng rời khỏi app chat và không bao giờ tự ý hành động thay họ
 - [x] Đăng ký bằng email + mật khẩu, mật khẩu hash bằng **bcrypt** (không lưu plaintext).
 - [x] Đăng nhập trả **JWT access token**; frontend gửi qua `Authorization: Bearer`.
 - [x] Mọi route ứng dụng nằm sau `ProtectedRoute`; chưa đăng nhập → redirect `/login`.
-- [x] Hai role: `user` và `admin`. Admin đầu tiên bootstrap qua `INITIAL_ADMIN_EMAIL` (áp dụng cho
-      cả tài khoản tạo qua Google, không riêng `/register`).
+- [x] Hai role: `user` và `admin`. Admin đầu tiên bootstrap một lần qua `POST /auth/admin/register`
+      từ Admin frontend bằng `ADMIN_BOOTSTRAP_KEY`; đăng ký User/Google luôn tạo `user`.
 - [x] Route `/admin/*` chặn bằng `AdminRoute` (FE) **và** `require_admin` dependency (BE).
 - [x] **Đăng nhập bằng Google** (cộng thêm, không thay email/mật khẩu): `POST /auth/google` xác
       minh ID token, find-or-create qua bảng `google_identities` riêng — không đổi cấu trúc bảng
@@ -276,11 +276,11 @@ con trỏ đồng bộ (1 dòng, `id="default"`).
 
 ## 6. API Surface
 
-Tất cả dưới prefix `/api/v1`, đều yêu cầu JWT trừ `/auth/register`, `/auth/login`, `/auth/google`.
+Tất cả dưới prefix `/api/v1`, đều yêu cầu JWT trừ `/auth/register`, `/auth/admin/register`, `/auth/login`, `/auth/admin/login`, `/auth/google`.
 
 | Nhóm | Endpoint |
 | --- | --- |
-| **Auth** | `POST /auth/register` · `POST /auth/login` · `POST /auth/google` · `GET /auth/me` · `PATCH /auth/me` · `POST /auth/me/password` |
+| **Auth** | `POST /auth/register` · `POST /auth/admin/register` · `POST /auth/login` · `POST /auth/admin/login` · `POST /auth/google` · `GET /auth/me` · `PATCH /auth/me` · `POST /auth/me/password` |
 | **Chat** | `GET /users` · `GET|POST /conversations` · `GET|POST /conversations/{id}/messages` · `POST /conversations/{id}/read` · `GET|PUT /conversations/{id}/ai-permission` |
 | **Agent** | `POST /chat` · `POST /chat/resume` · `GET /status` |
 | **Tasks** | `GET|POST /tasks` · `PATCH /tasks/{id}/status` · `DELETE /tasks/{id}` |

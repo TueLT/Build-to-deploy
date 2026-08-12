@@ -12,6 +12,7 @@ from src.config import get_settings
 from src.db.models import GoogleIdentity, User
 from src.db.session import get_db
 from src.models.auth_schemas import (
+    AdminRegisterRequest,
     AuthResponse,
     ChangePasswordRequest,
     GoogleAuthRequest,
@@ -36,13 +37,6 @@ def _to_public(user: User) -> UserPublic:
     )
 
 
-def _initial_role_for(email: str) -> str:
-    """The first account registered with INITIAL_ADMIN_EMAIL (any auth method) bootstraps as
-    admin - shared by /register and /google so the rule isn't duplicated/drifting between them."""
-    initial_admin_email = get_settings().initial_admin_email.strip().lower()
-    return "admin" if initial_admin_email and email.lower() == initial_admin_email else "user"
-
-
 @router.post("/register", response_model=AuthResponse)
 async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
     existing = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
@@ -53,7 +47,50 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
         email=request.email,
         password_hash=hash_password(request.password),
         display_name=request.display_name,
-        role=_initial_role_for(request.email),
+        role="user",
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    token = create_access_token(user.id)
+    return AuthResponse(access_token=token, user=_to_public(user))
+
+
+@router.post("/admin/register", response_model=AuthResponse)
+async def register_admin(request: AdminRegisterRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
+    """Create the first administrator from the separate Admin frontend.
+
+    The endpoint is intentionally protected by a deployment secret and is one-time only. After
+    the first admin exists, additional admins are managed from the Admin Users screen.
+    """
+    bootstrap_key = get_settings().admin_bootstrap_key
+    if not bootstrap_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin bootstrap is not configured",
+        )
+    if not secrets.compare_digest(request.bootstrap_key, bootstrap_key):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin bootstrap key")
+
+    admin_exists = (
+        await db.execute(select(User.id).where(User.role == "admin").limit(1))
+    ).scalar_one_or_none()
+    if admin_exists is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An admin account already exists. Ask an existing admin to promote another account.",
+        )
+
+    existing = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    user = User(
+        email=request.email,
+        password_hash=hash_password(request.password),
+        display_name=request.display_name,
+        role="admin",
     )
     db.add(user)
     await db.commit()
@@ -68,6 +105,21 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Au
     user = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
     if user is None or not verify_password(request.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    token = create_access_token(user.id)
+    return AuthResponse(access_token=token, user=_to_public(user))
+
+
+@router.post("/admin/login", response_model=AuthResponse)
+async def admin_login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
+    """Authenticate only platform administrators for the dedicated Admin frontend."""
+    user = (await db.execute(select(User).where(User.email == request.email))).scalar_one_or_none()
+    if user is None or not verify_password(request.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
+    if user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))
@@ -110,7 +162,7 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
                 # (correct: nobody ever set a password for it) until/unless they set one later.
                 password_hash=hash_password(secrets.token_urlsafe(32)),
                 display_name=claims.get("name") or email.split("@")[0],
-                role=_initial_role_for(email),
+                role="user",
             )
             db.add(user)
             await db.flush()

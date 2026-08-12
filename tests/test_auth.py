@@ -23,6 +23,56 @@ async def test_register_duplicate_email(client):
 
 
 @pytest.mark.asyncio
+async def test_admin_bootstrap_creates_admin_without_user_registration(client, monkeypatch):
+    from src.api import auth_routes
+
+    monkeypatch.setattr(
+        auth_routes,
+        "get_settings",
+        lambda: type("Settings", (), {"admin_bootstrap_key": "test-bootstrap-key"})(),
+    )
+    resp = await client.post(
+        "/api/v1/auth/admin/register",
+        json={
+            "email": "first-admin@example.com",
+            "password": "password123",
+            "display_name": "First Admin",
+            "bootstrap_key": "test-bootstrap-key",
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["user"]["role"] == "admin"
+
+    normal_signup = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "normal@example.com", "password": "password123", "display_name": "Normal"},
+    )
+    assert normal_signup.status_code == 200
+    assert normal_signup.json()["user"]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_admin_bootstrap_rejects_wrong_key(client, monkeypatch):
+    from src.api import auth_routes
+
+    monkeypatch.setattr(
+        auth_routes,
+        "get_settings",
+        lambda: type("Settings", (), {"admin_bootstrap_key": "test-bootstrap-key"})(),
+    )
+    resp = await client.post(
+        "/api/v1/auth/admin/register",
+        json={
+            "email": "not-admin@example.com",
+            "password": "password123",
+            "display_name": "Not Admin",
+            "bootstrap_key": "wrong-key",
+        },
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_login_success(client):
     payload = {"email": "login@example.com", "password": "password123", "display_name": "Login"}
     await client.post("/api/v1/auth/register", json=payload)
@@ -37,6 +87,15 @@ async def test_login_wrong_password(client):
     await client.post("/api/v1/auth/register", json=payload)
     resp = await client.post("/api/v1/auth/login", json={"email": payload["email"], "password": "nope"})
     assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_admin_login_rejects_normal_user(client, auth_headers):
+    resp = await client.post(
+        "/api/v1/auth/admin/login",
+        json={"email": "alice@example.com", "password": "password123"},
+    )
+    assert resp.status_code == 403
 
 
 @pytest.mark.asyncio

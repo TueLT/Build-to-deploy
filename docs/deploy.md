@@ -54,7 +54,7 @@ CI chưa từng thực sự chạy được.
    - `SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY` = bước 4
    - `GOOGLE_API_KEY` (hoặc `GROQ_API_KEY`/`OPENAI_API_KEY` tuỳ `LLM_PROVIDER`), `GOOGLE_OAUTH_CLIENT_ID`,
      `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET` = giá trị thật của nhóm
-   - `INITIAL_ADMIN_EMAIL` = email sẽ làm admin đầu tiên trên production (xác nhận lại với nhóm)
+   - `ADMIN_BOOTSTRAP_KEY` = khóa bí mật dùng một lần để tạo admin đầu tiên từ Admin frontend
    - `GOOGLE_CALENDAR_REDIRECT_URI` = `https://<render-url>/api/v1/calendar/oauth/callback`
    - `CORS_ORIGINS` = `https://<vercel-url>` (không khoảng trắng nếu sau này thêm nhiều origin —
      `src/main.py` dùng `.split(",")` không `.strip()`)
@@ -133,7 +133,8 @@ Thực hiện trên chính `https://<vercel-url>`, KHÔNG dùng localhost:
    kia không cần refresh — xác nhận `VITE_WS_BASE_URL` dùng đúng `wss://` (để nhầm `ws://` trên domain
    HTTPS, browser block mixed-content, WebSocket không bao giờ connect được — thường là lỗi im lặng,
    chỉ thấy trong DevTools Network tab).
-9. Đăng nhập bằng tài khoản admin (`INITIAL_ADMIN_EMAIL`), vào `/admin`, xác nhận Dashboard/Users/
+9. Mở Admin frontend, vào `/register` để tạo admin đầu tiên bằng `ADMIN_BOOTSTRAP_KEY`, sau đó
+   đăng nhập tại `/login`, xác nhận Dashboard/Users/
    Conversations load đúng dữ liệu thật, ≥2 role (user thường không thấy menu Admin).
 10. Đợi ~16 phút không có request nào (hoặc tạm tắt keep-alive để test), gửi lại 1 request bất kỳ →
     vẫn chạy được, chỉ chậm hơn (cold start), không lỗi cứng.

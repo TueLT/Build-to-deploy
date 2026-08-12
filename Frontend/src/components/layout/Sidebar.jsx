@@ -31,7 +31,7 @@ export default function Sidebar({ open, onClose }) {
               <i className={`bi ${icon}`} /><span>{label}</span>{label === 'AI Assistant' && <span className="new-pill">New</span>}
             </NavLink>
           ))}
-          {isAdmin && <>
+          {isAdmin && import.meta.env.VITE_APP_KIND !== 'user' && <>
             <div className="nav-caption">Admin</div>
             {adminNav.map(([path, icon, label]) => (
               <NavLink key={path} to={`/${path}`} end onClick={onClose} className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>

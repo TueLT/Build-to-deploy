@@ -37,7 +37,9 @@ class Settings(BaseSettings):
     secret_key: str = "dev-insecure-secret-change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
-    initial_admin_email: str = ""
+    # Used only by POST /auth/admin/register. This is deliberately separate from normal user
+    # registration so a public signup can never grant itself the admin role.
+    admin_bootstrap_key: str = ""
     # "Sign in with Google" - Web application OAuth Client ID (audience for ID-token verification
     # only, never an authorization-code exchange, so no client secret needed). Distinct from the
     # Calendar OAuth client below - two separate Google Cloud OAuth Clients on purpose, so a user

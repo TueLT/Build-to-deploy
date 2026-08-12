@@ -22,6 +22,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem(TOKEN_KEY, data.access_token)
     setUser(data.user)
     setToken(data.access_token)
+    return data
   }
 
   const register = async (email, password, display_name) => {
@@ -29,6 +30,28 @@ export function AuthProvider({ children }) {
     localStorage.setItem(TOKEN_KEY, data.access_token)
     setUser(data.user)
     setToken(data.access_token)
+    return data
+  }
+
+  const loginAdmin = async (email, password) => {
+    const data = await authApi.adminLogin({ email, password })
+    localStorage.setItem(TOKEN_KEY, data.access_token)
+    setUser(data.user)
+    setToken(data.access_token)
+    return data
+  }
+
+  const registerAdmin = async (email, password, display_name, bootstrapKey) => {
+    const data = await authApi.registerAdmin({
+      email,
+      password,
+      display_name,
+      bootstrap_key: bootstrapKey,
+    })
+    localStorage.setItem(TOKEN_KEY, data.access_token)
+    setUser(data.user)
+    setToken(data.access_token)
+    return data
   }
 
   // Handles both first-time signup and returning login transparently (find-or-create on the
@@ -38,6 +61,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem(TOKEN_KEY, data.access_token)
     setUser(data.user)
     setToken(data.access_token)
+    return data
   }
 
   const logout = () => {
@@ -58,7 +82,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, isAdmin, login, register, loginWithGoogle, logout, updateProfile, changePassword }}
+      value={{ user, token, loading, isAdmin, login, loginAdmin, register, registerAdmin, loginWithGoogle, logout, updateProfile, changePassword }}
     >
       {children}
     </AuthContext.Provider>

@@ -216,7 +216,8 @@ Database mặc định là `sqlite:///./data/app.db`. Hiện chưa có bảng ch
 - Khôi phục phiên bằng endpoint `/auth/me` khi tải lại trang.
 - Đăng xuất phía frontend bằng cách xóa JWT khỏi `localStorage`.
 - Hai role: `user` và `admin`.
-- Email khớp `INITIAL_ADMIN_EMAIL` được gán role admin khi đăng ký.
+- Admin đầu tiên được tạo một lần qua Admin frontend bằng `ADMIN_BOOTSTRAP_KEY`; đăng ký User/Google
+  luôn tạo role `user`.
 - Backend dùng dependency riêng để bảo vệ API admin; frontend dùng `AdminRoute` để bảo vệ màn hình.
 
 ### 4.2 Chat 1-1 và chat nhóm — ✅ Hoạt động
@@ -367,7 +368,7 @@ Các biến môi trường quan trọng:
 | `DATABASE_URL` | Kết nối database, mặc định SQLite |
 | `SECRET_KEY` | Ký JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Thời hạn JWT |
-| `INITIAL_ADMIN_EMAIL` | Tự gán admin khi đăng ký đúng email |
+| `ADMIN_BOOTSTRAP_KEY` | Khóa dùng một lần để tạo admin đầu tiên từ Admin frontend |
 | `CORS_ORIGINS` | Danh sách origin frontend được phép |
 | `GOOGLE_CREDENTIALS_PATH` | OAuth client credentials Google |
 | `GOOGLE_TOKEN_PATH` | OAuth token Google đã cấp quyền |

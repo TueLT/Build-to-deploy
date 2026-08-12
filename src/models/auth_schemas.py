@@ -9,6 +9,12 @@ class RegisterRequest(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=80)
 
 
+class AdminRegisterRequest(RegisterRequest):
+    """Request used only by the dedicated first-admin bootstrap screen."""
+
+    bootstrap_key: str = Field(..., min_length=1)
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str

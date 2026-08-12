@@ -20,6 +20,31 @@ Trước khi bắt đầu, máy cần có:
 - [Node.js](https://nodejs.org/) phiên bản 18 trở lên
 - npm (được cài kèm Node.js)
 
+## Hai frontend độc lập
+
+Frontend hiện được tách thành hai ứng dụng riêng, cùng gọi backend ở cổng `8000`:
+
+| Ứng dụng | Thư mục | Cổng | Phạm vi |
+| --- | --- | --- | --- |
+| User | `Frontend/user` | `5173` | Chat, tasks, calendar, reminders, memory và profile |
+| Admin | `Frontend/admin` | `5174` | Đăng nhập admin và quản trị users, conversations, user data |
+
+Mở hai terminal từ đúng thư mục frontend:
+
+```powershell
+cd Frontend\user
+npm.cmd install
+npm.cmd run dev
+```
+
+```powershell
+cd Frontend\admin
+npm.cmd install
+npm.cmd run dev
+```
+
+Sau đó mở `http://localhost:5173` cho User hoặc `http://localhost:5174` cho Admin. Admin không chứa route hay layout của User; tài khoản thường cũng không thể đăng nhập vào Admin.
+
 Kiểm tra bằng Terminal, PowerShell hoặc Command Prompt:
 
 ```bash
@@ -52,27 +77,27 @@ cd orbit-ai-assistant
 
 Nếu repository dùng tên thư mục khác, hãy thay `orbit-ai-assistant` bằng tên thư mục vừa clone.
 
-### 3. Cài đặt thư viện
+### 3. Cài đặt và chạy frontend
 
-```bash
-npm install
+Không chạy `npm` ở thư mục `Frontend` nữa. Hãy chạy từng app trong thư mục riêng:
+
+```powershell
+# User app — http://localhost:5173
+cd Frontend\user
+npm.cmd install
+npm.cmd run dev
 ```
 
-### 4. Chạy giao diện ở chế độ development
-
-```bash
-npm run dev
+```powershell
+# Admin app — http://localhost:5174
+cd Frontend\admin
+npm.cmd install
+npm.cmd run dev
 ```
 
-Terminal sẽ hiển thị địa chỉ tương tự:
+User và Admin là hai app độc lập. Admin có màn hình login và bootstrap admin riêng; không nhúng các trang User.
 
-```text
-http://localhost:5173
-```
-
-Mở địa chỉ đó trong trình duyệt để xem giao diện.
-
-## Các trang có sẵn
+## Các trang User có sẵn
 
 | Trang | Đường dẫn |
 | --- | --- |
@@ -88,23 +113,47 @@ Mở địa chỉ đó trong trình duyệt để xem giao diện.
 
 Đường dẫn `/` sẽ tự chuyển đến trang `/assistant`.
 
+## Các trang Admin có sẵn
+
+Đặt `ADMIN_BOOTSTRAP_KEY` trong backend `.env`, mở `http://localhost:5174/register` để tạo admin đầu tiên,
+sau đó đăng nhập tại `http://localhost:5174/login`. Đăng ký User không tự cấp quyền admin.
+
+| Trang | Đường dẫn |
+| --- | --- |
+| Đăng nhập Admin | `/login` |
+| Tạo admin đầu tiên | `/register` |
+| Dashboard | `/` |
+| Users | `/users` |
+| Conversations | `/conversations` |
+| User data | `/user-data` |
+
 ## Build phiên bản production
 
-Tạo bản build tối ưu:
+Tạo bản build User hoặc Admin từ thư mục tương ứng:
 
-```bash
-npm run build
+```powershell
+cd Frontend\user
+npm.cmd run build
+
+cd ..\admin
+npm.cmd run build
 ```
 
 Kết quả sẽ nằm trong thư mục `dist/`.
 
-Chạy thử bản production trên máy:
+Chạy thử bản production cho app cần kiểm tra:
 
-```bash
-npm run preview
+```powershell
+# User
+cd Frontend\user
+npm.cmd run preview
+
+# Admin — chạy ở terminal khác
+cd Frontend\admin
+npm.cmd run preview
 ```
 
-Sau đó mở địa chỉ được Vite hiển thị trong Terminal.
+Vite sẽ hiển thị địa chỉ preview trong Terminal.
 
 ## Xử lý lỗi thường gặp
 
@@ -119,12 +168,14 @@ npm.cmd run dev
 
 Hoặc mở Command Prompt thay vì PowerShell rồi chạy lại các lệnh `npm` thông thường.
 
-### Cổng 5173 đang được sử dụng
+### Cổng 5173 hoặc 5174 đang được sử dụng
 
-Chạy ứng dụng bằng cổng khác:
+Đóng process đang chiếm cổng hoặc chạy app bằng cổng khác:
 
-```bash
-npm run dev -- --port 5174
+```powershell
+# Ví dụ chạy User ở cổng 5183
+cd Frontend\user
+npm.cmd run dev -- --port 5183
 ```
 
 ### Giao diện hoặc dependency hoạt động không đúng sau khi cập nhật code

@@ -59,7 +59,7 @@ Dự án AI20K Build Phase: một AI agent nhúng trong ứng dụng chat, giúp
 
 ## Cách chạy web (local development)
 
-Cần chạy **song song 2 server** — backend (cổng 8000) và frontend (cổng 5173) — mỗi lần dùng app đều cần mở cả hai (backend không tự chạy nền, tắt terminal là tắt server).
+Cần chạy **song song 3 server** — backend (cổng 8000), User frontend (cổng 5173) và Admin frontend (cổng 5174). Chỉ cần chạy frontend tương ứng với phần bạn muốn sử dụng.
 
 ### 1. Chuẩn bị
 
@@ -91,11 +91,12 @@ cp .env.example .env
 #   - Groq: LLM_PROVIDER=groq, GROQ_API_KEY (lấy tại https://console.groq.com/keys), MODEL_NAME=openai/gpt-oss-20b.
 #   - OpenAI: LLM_PROVIDER=openai, OPENAI_API_KEY (lấy tại https://platform.openai.com/api-keys), MODEL_NAME=gpt-4o-mini.
 # Sửa DATABASE_URL trỏ vào database Postgres đã tạo ở bước 1 (postgresql://user:pass@host:5432/dbname) — bắt buộc, không có giá trị mặc định.
-# Điền INITIAL_ADMIN_EMAIL nếu muốn tài khoản đăng ký với email đó tự động có quyền admin.
+# Điền ADMIN_BOOTSTRAP_KEY để tạo admin đầu tiên tại http://localhost:5174/register.
+# Đăng ký ở User frontend luôn tạo tài khoản thường; không còn tự cấp role admin.
 # Muốn bật nút "Đăng nhập bằng Google": tạo 1 OAuth Client ID loại "Web application" tại
 #   https://console.cloud.google.com/apis/credentials, Authorized JavaScript origins:
 #   http://localhost:5173. Điền Client ID vào GOOGLE_OAUTH_CLIENT_ID ở đây, và giá trị y hệt vào
-#   VITE_GOOGLE_CLIENT_ID trong Frontend/.env (bước 3) — không điền thì nút Google chỉ ẩn/không hoạt
+#   VITE_GOOGLE_CLIENT_ID trong Frontend/user/.env.local (bước 3) — không điền thì nút Google chỉ ẩn/không hoạt
 #   động, các tính năng khác không ảnh hưởng.
 # Muốn bật nút "Connect Google Calendar" (mỗi user tự nối Calendar riêng của họ, xem docs/PER_USER_CALENDAR.md):
 #   1. Bật "Google Calendar API" tại https://console.cloud.google.com — APIs & Services → Library.
@@ -107,7 +108,7 @@ cp .env.example .env
 #   4. Authorized redirect URIs: thêm ĐÚNG http://localhost:8000/api/v1/calendar/oauth/callback
 #      (đây là redirect thật, không phải popup — phải khớp từng ký tự với GOOGLE_CALENDAR_REDIRECT_URI).
 # Điền GOOGLE_CALENDAR_CLIENT_ID + GOOGLE_CALENDAR_CLIENT_SECRET ở đây — không cần điền gì ở
-#   Frontend/.env (khác với nút đăng nhập ở trên, nút Connect Calendar không cần biến VITE_* nào,
+#   Frontend/user/.env.local (khác với nút đăng nhập ở trên, nút Connect Calendar không cần biến VITE_* nào,
 #   toàn bộ OAuth chạy ở backend). Cũng cần CREDENTIAL_ENCRYPTION_KEY (mã hoá refresh token trước
 #   khi lưu DB) — sinh 1 lần bằng:
 #     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -126,15 +127,56 @@ Kiểm tra backend đã chạy: mở `http://localhost:8000/health` phải trả
 
 ### 3. Chạy Frontend
 
-Mở một terminal khác:
+Frontend đã tách thành hai app độc lập:
 
-```bash
-cd Frontend
-npm install
-npm run dev
+| App | Thư mục | URL | Chức năng |
+| --- | --- | --- | --- |
+| User | `Frontend/user` | `http://localhost:5173` | Chat, AI Assistant, Tasks, Calendar, Reminders, Memory, Profile |
+| Admin | `Frontend/admin` | `http://localhost:5174` | Đăng nhập admin, Dashboard, Users, Conversations, User data |
+
+#### User frontend
+
+Mở terminal khác từ thư mục gốc repo:
+
+```powershell
+cd Frontend\user
+npm.cmd install
+npm.cmd run dev
 ```
 
-Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi backend tại `http://localhost:8000/api/v1` — nếu backend chạy ở địa chỉ khác, tạo file `Frontend/.env` từ `Frontend/.env.example` và sửa `VITE_API_BASE_URL`/`VITE_WS_BASE_URL`. Muốn bật nút "Đăng nhập bằng Google" thì cũng cần tạo `Frontend/.env` và điền `VITE_GOOGLE_CLIENT_ID` (cùng giá trị `GOOGLE_OAUTH_CLIENT_ID` đã điền ở bước 2). Nút "Connect Google Calendar" thì **không cần** biến `VITE_*` nào — toàn bộ OAuth chạy ở backend (đã cấu hình ở bước 2), frontend chỉ mở 1 cửa sổ popup trỏ tới URL do backend trả về.
+Mở `http://localhost:5173`. Nếu muốn bật đăng nhập Google, tạo `Frontend/user/.env.local`:
+
+```env
+VITE_APP_KIND=user
+VITE_API_URL=http://127.0.0.1:8000/api/v1
+VITE_WS_URL=ws://127.0.0.1:8000/api/v1/ws
+VITE_GOOGLE_CLIENT_ID=your-google-client-id
+```
+
+#### Admin frontend
+
+Mở terminal thứ ba từ thư mục gốc repo:
+
+```powershell
+cd Frontend\admin
+npm.cmd install
+npm.cmd run dev
+```
+
+Mở `http://localhost:5174`. Admin có màn hình đăng nhập và layout quản trị riêng, không nhúng giao diện User. Tạo `Frontend/admin/.env.local` nếu cần đổi URL backend:
+
+```env
+VITE_API_URL=http://127.0.0.1:8000/api/v1
+VITE_WS_URL=ws://127.0.0.1:8000/api/v1/ws
+```
+
+Trong root `.env`, bảo đảm CORS có cả hai origin:
+
+```env
+CORS_ORIGINS=http://localhost:5173,http://localhost:5174
+```
+
+Sau khi đổi `.env`, restart backend.
 
 ### 4. Dùng thử
 
@@ -142,14 +184,14 @@ Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi 
 2. Mở thêm một trình duyệt/tab ẩn danh khác, tạo tài khoản thứ hai.
 3. Từ tài khoản thứ nhất, vào trang **Chats**, bấm nút bút (soạn tin nhắn) để chọn người và bắt đầu chat 1-1 hoặc chọn nhiều người để tạo nhóm.
 4. Gửi tin nhắn — tài khoản còn lại sẽ nhận tin nhắn theo thời gian thực nếu đang mở cùng cuộc trò chuyện, hoặc thấy số tin nhắn chưa đọc.
-5. Muốn thử trang **Admin**: đăng ký một tài khoản với email trùng `INITIAL_ADMIN_EMAIL` đã đặt trong `.env` (hoặc đổi role một tài khoản có sẵn thành `admin` trực tiếp trong DB) — tài khoản đó sẽ thấy mục "Admin" trong Sidebar, vào được `/admin`.
+5. Muốn thử trang **Admin**: đặt `ADMIN_BOOTSTRAP_KEY` trong `.env`, mở `http://localhost:5174/register` để tạo admin đầu tiên, sau đó đăng nhập tại `http://localhost:5174/login`. Admin frontend không dùng route `/admin` của User frontend.
 6. Muốn thử **AI Summarize / Extract tasks / Find schedule / Deadlines / Ask Orbit**: cần điền `GOOGLE_API_KEY` (hoặc Groq, xem bước 2) thật trong `.env`. Trong 1 cuộc trò chuyện có vài tin nhắn, bấm icon AI trên header (⭐) rồi thử từng quick action, hoặc gõ câu hỏi tự do vào ô "Ask Orbit".
 7. Muốn thử **AI Assistant cá nhân** (`/assistant`): vào trang này và chat trực tiếp — nếu bạn yêu cầu tạo lịch/nhắc việc, agent sẽ hỏi lại xác nhận ngay trong khung chat trước khi tạo thật.
 8. Muốn xem **theo dõi token AI**: vào `/admin` (cần tài khoản admin, xem bước 5) — 2 stat card "AI tokens used today"/"AI requests today" và banner cảnh báo khi dùng ≥80% ngân sách `DAILY_TOKEN_BUDGET`. Hạ tạm `DAILY_TOKEN_BUDGET` (ví dụ `=50`) trong `.env` rồi restart backend nếu muốn thấy toast cảnh báo realtime (`usage_budget_alert` qua WebSocket) xuất hiện ngay khi đang ở bất kỳ trang nào, không cần mở `/admin` — và xác nhận `/chat` bị chặn hẳn (không chỉ cảnh báo) một khi đã vượt hẳn ngân sách.
 9. Muốn thử **Agent chủ động**: gửi 1 tin nhắn kiểu "nhớ họp lúc 3h chiều mai nhé" trong trang Chat — vài giây sau sẽ có toast "Orbit spotted a commitment" ở góc phải, và gợi ý xuất hiện trong `/tasks` mục "AI suggestions".
 10. Muốn thử **Memory**: vào `/memory`, bấm "Add memory" để lưu một điều bạn muốn Orbit nhớ, sửa/xoá qua menu 3 chấm trên mỗi thẻ.
 11. Muốn thử **Task Inbox ưu tiên**: vào `/tasks/inbox` (hoặc mục "Inbox" trong Sidebar) — task quá hạn/sắp đến hạn/priority cao/cần quyết định được nhóm riêng khỏi danh sách task đầy đủ ở `/tasks`.
-12. Muốn thử **Đăng nhập bằng Google**: cần đã điền `GOOGLE_OAUTH_CLIENT_ID`/`VITE_GOOGLE_CLIENT_ID` thật (xem bước 2, 3). Vào `/login` hoặc `/register`, bấm nút Google bên dưới nút Sign in/Create account — lần đầu sẽ tự tạo tài khoản mới (role admin nếu email trùng `INITIAL_ADMIN_EMAIL`), lần sau đăng nhập lại đúng tài khoản đó.
+12. Muốn thử **Đăng nhập bằng Google**: cần đã điền `GOOGLE_OAUTH_CLIENT_ID`/`VITE_GOOGLE_CLIENT_ID` thật (xem bước 2, 3). Vào `/login` hoặc `/register` của User frontend, bấm nút Google — lần đầu sẽ tạo tài khoản thường; admin đầu tiên phải tạo qua màn hình bootstrap của Admin.
 13. Muốn thử **Calendar (per-user)**: cần đã điền `GOOGLE_CALENDAR_CLIENT_ID`/`GOOGLE_CALENDAR_CLIENT_SECRET`/`GOOGLE_CALENDAR_REDIRECT_URI`/`CREDENTIAL_ENCRYPTION_KEY` thật (xem bước 2 — client riêng, khác client đăng nhập, cần Authorized redirect URI khớp chính xác). Vào `/calendar`, bấm **Connect Google Calendar** (mở popup thật tới Google, không phải giả lập), chọn tài khoản Google, đồng ý quyền truy cập — popup tự đóng, sau đó xem/tạo/sửa/xoá sự kiện thật trên đúng Calendar của tài khoản Google vừa chọn. Đăng nhập bằng 2 tài khoản khác nhau và tự Connect 2 Google account khác nhau ở mỗi bên để thấy rõ mỗi người có Calendar riêng, không dùng chung — tạo sự kiện bên A không hiện bên B.
 
 ### 5. Test Calendar cùng nhiều thành viên trong nhóm
