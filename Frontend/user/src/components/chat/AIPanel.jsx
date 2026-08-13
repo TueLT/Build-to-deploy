@@ -13,7 +13,17 @@ const actions = [
   ['bi-bell', 'Suggest reminder', 'Draft a reminder', '#ef5675'],
 ]
 
-const scopeToCount = { '20 latest messages': 20, '50 latest messages': 50 }
+const scopeOptions = {
+  latest_20: { label: '20 latest messages', request: { kind: 'latest_n', count: 20 }, count: 20 },
+  latest_50: { label: '50 latest messages', request: { kind: 'latest_n', count: 50 }, count: 50 },
+  unread: { label: 'Unread messages', request: { kind: 'unread' }, count: 50 },
+  today: { label: 'Today', request: { kind: 'today' }, count: 50 },
+  yesterday: { label: 'Yesterday', request: { kind: 'yesterday' }, count: 50 },
+  this_week: { label: 'This week', request: { kind: 'this_week' }, count: 50 },
+  last_hour: { label: 'Last hour', request: { kind: 'rolling_hours', hours: 1 }, count: 50 },
+  last_five_hours: { label: 'Last 5 hours', request: { kind: 'rolling_hours', hours: 5 }, count: 50 },
+  custom: { label: 'Custom range', request: { kind: 'custom_range' }, count: 50 },
+}
 
 function parseJsonArray(text) {
   const cleaned = text.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
@@ -45,7 +55,9 @@ export default function AIPanel({
   canManageAi = false,
 }) {
   const { token } = useAuth()
-  const [scope, setScope] = useState('20 latest messages')
+  const [scope, setScope] = useState('latest_20')
+  const [customSince, setCustomSince] = useState('')
+  const [customUntil, setCustomUntil] = useState('')
   const [runningAction, setRunningAction] = useState(null)
   const [resultTitle, setResultTitle] = useState('')
   const [result, setResult] = useState('')
@@ -79,7 +91,15 @@ export default function AIPanel({
     catch (err) { setError(err.detail || 'Could not update AI permission.') }
   }
 
-  const scopedMessages = () => messages.slice(-scopeToCount[scope]).map(message => ({
+  const selectedScope = () => ({
+    ...scopeOptions[scope].request,
+    ...(scope === 'custom' ? {
+      since: customSince ? new Date(customSince).toISOString() : null,
+      until: customUntil ? new Date(customUntil).toISOString() : null,
+    } : {}),
+  })
+
+  const scopedMessages = () => messages.slice(-scopeOptions[scope].count).map(message => ({
     role: 'user', sender: message.sender_name, content: message.content, timestamp: message.created_at,
   }))
 
@@ -107,7 +127,8 @@ export default function AIPanel({
         messages: scopedMessages(),
         conversation_id: conversationId,
         workspace_id: workspaceId,
-        context_limit: scopeToCount[scope],
+        context_limit: scopeOptions[scope].count,
+        scope: selectedScope(),
       })
       if (handleAgentResult(response)) return null
       setResultTitle(title)
@@ -203,7 +224,7 @@ export default function AIPanel({
           {granted ? <button className="revoke-btn" onClick={()=>toggleGrant(false)}>Disable my Assistant access</button> : <button className="btn btn-primary w-100 mt-3" onClick={()=>toggleGrant(true)} disabled={!conversationId}><i className="bi bi-shield-check me-2"/>Enable my Assistant access</button>}
           <label className="d-flex align-items-start gap-2 mt-3 small"><input type="checkbox" className="form-check-input mt-0" checked={contributionAllowed} onChange={event=>onToggleContribution(event.target.checked).catch(err=>setError(err.detail || 'Could not update contribution consent.'))} disabled={!conversationId}/><span>Allow Assistant to process messages I author in this direct conversation.</span></label>
         </>}
-        {granted && <><label className="mt-3">Immediate request window</label><select value={scope} onChange={event=>setScope(event.target.value)} className="form-select"><option>20 latest messages</option><option>50 latest messages</option></select></>}
+        {granted && <><label className="mt-3">Immediate request window</label><select value={scope} onChange={event=>setScope(event.target.value)} className="form-select">{Object.entries(scopeOptions).map(([value, option])=><option key={value} value={value}>{option.label}</option>)}</select>{scope === 'custom' && <div className="row g-2 mt-1"><label className="col-6 small">From<input className="form-control form-control-sm" type="datetime-local" value={customSince} onChange={event=>setCustomSince(event.target.value)}/></label><label className="col-6 small">To<input className="form-control form-control-sm" type="datetime-local" value={customUntil} onChange={event=>setCustomUntil(event.target.value)}/></label></div>}</>}
         <small className="d-block text-muted mt-2">Authorized content is sent to the configured external AI provider for processing.</small>
       </div>
 
@@ -215,7 +236,7 @@ export default function AIPanel({
       </div>}
 
       <div className="ai-section-title"><span>Quick actions</span><i className="bi bi-lightning-charge-fill"/></div>
-      <div className="quick-grid">{actions.map(([icon,title,sub,color])=>{ const isRunning = runningAction === title; return <motion.button key={title} whileHover={{y:-2}} whileTap={{scale:.98}} disabled={!granted || Boolean(runningAction)} onClick={handlers[title]}><span style={{color,background:`${color}12`}}><i className={`bi ${isRunning ? 'bi-hourglass-split' : icon}`}/></span><strong>{title}</strong><small>{isRunning ? 'Working...' : sub}</small></motion.button> })}</div>
+      <div className="quick-grid">{actions.map(([icon,title,sub,color])=>{ const isRunning = runningAction === title; const invalidCustom = scope === 'custom' && (!customSince || !customUntil); return <motion.button key={title} whileHover={{y:-2}} whileTap={{scale:.98}} disabled={!granted || Boolean(runningAction) || invalidCustom} onClick={handlers[title]}><span style={{color,background:`${color}12`}}><i className={`bi ${isRunning ? 'bi-hourglass-split' : icon}`}/></span><strong>{title}</strong><small>{isRunning ? 'Working...' : sub}</small></motion.button> })}</div>
       {error && <div className="auth-error">{error}</div>}
       {contextScope && <div className="alert alert-light border py-2 px-3 small mt-2 mb-2">This request used {contextScope.included_message_count}/{contextScope.window_message_count} messages in its selected window.{contextScope.excluded_participants?.length > 0 && <> Excluded authors: {contextScope.excluded_participants.join(', ')}.</>}</div>}
       {result && <div className="border rounded-3 p-3 mt-2 small"><strong className="d-block mb-1">{resultTitle}</strong>{result}{pending && <div className="d-flex gap-2 mt-2"><button className="btn btn-sm btn-primary" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(false)}>Hủy</button></div>}</div>}

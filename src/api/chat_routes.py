@@ -88,6 +88,7 @@ async def list_conversations(
                 .where(
                     ConversationParticipant.user_id == current_user.id,
                     ConversationParticipant.revoked_at.is_(None),
+                    ConversationParticipant.hidden_at.is_(None),
                     WorkspaceMembership.status == "active",
                 )
             )
@@ -289,3 +290,33 @@ async def mark_conversation_read(
 ):
     await chat_service.mark_read(db, conversation_id, current_user.id)
     return {"status": "ok"}
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def hide_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await chat_service.hide_conversation(db, conversation_id, current_user.id)
+
+
+@router.post("/conversations/{conversation_id}/leave")
+async def leave_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    remaining_user_ids, deleted = await chat_service.leave_group_conversation(
+        db, conversation_id, current_user
+    )
+    if remaining_user_ids:
+        await manager.broadcast_to_users(
+            remaining_user_ids,
+            {
+                "type": "conversation_member_left",
+                "conversation_id": conversation_id,
+                "user_id": current_user.id,
+            },
+        )
+    return {"status": "left", "conversation_deleted": deleted}

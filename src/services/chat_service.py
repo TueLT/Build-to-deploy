@@ -201,9 +201,77 @@ async def create_message(db: AsyncSession, conversation_id: str, sender_id: str,
     message = Message(conversation_id=conversation_id, sender_id=sender_id, content=content)
     db.add(message)
     conversation.updated_at = datetime.now(UTC)
+    await db.execute(
+        update(ConversationParticipant)
+        .where(
+            ConversationParticipant.conversation_id == conversation_id,
+            ConversationParticipant.revoked_at.is_(None),
+        )
+        .values(hidden_at=None)
+    )
     await db.commit()
     await db.refresh(message)
     return message
+
+
+async def hide_conversation(db: AsyncSession, conversation_id: str, user_id: str) -> None:
+    participant = await assert_participant(db, conversation_id, user_id)
+    participant.hidden_at = datetime.now(UTC)
+    await db.commit()
+
+
+async def leave_group_conversation(
+    db: AsyncSession, conversation_id: str, user: User
+) -> tuple[list[str], bool]:
+    participant = await assert_participant(db, conversation_id, user.id)
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    if conversation.type != "group":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Direct conversations cannot be left")
+
+    now = datetime.now(UTC)
+    participant.revoked_at = now
+    participant.hidden_at = now
+    permission = await get_ai_permission(db, conversation_id, user.id)
+    if permission is not None:
+        await db.delete(permission)
+
+    remaining = list(
+        (
+            await db.execute(
+                select(ConversationParticipant)
+                .where(
+                    ConversationParticipant.conversation_id == conversation_id,
+                    ConversationParticipant.user_id.is_not(None),
+                    ConversationParticipant.user_id != user.id,
+                    ConversationParticipant.revoked_at.is_(None),
+                )
+                .order_by(ConversationParticipant.joined_at, ConversationParticipant.id)
+            )
+        ).scalars()
+    )
+    if not remaining:
+        await db.delete(conversation)
+        await db.commit()
+        return [], True
+
+    if participant.resource_role == "manager" and not any(row.resource_role == "manager" for row in remaining):
+        remaining[0].resource_role = "manager"
+    conversation.ai_policy_version += 1
+    conversation.updated_at = now
+    await db.execute(
+        update(Task)
+        .where(Task.conversation_id == conversation_id, Task.status == "suggested")
+        .values(status="invalidated", invalidated_reason="conversation_membership_changed")
+    )
+    await db.execute(
+        update(EventCandidate)
+        .where(EventCandidate.conversation_id == conversation_id, EventCandidate.status == "suggested")
+        .values(status="invalidated", invalidated_reason="conversation_membership_changed")
+    )
+    await db.commit()
+    return [row.user_id for row in remaining if row.user_id], False
 
 
 async def mark_read(db: AsyncSession, conversation_id: str, user_id: str) -> None:

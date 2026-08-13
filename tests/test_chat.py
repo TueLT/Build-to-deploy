@@ -162,3 +162,70 @@ async def test_list_users_excludes_self(client, auth_headers, other_auth_headers
     emails = [u["email"] for u in resp.json()]
     assert "bob@example.com" in emails
     assert "alice@example.com" not in emails
+
+
+@pytest.mark.asyncio
+async def test_hide_conversation_is_per_user_and_new_message_restores_it(
+    client, auth_headers, other_auth_headers
+):
+    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    conversation = (
+        await client.post(
+            "/api/v1/conversations",
+            json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+            headers=auth_headers,
+        )
+    ).json()
+
+    hidden = await client.delete(f"/api/v1/conversations/{conversation['id']}", headers=auth_headers)
+    assert hidden.status_code == 204
+    mine = await client.get(f"/api/v1/conversations?workspace_id={workspace['id']}", headers=auth_headers)
+    theirs = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace['id']}", headers=other_auth_headers
+    )
+    assert conversation["id"] not in {item["id"] for item in mine.json()["conversations"]}
+    assert conversation["id"] in {item["id"] for item in theirs.json()["conversations"]}
+
+    sent = await client.post(
+        f"/api/v1/conversations/{conversation['id']}/messages",
+        json={"content": "This should restore the hidden conversation"},
+        headers=other_auth_headers,
+    )
+    assert sent.status_code == 200
+    restored = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace['id']}", headers=auth_headers
+    )
+    assert conversation["id"] in {item["id"] for item in restored.json()["conversations"]}
+
+
+@pytest.mark.asyncio
+async def test_leave_group_revokes_access_and_keeps_remaining_member(
+    client, auth_headers, other_auth_headers
+):
+    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    conversation = (
+        await client.post(
+            "/api/v1/conversations",
+            json={
+                "type": "group",
+                "participant_ids": [other["id"]],
+                "name": "Lifecycle group",
+                "workspace_id": workspace["id"],
+            },
+            headers=auth_headers,
+        )
+    ).json()
+
+    left = await client.post(
+        f"/api/v1/conversations/{conversation['id']}/leave", headers=other_auth_headers
+    )
+    assert left.status_code == 200
+    assert left.json()["conversation_deleted"] is False
+    denied = await client.get(
+        f"/api/v1/conversations/{conversation['id']}/messages", headers=other_auth_headers
+    )
+    assert denied.status_code == 404
+    remaining = await client.get(
+        f"/api/v1/conversations/{conversation['id']}/messages", headers=auth_headers
+    )
+    assert remaining.status_code == 200

@@ -8,7 +8,7 @@ import NewConversationModal from '../components/chat/NewConversationModal'
 import { useAuth } from '../context/AuthContext'
 import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
-import { getAiPermission, markRead, setAiPermission, setGroupAiPolicy } from '../api/chat'
+import { getAiPermission, hideConversation, leaveConversation, markRead, setAiPermission, setGroupAiPolicy } from '../api/chat'
 import { useWorkspace } from '../context/WorkspaceContext'
 
 export default function ChatPage() {
@@ -96,6 +96,12 @@ export default function ChatPage() {
       }
       return
     }
+    if (data.type === 'conversation_member_left') {
+      setConversations(prev => prev.map(conversation => conversation.id === data.conversation_id
+        ? { ...conversation, participants: conversation.participants.filter(participant => participant.id !== data.user_id) }
+        : conversation))
+      return
+    }
     if (data.type !== 'new_message') return
     const { selectedId, userId } = stateRef.current
     const msg = data.message
@@ -126,13 +132,32 @@ export default function ChatPage() {
     setMobileChat(true)
   }
 
+  const removeCurrentConversation = () => {
+    setConversations(previous => previous.filter(conversation => conversation.id !== selectedId))
+    setSelectedId(null)
+    setMessages([])
+    setMobileChat(false)
+  }
+
+  const onHide = async () => {
+    if (!selectedId || !window.confirm('Hide this conversation from your list? It will return when a new message arrives.')) return
+    await hideConversation(token, selectedId)
+    removeCurrentConversation()
+  }
+
+  const onLeave = async () => {
+    if (!selectedId || !window.confirm('Leave this group? You will immediately lose access.')) return
+    await leaveConversation(token, selectedId)
+    removeCurrentConversation()
+  }
+
   return (
     <div className={`chat-layout ${mobileChat ? 'show-chat' : ''}`}>
       <ConversationList conversations={conversations} selectedId={selectedId} onSelect={onSelect} onNewConversation={() => setNewConvoOpen(true)} />
       <section className="conversation-pane">
         {selectedConversation ? (
           <>
-            <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={() => setAiOpen(true)} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} />
+            <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={() => setAiOpen(true)} onHide={onHide} onLeave={onLeave} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} />
             <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} />
           </>
         ) : (

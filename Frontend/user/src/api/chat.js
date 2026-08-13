@@ -33,3 +33,9 @@ export const setAiPermission = (token, conversationId, updates) =>
 
 export const setGroupAiPolicy = (token, conversationId, enabled) =>
   apiFetch(`/conversations/${conversationId}/ai-policy`, { method: 'PUT', token, body: { enabled } })
+
+export const hideConversation = (token, conversationId) =>
+  apiFetch(`/conversations/${conversationId}`, { method: 'DELETE', token })
+
+export const leaveConversation = (token, conversationId) =>
+  apiFetch(`/conversations/${conversationId}/leave`, { method: 'POST', token })

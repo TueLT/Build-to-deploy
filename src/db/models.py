@@ -355,6 +355,7 @@ class ConversationParticipant(Base):
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     last_read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="participants")
     user: Mapped["User | None"] = relationship(foreign_keys=[user_id])

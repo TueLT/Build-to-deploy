@@ -1,6 +1,7 @@
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChatMessage(BaseModel):
@@ -10,11 +11,28 @@ class ChatMessage(BaseModel):
     timestamp: str | None = Field(default=None, description="ISO 8601 datetime, optional")
 
 
+class MessageScope(BaseModel):
+    kind: Literal["latest_n", "unread", "today", "yesterday", "this_week", "rolling_hours", "custom_range"]
+    count: int | None = Field(default=None, ge=1, le=50)
+    hours: int | None = Field(default=None, ge=1, le=168)
+    since: datetime | None = None
+    until: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_scope_fields(self):
+        if self.kind == "custom_range" and (self.since is None or self.until is None):
+            raise ValueError("custom_range requires both since and until")
+        if self.since and self.until and self.since >= self.until:
+            raise ValueError("scope since must be before until")
+        return self
+
+
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000, description="Tin nhắn từ user")
     thread_id: str | None = Field(default=None, description="Conversation thread id; generated if omitted")
     workspace_id: str | None = Field(default=None, description="Active workspace for workspace-scoped agent tools")
     context_limit: int = Field(default=20, ge=1, le=50)
+    scope: MessageScope | None = None
     messages: list[ChatMessage] | None = Field(
         default=None,
         description="Raw message history to summarize (read by summarize_conversation via state)",

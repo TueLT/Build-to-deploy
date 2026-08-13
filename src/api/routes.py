@@ -121,7 +121,11 @@ async def chat(
     conversation_view = None
     if request.conversation_id is not None:
         conversation_view = await consent_service.build_authorized_message_view(
-            db, request.conversation_id, request.context_limit
+            db,
+            request.conversation_id,
+            request.context_limit,
+            user_id=current_user.id,
+            scope=request.scope,
         )
         context_text = conversation_view.text
         context_scope = AuthorizedContextMetadata(

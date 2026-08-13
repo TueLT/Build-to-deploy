@@ -1,7 +1,7 @@
 import Avatar from '../common/Avatar'
 import { getInitials, getColor } from '../../utils/avatar'
 
-export default function ConversationHeader({ conversation, onBack, onAI, aiGranted, onToggleAi, aiMode = 'individual', canManageAi = false }) {
+export default function ConversationHeader({ conversation, onBack, onAI, onHide, onLeave, aiGranted, onToggleAi, aiMode = 'individual', canManageAi = false }) {
   const handleToggleAi = () => {
     if (aiMode === 'group_managed' && !canManageAi) { onAI(); return }
     onToggleAi(!aiGranted).catch(() => {})
@@ -21,7 +21,7 @@ export default function ConversationHeader({ conversation, onBack, onAI, aiGrant
           <i className={`bi ${aiGranted ? 'bi-stars' : 'bi-slash-circle'}`} />{aiGranted ? 'Assistant enabled' : 'Assistant disabled'}
         </button>
       </div>
-      <div className="header-actions"><button className="icon-btn"><i className="bi bi-telephone" /></button><button className="icon-btn"><i className="bi bi-camera-video" /></button><button className="icon-btn ai-mobile-btn" onClick={onAI}><i className="bi bi-stars" /></button><button className="icon-btn"><i className="bi bi-three-dots-vertical" /></button></div>
+      <div className="header-actions"><button className="icon-btn"><i className="bi bi-telephone" /></button><button className="icon-btn"><i className="bi bi-camera-video" /></button><button className="icon-btn ai-mobile-btn" onClick={onAI}><i className="bi bi-stars" /></button><div className="dropdown"><button className="icon-btn" data-bs-toggle="dropdown" aria-label="Conversation actions"><i className="bi bi-three-dots-vertical" /></button><div className="dropdown-menu dropdown-menu-end"><button className="dropdown-item" onClick={onHide}><i className="bi bi-eye-slash me-2"/>Hide for me</button>{conversation.type === 'group' && <button className="dropdown-item text-danger" onClick={onLeave}><i className="bi bi-box-arrow-right me-2"/>Leave group</button>}</div></div></div>
     </header>
   )
 }
