@@ -170,6 +170,7 @@ stateDiagram-v2
 - **Sidebar cố định** ở desktop, thu vào drawer ở mobile (Bootstrap 5, mobile-friendly theo đề bài).
 - **Mọi thao tác AI có tác dụng phụ** → thẻ xác nhận màu nổi bật, 2 nút Xác nhận / Huỷ.
 - **Task do AI đề xuất** luôn tách khỏi task chính thức bằng khối "AI suggestions" riêng.
-- **Ngày giờ** hiển thị qua `Frontend/src/utils/datetime.js` (Intl, cố định `Asia/Ho_Chi_Minh`) —
+- **Ngày giờ** hiển thị qua utility trong từng app (`Frontend/user/src/utils/datetime.js` và
+  `Frontend/admin/src/utils/datetime.js`, Intl cố định `Asia/Ho_Chi_Minh`) —
   không tự format rải rác trong component.
 - **Trạng thái rỗng** (chưa có task/reminder/memory) có hướng dẫn hành động, không để trắng.

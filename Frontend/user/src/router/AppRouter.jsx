@@ -1,7 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import AppLayout from '../components/layout/AppLayout'
-import AdminRoute from './AdminRoute'
 import ProtectedRoute from './ProtectedRoute'
 
 const LoginPage = lazy(() => import('../pages/LoginPage'))
@@ -15,9 +14,6 @@ const MemoryPage = lazy(() => import('../pages/MemoryPage'))
 const ProfilePage = lazy(() => import('../pages/ProfilePage'))
 const PersonalAssistantPage = lazy(() => import('../pages/PersonalAssistantPage'))
 const RelationshipsPage = lazy(() => import('../pages/RelationshipsPage'))
-const AdminDashboardPage = lazy(() => import('../pages/admin/AdminDashboardPage'))
-const AdminUsersPage = lazy(() => import('../pages/admin/AdminUsersPage'))
-const AdminUserDataPage = lazy(() => import('../pages/admin/AdminUserDataPage'))
 
 function RouteFallback() {
   return (
@@ -46,11 +42,6 @@ export default function AppRouter() {
               <Route path="/reminders" element={<ReminderPage />} />
               <Route path="/memory" element={<MemoryPage />} />
               <Route path="/profile" element={<ProfilePage />} />
-              <Route element={<AdminRoute />}>
-                <Route path="/admin" element={<AdminDashboardPage />} />
-                <Route path="/admin/users" element={<AdminUsersPage />} />
-                <Route path="/admin/user-data" element={<AdminUserDataPage />} />
-              </Route>
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/assistant" replace />} />

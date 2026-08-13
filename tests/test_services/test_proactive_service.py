@@ -107,6 +107,9 @@ async def test_maybe_suggest_task_creates_suggested_task(client, auth_headers, o
     assert tasks[0].source == "proactive"
     assert tasks[0].status == "suggested"
     assert tasks[0].workspace_id == workspace_id
+    prompt = fake_llm.ainvoke.await_args.args[0]
+    assert proactive_service.get_settings().calendar_timezone in prompt
+    assert str(proactive_service.datetime.now().year) in prompt
 
 
 @pytest.mark.asyncio

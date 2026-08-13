@@ -32,7 +32,7 @@ Nền tảng workspace đã được triển khai xuyên suốt database, REST/W
 - **Hồ sơ cá nhân** (`/profile`): sửa tên/chức danh/timezone/tuỳ chọn thông báo và đổi mật khẩu — lưu thật vào database, không còn là dữ liệu mẫu.
 - **Memory có phạm vi rõ ràng** (`/memory`): thêm/sửa/xoá "điều Orbit nên nhớ về bạn" theo từng workspace. Agent chỉ tìm kiếm memory và task thuộc đúng user/workspace của lượt chat hiện tại.
 - **Agent chủ động (proactive), realtime**: mỗi tin nhắn mới trong Chat được rà tự động (pre-filter rẻ + LLM xác nhận) — nếu chứa cam kết/lịch hẹn/hạn chót, Orbit tự tạo gợi ý và đẩy thẳng vào `/tasks` mục "AI suggestions" qua WebSocket (không cần refresh) kèm toast, không cần người dùng chủ động yêu cầu. Toàn bộ thao tác Task (accept/dismiss/complete/xoá) cũng đồng bộ realtime giữa các tab/thiết bị.
-- **Múi giờ thống nhất Asia/Ho_Chi_Minh (Hà Nội)**: mọi nơi hiển thị ngày giờ (Chat, Task, Calendar, Reminder, Memory, Admin) đều quy về giờ Hà Nội bất kể múi giờ máy người xem, qua `Frontend/src/utils/datetime.js`. Backend cũng cố định giờ Hà Nội cho scheduler (reminder fire đúng giờ dù server chạy múi giờ khác) và mốc "hôm nay" của thống kê token.
+- **Múi giờ thống nhất Asia/Ho_Chi_Minh (Hà Nội)**: mọi nơi hiển thị ngày giờ đều quy về giờ Hà Nội qua utility riêng của `Frontend/user` và `Frontend/admin`. Backend cũng cố định giờ Hà Nội cho scheduler và mốc "hôm nay" của thống kê token.
 
 ### Công cụ đánh giá (dev, không phải tính năng người dùng)
 
@@ -57,7 +57,7 @@ Nền tảng workspace đã được triển khai xuyên suốt database, REST/W
 │   ├── websocket/          # Kênh real-time cho chat
 │   └── main.py             # Điểm khởi tạo FastAPI app
 ├── tests/                 # pytest cho backend
-└── Frontend/               # Frontend — React + Vite
+└── Frontend/               # npm workspace: user app (5173) + admin app (5174)
     └── src/
         ├── api/            # Gọi REST API + WebSocket client
         ├── context/         # AuthContext (JWT, user hiện tại)
@@ -69,7 +69,7 @@ Nền tảng workspace đã được triển khai xuyên suốt database, REST/W
 
 ## Cách chạy web (local development)
 
-Cần chạy **song song 2 server** — backend (cổng 8000) và frontend (cổng 5173) — mỗi lần dùng app đều cần mở cả hai (backend không tự chạy nền, tắt terminal là tắt server).
+Cần chạy backend (cổng 8000) và ít nhất một frontend. User app chạy ở cổng 5173; Admin app độc lập chạy ở cổng 5174.
 
 ### 1. Chuẩn bị
 
@@ -106,7 +106,7 @@ cp .env.example .env
 #   https://console.cloud.google.com/apis/credentials (khác với credential "Desktop app" đang
 #   dùng cho Google Calendar — không dùng chung), Authorized JavaScript origins:
 #   http://localhost:5173. Điền Client ID vào GOOGLE_OAUTH_CLIENT_ID ở đây, và giá trị y hệt vào
-#   VITE_GOOGLE_CLIENT_ID trong Frontend/.env (bước 3) — không điền thì nút Google chỉ ẩn/không hoạt
+#   VITE_GOOGLE_CLIENT_ID trong Frontend/user/.env (bước 3) — không điền thì nút Google bị vô hiệu
 #   động, các tính năng khác không ảnh hưởng.
 
 # Chạy server
@@ -119,17 +119,19 @@ Nếu có `make` (macOS/Linux, hoặc cài Make trên Windows): dùng `make run`
 
 Kiểm tra backend đã chạy: mở `http://localhost:8000/health` phải trả về `{"status":"ok",...}`. Swagger UI (danh sách toàn bộ API) ở `http://localhost:8000/docs`.
 
-### 3. Chạy Frontend
+### 3. Chạy hai Frontend
 
 Mở một terminal khác:
 
 ```bash
 cd Frontend
 npm install
-npm run dev
+npm run dev:user
+# Terminal khác, nếu cần giao diện quản trị:
+npm run dev:admin
 ```
 
-Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi backend tại `http://localhost:8000/api/v1` — nếu backend chạy ở địa chỉ khác, tạo file `Frontend/.env` từ `Frontend/.env.example` và sửa `VITE_API_BASE_URL`/`VITE_WS_BASE_URL`. Muốn bật nút "Đăng nhập bằng Google" thì cũng cần tạo `Frontend/.env` và điền `VITE_GOOGLE_CLIENT_ID` (cùng giá trị `GOOGLE_OAUTH_CLIENT_ID` đã điền ở bước 2).
+Mở `http://localhost:5173` cho ứng dụng người dùng và `http://localhost:5174` cho Admin. Cấu hình local nằm riêng trong `Frontend/user/.env` và `Frontend/admin/.env`, tạo từ file `.env.example` tương ứng.
 
 ### 4. Dùng thử
 
@@ -137,7 +139,7 @@ Mở `http://localhost:5173` trong trình duyệt. Frontend mặc định gọi 
 2. Mở thêm một trình duyệt/tab ẩn danh khác, tạo tài khoản thứ hai.
 3. Từ tài khoản thứ nhất, vào trang **Chats**, bấm nút bút (soạn tin nhắn) để chọn người và bắt đầu chat 1-1 hoặc chọn nhiều người để tạo nhóm.
 4. Gửi tin nhắn — tài khoản còn lại sẽ nhận tin nhắn theo thời gian thực nếu đang mở cùng cuộc trò chuyện, hoặc thấy số tin nhắn chưa đọc.
-5. Muốn thử trang **Admin**: đăng ký một tài khoản với email trùng `INITIAL_ADMIN_EMAIL` đã đặt trong `.env` (hoặc đổi role một tài khoản có sẵn thành `admin` trực tiếp trong DB) — tài khoản đó sẽ thấy mục "Admin" trong Sidebar, vào được `/admin`.
+5. Muốn thử **Admin**: đăng ký tài khoản có email trùng `INITIAL_ADMIN_EMAIL`, sau đó đăng nhập ứng dụng Admin tại `http://localhost:5174/login`. Backend vẫn là lớp bắt buộc kiểm tra `platform_role`.
 6. Muốn thử **AI Summarize / Extract tasks / Find schedule / Deadlines / Ask Orbit**: cần điền `GOOGLE_API_KEY` (hoặc Groq, xem bước 2) thật trong `.env`. Trong 1 cuộc trò chuyện có vài tin nhắn, bấm icon AI trên header (⭐) rồi thử từng quick action, hoặc gõ câu hỏi tự do vào ô "Ask Orbit".
 7. Muốn thử **AI Assistant cá nhân** (`/assistant`): vào trang này và chat trực tiếp — nếu bạn yêu cầu tạo lịch/nhắc việc, agent sẽ hỏi lại xác nhận ngay trong khung chat trước khi tạo thật.
 8. Muốn xem **theo dõi token AI**: vào `/admin` (cần tài khoản admin, xem bước 5) — 2 stat card "AI tokens used today"/"AI requests today" và banner cảnh báo khi dùng ≥80% ngân sách `DAILY_TOKEN_BUDGET`. Hạ tạm `DAILY_TOKEN_BUDGET` (ví dụ `=50`) trong `.env` rồi restart backend nếu muốn thấy toast cảnh báo realtime (`usage_budget_alert` qua WebSocket) xuất hiện ngay khi đang ở bất kỳ trang nào, không cần mở `/admin` — và xác nhận `/chat` bị chặn hẳn (không chỉ cảnh báo) một khi đã vượt hẳn ngân sách.
