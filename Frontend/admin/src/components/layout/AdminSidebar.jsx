@@ -1,7 +1,14 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 
-const links = [['/admin', 'bi-speedometer2', 'Dashboard'], ['/admin/users', 'bi-people', 'Users'], ['/admin/user-data', 'bi-database', 'Support access']]
+const links = [
+  ['/admin', 'bi-speedometer2', 'Dashboard'],
+  ['/admin/users', 'bi-people', 'Users'],
+  ['/admin/user-data', 'bi-database', 'Support access'],
+  ['/admin/ai', 'bi-cpu', 'AI Management'],
+  ['/admin/ai-usage', 'bi-bar-chart', 'AI Usage'],
+  ['/admin/audit-log', 'bi-shield-check', 'Audit Log'],
+]
 
 export default function AdminSidebar() {
   const { user, logout } = useAuth()

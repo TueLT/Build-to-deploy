@@ -165,16 +165,10 @@ async def test_non_admin_cannot_access_new_admin_routes(client, auth_headers):
 async def test_admin_can_list_and_delete_tasks(client, admin_auth_headers, auth_headers):
     alice = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
     workspace = await _personal_workspace(client, auth_headers)
-    created = (
-        await client.post("/api/v1/tasks", json={"title": "Admin-visible task"}, headers=auth_headers)
-    ).json()
+    created = (await client.post("/api/v1/tasks", json={"title": "Admin-visible task"}, headers=auth_headers)).json()
 
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read"
-    )
-    resp = await client.get(
-        f"/api/v1/admin/tasks?workspace_id={workspace['id']}", headers=admin_auth_headers
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read")
+    resp = await client.get(f"/api/v1/admin/tasks?workspace_id={workspace['id']}", headers=admin_auth_headers)
     assert resp.status_code == 200
     listed = next(t for t in resp.json() if t["id"] == created["id"])
     assert listed["owner_id"] == alice["id"]
@@ -182,9 +176,7 @@ async def test_admin_can_list_and_delete_tasks(client, admin_auth_headers, auth_
     assert listed["owner_display_name"] == alice["display_name"]
     assert listed["conversation_label"] is None
 
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage"
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage")
     resp = await client.delete(
         f"/api/v1/admin/tasks/{created['id']}?workspace_id={workspace['id']}",
         headers=admin_auth_headers,
@@ -199,9 +191,7 @@ async def test_admin_can_list_and_delete_tasks(client, admin_auth_headers, auth_
 async def test_admin_tasks_owner_filter(client, admin_auth_headers, auth_headers, other_auth_headers):
     alice = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
     bob = (await client.get("/api/v1/auth/me", headers=other_auth_headers)).json()
-    workspace = (
-        await client.post("/api/v1/workspaces", json={"name": "Shared tasks"}, headers=auth_headers)
-    ).json()
+    workspace = (await client.post("/api/v1/workspaces", json={"name": "Shared tasks"}, headers=auth_headers)).json()
     await client.post(
         f"/api/v1/workspaces/{workspace['id']}/members",
         json={"email": bob["email"], "role": "member"},
@@ -217,9 +207,7 @@ async def test_admin_tasks_owner_filter(client, admin_auth_headers, auth_headers
         json={"title": "Bob task", "workspace_id": workspace["id"]},
         headers=other_auth_headers,
     )
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read"
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read")
 
     resp = await client.get(
         f"/api/v1/admin/tasks?workspace_id={workspace['id']}&owner_id={alice['id']}",
@@ -240,20 +228,14 @@ async def test_admin_can_list_and_delete_memories(client, admin_auth_headers, au
         )
     ).json()
 
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read"
-    )
-    resp = await client.get(
-        f"/api/v1/admin/memories?workspace_id={workspace['id']}", headers=admin_auth_headers
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read")
+    resp = await client.get(f"/api/v1/admin/memories?workspace_id={workspace['id']}", headers=admin_auth_headers)
     assert resp.status_code == 200
     listed = next(m for m in resp.json() if m["id"] == created["id"])
     assert listed["owner_id"] == alice["id"]
     assert listed["owner_email"] == "alice@example.com"
 
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage"
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage")
     resp = await client.delete(
         f"/api/v1/admin/memories/{created['id']}?workspace_id={workspace['id']}",
         headers=admin_auth_headers,
@@ -265,9 +247,7 @@ async def test_admin_can_list_and_delete_memories(client, admin_auth_headers, au
 
 
 @pytest.mark.asyncio
-async def test_admin_can_list_and_delete_reminders_and_cancels_scheduler_job(
-    client, admin_auth_headers, auth_headers
-):
+async def test_admin_can_list_and_delete_reminders_and_cancels_scheduler_job(client, admin_auth_headers, auth_headers):
     alice = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
     workspace = await _personal_workspace(client, auth_headers)
     created = (
@@ -279,21 +259,15 @@ async def test_admin_can_list_and_delete_reminders_and_cancels_scheduler_job(
     ).json()
     assert scheduler.get_job(created["id"]) is not None
 
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read"
-    )
-    resp = await client.get(
-        f"/api/v1/admin/reminders?workspace_id={workspace['id']}", headers=admin_auth_headers
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:read")
+    resp = await client.get(f"/api/v1/admin/reminders?workspace_id={workspace['id']}", headers=admin_auth_headers)
     assert resp.status_code == 200
     listed = next(r for r in resp.json() if r["id"] == created["id"])
     assert listed["owner_id"] == alice["id"]
     assert listed["owner_email"] == "alice@example.com"
     assert listed["status"] == "scheduled"
 
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage"
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage")
     resp = await client.delete(
         f"/api/v1/admin/reminders/{created['id']}?workspace_id={workspace['id']}",
         headers=admin_auth_headers,
@@ -308,13 +282,9 @@ async def test_admin_can_list_and_delete_reminders_and_cancels_scheduler_job(
 
 
 @pytest.mark.asyncio
-async def test_admin_delete_reminder_404_when_missing(
-    client, admin_auth_headers, auth_headers
-):
+async def test_admin_delete_reminder_404_when_missing(client, admin_auth_headers, auth_headers):
     workspace = await _personal_workspace(client, auth_headers)
-    await _approve_support_scope(
-        client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage"
-    )
+    await _approve_support_scope(client, admin_auth_headers, auth_headers, workspace["id"], "personal_data:manage")
     resp = await client.delete(
         f"/api/v1/admin/reminders/does-not-exist?workspace_id={workspace['id']}",
         headers=admin_auth_headers,
@@ -323,12 +293,52 @@ async def test_admin_delete_reminder_404_when_missing(
 
 
 @pytest.mark.asyncio
-async def test_admin_private_data_requires_owner_approved_grant(
-    client, admin_auth_headers, auth_headers
-):
+async def test_admin_private_data_requires_owner_approved_grant(client, admin_auth_headers, auth_headers):
     workspace = await _personal_workspace(client, auth_headers)
-    resp = await client.get(
-        f"/api/v1/admin/reminders?workspace_id={workspace['id']}", headers=admin_auth_headers
-    )
+    resp = await client.get(f"/api/v1/admin/reminders?workspace_id={workspace['id']}", headers=admin_auth_headers)
     assert resp.status_code == 403
     assert resp.json()["detail"] == "Active support access grant required"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_view_ai_management_health_usage_and_audit(client, admin_auth_headers):
+    management = await client.get("/api/v1/admin/ai-management", headers=admin_auth_headers)
+    assert management.status_code == 200
+    assert management.json()["human_confirmation_required"] is True
+    assert management.json()["conversation_consent_required"] is True
+
+    health = await client.get("/api/v1/admin/system-health", headers=admin_auth_headers)
+    assert health.status_code == 200
+    assert {component["key"] for component in health.json()["components"]} >= {
+        "database",
+        "scheduler",
+        "websocket",
+        "llm",
+        "calendar",
+    }
+
+    usage = await client.get("/api/v1/admin/ai-usage?days=7", headers=admin_auth_headers)
+    assert usage.status_code == 200
+    assert len(usage.json()["daily"]) == 7
+
+    audit = await client.get("/api/v1/admin/audit-log", headers=admin_auth_headers)
+    assert audit.status_code == 200
+    assert audit.json()["total"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_admin_budget_update_is_persisted_and_audited(client, admin_auth_headers):
+    response = await client.patch(
+        "/api/v1/admin/settings/budget",
+        json={"daily_token_budget": 123456},
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["daily_token_budget"] == 123456
+
+    audit = await client.get(
+        "/api/v1/admin/audit-log?q=platform.budget_changed",
+        headers=admin_auth_headers,
+    )
+    assert audit.status_code == 200
+    assert audit.json()["items"][0]["metadata"] == {"daily_token_budget": 123456}

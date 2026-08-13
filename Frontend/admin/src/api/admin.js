@@ -2,6 +2,21 @@ import { apiFetch } from './client'
 
 export const getStats = (token) => apiFetch('/admin/stats', { token })
 
+export const getAIManagement = (token) => apiFetch('/admin/ai-management', { token })
+export const updateAIManagement = (token, body) =>
+  apiFetch('/admin/ai-management', { method: 'PATCH', token, body })
+export const getSystemHealth = (token) => apiFetch('/admin/system-health', { token })
+export const getAIUsage = (token, days = 7) => apiFetch(`/admin/ai-usage?days=${days}`, { token })
+export const updateDailyBudget = (token, daily_token_budget) =>
+  apiFetch('/admin/settings/budget', { method: 'PATCH', token, body: { daily_token_budget } })
+export const listAuditLog = (token, { q = '', actorType = '', workspaceId = '' } = {}) => {
+  const params = new URLSearchParams()
+  if (q) params.set('q', q)
+  if (actorType) params.set('actor_type', actorType)
+  if (workspaceId) params.set('workspace_id', workspaceId)
+  return apiFetch(`/admin/audit-log?${params}`, { token })
+}
+
 export const listUsers = (token, q) =>
   apiFetch(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`, { token })
 

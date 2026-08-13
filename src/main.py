@@ -18,6 +18,7 @@ from src.api.workspace_routes import router as workspace_router
 from src.config import get_settings
 from src.db.session import init_db
 from src.services import calendar_service
+from src.services.ai_config_service import load_saved_ai_configuration
 from src.services.scheduler import scheduler
 from src.websocket.routes import router as ws_router
 
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
     if settings.app_env != "production":
         await init_db()
+    await load_saved_ai_configuration()
     await init_checkpointer()
     scheduler.start()
     if settings.google_calendar_workspace_id:

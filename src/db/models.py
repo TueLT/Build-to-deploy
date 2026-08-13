@@ -268,6 +268,20 @@ class SupportAccessGrant(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
 
+class SystemConfig(Base):
+    """Single-row storage for runtime-editable platform settings."""
+
+    __tablename__ = "system_config"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=lambda: "default")
+    daily_token_budget: Mapped[int | None] = mapped_column(default=None)
+    llm_provider: Mapped[str | None] = mapped_column(default=None)
+    model_name: Mapped[str | None] = mapped_column(default=None)
+    llm_temperature: Mapped[float | None] = mapped_column(Float, default=None)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    updated_by: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
@@ -455,9 +469,7 @@ class EventCandidate(Base):
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
     operation: Mapped[str] = mapped_column(default="create")
-    target_candidate_id: Mapped[str | None] = mapped_column(
-        ForeignKey("event_candidates.id"), default=None, index=True
-    )
+    target_candidate_id: Mapped[str | None] = mapped_column(ForeignKey("event_candidates.id"), default=None, index=True)
     title: Mapped[str]
     start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
