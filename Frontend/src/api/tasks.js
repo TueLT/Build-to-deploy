@@ -3,8 +3,8 @@ import { apiFetch } from './client'
 export const listTasks = (token, workspaceId) =>
   apiFetch(`/tasks?workspace_id=${encodeURIComponent(workspaceId)}`, { token })
 
-export const createTask = (token, { workspace_id, title, due_at, priority, conversation_id, source }) =>
-  apiFetch('/tasks', { method: 'POST', token, body: { workspace_id, title, due_at, priority, conversation_id, source } })
+export const createTask = (token, { workspace_id, title, due_at, priority, conversation_id, source, source_message_ids, consent_scope_hash }) =>
+  apiFetch('/tasks', { method: 'POST', token, body: { workspace_id, title, due_at, priority, conversation_id, source, source_message_ids, consent_scope_hash } })
 
 export const updateTaskStatus = (token, taskId, status) =>
   apiFetch(`/tasks/${taskId}/status`, { method: 'PATCH', token, body: { status } })

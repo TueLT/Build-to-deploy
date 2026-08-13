@@ -28,5 +28,8 @@ export const markRead = (token, conversationId) =>
 export const getAiPermission = (token, conversationId) =>
   apiFetch(`/conversations/${conversationId}/ai-permission`, { token })
 
-export const setAiPermission = (token, conversationId, granted) =>
-  apiFetch(`/conversations/${conversationId}/ai-permission`, { method: 'PUT', token, body: { granted } })
+export const setAiPermission = (token, conversationId, updates) =>
+  apiFetch(`/conversations/${conversationId}/ai-permission`, { method: 'PUT', token, body: updates })
+
+export const setGroupAiPolicy = (token, conversationId, enabled) =>
+  apiFetch(`/conversations/${conversationId}/ai-policy`, { method: 'PUT', token, body: { enabled } })

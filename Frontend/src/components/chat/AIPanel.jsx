@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
 import { chatWithAgent, resumeAgent } from '../../api/agent'
 import { createTask } from '../../api/tasks'
+import { backfillEventCandidates, confirmEventCandidate, dismissEventCandidate, listEventCandidates } from '../../api/calendar'
 
 const actions = [
   ['bi-text-paragraph', 'Summarize', 'Get the key points', '#526ff5'],
@@ -26,7 +27,7 @@ function describeInterrupt(interrupt) {
   if (interrupt.type === 'reminder') return `Tạo nhắc nhở "${d.title}" lúc ${d.due_at}?`
   if (interrupt.type === 'calendar_event') return `Tạo sự kiện "${d.summary}" từ ${d.start} đến ${d.end}?`
   if (interrupt.type === 'calendar_event_update') return `Cập nhật sự kiện ${d.event_id}?`
-  if (interrupt.type === 'calendar_event_delete') return `Xoá sự kiện ${d.event_id}?`
+  if (interrupt.type === 'calendar_event_delete') return `Xóa sự kiện ${d.event_id}?`
   return 'Xác nhận hành động này?'
 }
 
@@ -37,7 +38,11 @@ export default function AIPanel({
   conversationId = null,
   workspaceId = null,
   granted = false,
+  contributionAllowed = false,
   onToggleGrant,
+  onToggleContribution,
+  aiMode = 'individual',
+  canManageAi = false,
 }) {
   const { token } = useAuth()
   const [scope, setScope] = useState('20 latest messages')
@@ -46,149 +51,176 @@ export default function AIPanel({
   const [result, setResult] = useState('')
   const [error, setError] = useState('')
   const [pending, setPending] = useState(null)
+  const [contextScope, setContextScope] = useState(null)
+  const [eventCandidates, setEventCandidates] = useState([])
+  const [candidateBusy, setCandidateBusy] = useState(null)
+  const [backfillStatus, setBackfillStatus] = useState(null)
+  const [question, setQuestion] = useState('')
+  const [asking, setAsking] = useState(false)
 
-  // Permission itself lives in ChatPage (shared with the header badge) - this just calls up and
-  // surfaces a failure locally, same as every other action in this panel.
+  const refreshEventCandidates = () => {
+    if (!conversationId || !granted || aiMode !== 'group_managed') {
+      setEventCandidates([])
+      return Promise.resolve()
+    }
+    return listEventCandidates(token, conversationId)
+      .then(setEventCandidates)
+      .catch(() => setEventCandidates([]))
+  }
+
+  useEffect(() => {
+    if (open) refreshEventCandidates()
+    // refreshEventCandidates deliberately uses the current panel identity only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, conversationId, granted, aiMode])
+
   const toggleGrant = async (next) => {
     try { await onToggleGrant(next) }
     catch (err) { setError(err.detail || 'Could not update AI permission.') }
   }
 
-  const scopedMessages = () => {
-    const count = scopeToCount[scope]
-    const scoped = count ? messages.slice(-count) : messages
-    return scoped.map(m => ({ role: 'user', sender: m.sender_name, content: m.content, timestamp: m.created_at }))
-  }
+  const scopedMessages = () => messages.slice(-scopeToCount[scope]).map(message => ({
+    role: 'user', sender: message.sender_name, content: message.content, timestamp: message.created_at,
+  }))
 
-  // Shared by every quick action / Ask Orbit: a tool call needing confirmation (reminder,
-  // calendar create/update/delete) comes back as status "interrupted" instead of a plain answer.
-  const handleAgentResult = (res) => {
-    if (res.status === 'error') { setError(res.response || 'The AI agent hit an error.'); return true }
-    if (res.status === 'interrupted') {
-      setPending({ thread_id: res.thread_id, interrupt: res.interrupt })
-      setResultTitle('Confirm action'); setResult(describeInterrupt(res.interrupt))
+  const handleAgentResult = (response) => {
+    setContextScope(response.context_scope || null)
+    if (response.status === 'error') {
+      setError(response.response || 'The AI agent hit an error.')
+      return true
+    }
+    if (response.status === 'interrupted') {
+      setPending({ thread_id: response.thread_id, interrupt: response.interrupt })
+      setResultTitle('Confirm action')
+      setResult(describeInterrupt(response.interrupt))
       return true
     }
     return false
+  }
+
+  const callAgent = async (action, prompt, title) => {
+    if (!messages.length) { setError('No messages in this conversation yet.'); setResult(''); return null }
+    setRunningAction(action); setError(''); setResult(''); setPending(null)
+    try {
+      const response = await chatWithAgent(token, {
+        message: prompt,
+        messages: scopedMessages(),
+        conversation_id: conversationId,
+        workspace_id: workspaceId,
+        context_limit: scopeToCount[scope],
+      })
+      if (handleAgentResult(response)) return null
+      setResultTitle(title)
+      setResult(response.response)
+      return response
+    } catch (err) {
+      setError(err.detail || 'Could not reach the AI agent.')
+      return null
+    } finally { setRunningAction(null) }
+  }
+
+  const runExtractTasks = async () => {
+    const response = await callAgent('Extract tasks', 'Extract tasks from this conversation.', 'Tasks extracted')
+    if (!response) return
+    try {
+      const items = parseJsonArray(response.response)
+      const settled = await Promise.allSettled(items.map(item => createTask(token, {
+        workspace_id: workspaceId,
+        title: item.title,
+        due_at: item.due_at || null,
+        priority: item.priority || 'Medium',
+        conversation_id: conversationId,
+        source: 'ai_extracted',
+        source_message_ids: response.context_scope?.source_message_ids || null,
+        consent_scope_hash: response.context_scope?.consent_scope_hash || null,
+      })))
+      const added = settled.filter(item => item.status === 'fulfilled').length
+      setResult(added ? `Added ${added} task${added > 1 ? 's' : ''} for review.` : 'No action items found.')
+    } catch (err) { setError(err.detail || 'Could not save extracted tasks.') }
+  }
+
+  const handlers = {
+    Summarize: () => callAgent('Summarize', 'Summarize this conversation.', 'Summary'),
+    'Extract tasks': runExtractTasks,
+    'Find schedule': () => callAgent('Find schedule', 'List events, meetings, or scheduled times mentioned in this conversation.', 'Schedule found'),
+    Deadlines: () => callAgent('Deadlines', 'List deadlines or due dates mentioned in this conversation.', 'Deadlines found'),
+    'Suggest reminder': () => callAgent('Suggest reminder', 'Find the most important deadline or appointment and draft a reminder. Ask me to confirm first.', 'Suggest reminder'),
   }
 
   const respondToInterrupt = async (approved) => {
     if (!pending || runningAction) return
     setRunningAction('__resume__'); setError('')
     try {
-      const res = await resumeAgent(token, { thread_id: pending.thread_id, approved })
+      const response = await resumeAgent(token, { thread_id: pending.thread_id, approved })
       setPending(null)
-      if (!handleAgentResult(res)) { setResultTitle(approved ? 'Done' : 'Cancelled'); setResult(res.response) }
+      if (!handleAgentResult(response)) {
+        setResultTitle(approved ? 'Done' : 'Cancelled')
+        setResult(response.response)
+      }
     } catch (err) { setError(err.detail || 'Could not reach the AI agent.') }
     finally { setRunningAction(null) }
   }
 
-  const runSummarize = async () => {
-    if (!messages.length) { setError('No messages in this conversation yet.'); setResult(''); return }
-    setRunningAction('Summarize'); setError(''); setResult(''); setPending(null)
-    try {
-      const res = await chatWithAgent(token, { message: 'Summarize this conversation.', messages: scopedMessages(), conversation_id: conversationId, workspace_id: workspaceId, context_limit: scopeToCount[scope] })
-      if (handleAgentResult(res)) return
-      setResultTitle('Summary'); setResult(res.response)
-    } catch (err) { setError(err.detail || 'Could not summarize this conversation.') }
-    finally { setRunningAction(null) }
+  const askOrbit = async (value = question) => {
+    if (!value.trim() || asking) return
+    setAsking(true)
+    const response = await callAgent('__ask__', value, 'Orbit says')
+    if (response) setQuestion('')
+    setAsking(false)
   }
 
-  const runExtractTasks = async () => {
-    if (!messages.length) { setError('No messages in this conversation yet.'); setResult(''); return }
-    setRunningAction('Extract tasks'); setError(''); setResult(''); setPending(null)
+  const actOnCandidate = async (candidate, action) => {
+    setCandidateBusy(candidate.id); setError('')
     try {
-      const res = await chatWithAgent(token, { message: 'Extract tasks from this conversation.', messages: scopedMessages(), conversation_id: conversationId, workspace_id: workspaceId, context_limit: scopeToCount[scope] })
-      if (handleAgentResult(res)) return
-      const items = parseJsonArray(res.response)
-      const settled = await Promise.allSettled(items.map(item => createTask(token, {
-        workspace_id: workspaceId, title: item.title, due_at: item.due_at || null, priority: item.priority || 'Medium',
-        conversation_id: conversationId, source: 'ai_extracted',
-      })))
-      const added = settled.filter(r => r.status === 'fulfilled').length
-      setResultTitle('Tasks extracted')
-      setResult(added ? `Added ${added} task${added > 1 ? 's' : ''} to your Tasks inbox for review.` : 'No action items found in this conversation.')
-    } catch (err) { setError(err.detail || 'Could not extract tasks from this conversation.') }
-    finally { setRunningAction(null) }
+      if (action === 'confirm') await confirmEventCandidate(token, candidate.id)
+      else await dismissEventCandidate(token, candidate.id)
+      await refreshEventCandidates()
+      setResultTitle(action === 'confirm' ? 'Calendar updated' : 'Suggestion dismissed')
+      setResult(action === 'confirm' ? 'The reviewed calendar change was applied.' : 'The suggestion was dismissed.')
+    } catch (err) { setError(err.detail || 'Could not update this event suggestion.') }
+    finally { setCandidateBusy(null) }
   }
 
-  const runFindSchedule = async () => {
-    if (!messages.length) { setError('No messages in this conversation yet.'); setResult(''); return }
-    setRunningAction('Find schedule'); setError(''); setResult(''); setPending(null)
+  const scanHistory = async () => {
+    setCandidateBusy('__backfill__'); setError('')
     try {
-      const res = await chatWithAgent(token, { message: 'List any events, meetings, or scheduled times mentioned in this conversation.', messages: scopedMessages(), conversation_id: conversationId, workspace_id: workspaceId, context_limit: scopeToCount[scope] })
-      if (handleAgentResult(res)) return
-      setResultTitle('Schedule found'); setResult(res.response)
-    } catch (err) { setError(err.detail || 'Could not find schedule in this conversation.') }
-    finally { setRunningAction(null) }
-  }
-
-  const runDeadlines = async () => {
-    if (!messages.length) { setError('No messages in this conversation yet.'); setResult(''); return }
-    setRunningAction('Deadlines'); setError(''); setResult(''); setPending(null)
-    try {
-      const res = await chatWithAgent(token, { message: 'List any deadlines or due dates mentioned in this conversation.', messages: scopedMessages(), conversation_id: conversationId, workspace_id: workspaceId, context_limit: scopeToCount[scope] })
-      if (handleAgentResult(res)) return
-      setResultTitle('Deadlines found'); setResult(res.response)
-    } catch (err) { setError(err.detail || 'Could not find deadlines in this conversation.') }
-    finally { setRunningAction(null) }
-  }
-
-  const runSuggestReminder = async () => {
-    if (!messages.length) { setError('No messages in this conversation yet.'); setResult(''); return }
-    setRunningAction('Suggest reminder'); setError(''); setResult(''); setPending(null)
-    try {
-      const res = await chatWithAgent(token, {
-        message: 'Find the most important deadline or appointment in this conversation and draft a reminder for it (ask me to confirm first).',
-        messages: scopedMessages(),
-        conversation_id: conversationId,
-        workspace_id: workspaceId,
-        context_limit: scopeToCount[scope],
-      })
-      if (handleAgentResult(res)) return
-      setResultTitle('Suggest reminder'); setResult(res.response || 'No deadline or appointment found to remind about.')
-    } catch (err) { setError(err.detail || 'Could not draft a reminder from this conversation.') }
-    finally { setRunningAction(null) }
-  }
-
-  const [question, setQuestion] = useState('')
-  const [asking, setAsking] = useState(false)
-
-  const askOrbit = async (q = question) => {
-    if (!q.trim() || asking) return
-    setAsking(true); setError(''); setResult(''); setPending(null)
-    try {
-      const res = await chatWithAgent(token, { message: q, messages: scopedMessages(), conversation_id: conversationId, workspace_id: workspaceId, context_limit: scopeToCount[scope] })
-      if (handleAgentResult(res)) return
-      setResultTitle('Orbit says'); setResult(res.response)
-      setQuestion('')
-    } catch (err) { setError(err.detail || 'Could not reach the AI agent.') }
-    finally { setAsking(false) }
-  }
-
-  const handlers = {
-    Summarize: runSummarize, 'Extract tasks': runExtractTasks, 'Find schedule': runFindSchedule,
-    Deadlines: runDeadlines, 'Suggest reminder': runSuggestReminder,
+      const response = await backfillEventCandidates(token, conversationId, 200)
+      setBackfillStatus(response)
+      await refreshEventCandidates()
+    } catch (err) { setError(err.detail || 'Could not scan the next history batch.') }
+    finally { setCandidateBusy(null) }
   }
 
   return (
     <><div className={`ai-backdrop ${open ? 'show' : ''}`} onClick={onClose}/><aside className={`ai-panel ${open ? 'open' : ''}`}>
       <div className="ai-panel-header"><div className="ai-title-icon"><i className="bi bi-stars"/></div><div><h3>AI Assistant</h3><span>Context-aware help</span></div><button className="icon-btn ai-close" onClick={onClose}><i className="bi bi-x-lg"/></button></div>
       <div className={`permission-card ${granted ? 'granted' : ''}`}>
-        <div className="permission-top"><div><i className={`bi ${granted ? 'bi-shield-check' : 'bi-shield-lock'}`}/></div><span><strong>{granted ? 'Permission granted' : 'Permission required'}</strong><small>{granted ? 'AI can read selected messages' : 'Allow AI to read this conversation'}</small></span>{granted && <span className="live-badge">Active</span>}</div>
-        {granted ? <><label>Permission scope</label><select value={scope} onChange={e=>setScope(e.target.value)} className="form-select"><option>20 latest messages</option><option>50 latest messages</option></select><button className="revoke-btn" onClick={()=>toggleGrant(false)}>Revoke permission</button></> : <button className="btn btn-primary w-100 mt-3" onClick={()=>toggleGrant(true)} disabled={!conversationId}><i className="bi bi-shield-check me-2"/>Grant Permission</button>}
-        <small className="d-block text-muted mt-2">Nội dung tin nhắn trong phạm vi trên sẽ được gửi tới nhà cung cấp AI ngoài (Google Gemini, Groq, hoặc OpenAI, tuỳ cấu hình hệ thống) để xử lý.</small>
+        <div className="permission-top"><div><i className={`bi ${granted ? 'bi-shield-check' : 'bi-shield-lock'}`}/></div><span><strong>{granted ? 'Assistant enabled' : 'Assistant disabled'}</strong><small>{aiMode === 'group_managed' ? 'A manager-controlled policy applies to the complete group conversation' : 'Individual access and author consent apply'}</small></span>{granted && <span className="live-badge">Active</span>}</div>
+        {aiMode === 'group_managed' ? <>
+          {canManageAi ? <button className={`btn w-100 mt-3 ${granted ? 'btn-light text-danger' : 'btn-primary'}`} onClick={()=>toggleGrant(!granted)} disabled={!conversationId}>{granted ? 'Disable AI for this group' : 'Enable AI for this group'}</button> : <div className="alert alert-light border small mt-3 mb-0">Only a conversation manager can change this policy.</div>}
+          <small className="d-block text-muted mt-2">When enabled, all group messages may be processed as continuous context. Every member can see that AI is active.</small>
+        </> : <>
+          {granted ? <button className="revoke-btn" onClick={()=>toggleGrant(false)}>Disable my Assistant access</button> : <button className="btn btn-primary w-100 mt-3" onClick={()=>toggleGrant(true)} disabled={!conversationId}><i className="bi bi-shield-check me-2"/>Enable my Assistant access</button>}
+          <label className="d-flex align-items-start gap-2 mt-3 small"><input type="checkbox" className="form-check-input mt-0" checked={contributionAllowed} onChange={event=>onToggleContribution(event.target.checked).catch(err=>setError(err.detail || 'Could not update contribution consent.'))} disabled={!conversationId}/><span>Allow Assistant to process messages I author in this direct conversation.</span></label>
+        </>}
+        {granted && <><label className="mt-3">Immediate request window</label><select value={scope} onChange={event=>setScope(event.target.value)} className="form-select"><option>20 latest messages</option><option>50 latest messages</option></select></>}
+        <small className="d-block text-muted mt-2">Authorized content is sent to the configured external AI provider for processing.</small>
       </div>
+
+      {aiMode === 'group_managed' && granted && <div className="border rounded-3 p-3 mt-3 small">
+        <div className="d-flex justify-content-between align-items-center gap-2"><strong>Calendar suggestions</strong>{canManageAi && <button className="btn btn-sm btn-light" onClick={scanHistory} disabled={candidateBusy==='__backfill__'}>{candidateBusy==='__backfill__' ? 'Scanning…' : 'Scan next 200 old messages'}</button>}</div>
+        {backfillStatus && <div className="text-muted mt-2">Processed {backfillStatus.processed} messages; found {backfillStatus.extracted}. {backfillStatus.has_more ? 'More history remains.' : 'History scan is complete.'}</div>}
+        {!eventCandidates.length && <div className="text-muted mt-2">No pending event suggestions.</div>}
+        {eventCandidates.map(candidate => <div className="border-top mt-2 pt-2" key={candidate.id}><strong>{candidate.operation === 'cancel' ? 'Cancel: ' : candidate.operation === 'update' ? 'Update: ' : ''}{candidate.title}</strong><div className="text-muted">{candidate.start_at ? new Date(candidate.start_at).toLocaleString() : 'Time missing'} · confidence {Math.round(candidate.confidence*100)}%</div>{candidate.missing_fields.length > 0 && <div className="text-warning">Missing: {candidate.missing_fields.join(', ')}</div>}{canManageAi && <div className="d-flex gap-2 mt-2"><button className="btn btn-sm btn-primary" disabled={candidateBusy===candidate.id || candidate.missing_fields.length>0} onClick={()=>actOnCandidate(candidate,'confirm')}>Confirm</button><button className="btn btn-sm btn-light" disabled={candidateBusy===candidate.id} onClick={()=>actOnCandidate(candidate,'dismiss')}>Dismiss</button></div>}</div>)}
+      </div>}
+
       <div className="ai-section-title"><span>Quick actions</span><i className="bi bi-lightning-charge-fill"/></div>
-      <div className="quick-grid">{actions.map(([icon,title,sub,color])=>{
-        const hasHandler = Boolean(handlers[title])
-        const isRunning = runningAction === title
-        return <motion.button key={title} whileHover={{y:-2}} whileTap={{scale:.98}} disabled={hasHandler && Boolean(runningAction)} onClick={hasHandler ? handlers[title] : undefined}><span style={{color,background:`${color}12`}}><i className={`bi ${isRunning ? 'bi-hourglass-split' : icon}`}/></span><strong>{title}</strong><small>{isRunning ? 'Working...' : sub}</small></motion.button>
-      })}</div>
+      <div className="quick-grid">{actions.map(([icon,title,sub,color])=>{ const isRunning = runningAction === title; return <motion.button key={title} whileHover={{y:-2}} whileTap={{scale:.98}} disabled={!granted || Boolean(runningAction)} onClick={handlers[title]}><span style={{color,background:`${color}12`}}><i className={`bi ${isRunning ? 'bi-hourglass-split' : icon}`}/></span><strong>{title}</strong><small>{isRunning ? 'Working...' : sub}</small></motion.button> })}</div>
       {error && <div className="auth-error">{error}</div>}
-      {result && <div className="border rounded-3 p-3 mt-2 small"><strong className="d-block mb-1">{resultTitle}</strong>{result}{pending && <div className="d-flex gap-2 mt-2"><button className="btn btn-sm btn-primary" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(false)}>Huỷ</button></div>}</div>}
-      <div className="ask-card"><div className="ask-title"><span><i className="bi bi-stars"/></span><div><strong>Ask Orbit</strong><small>About this conversation</small></div></div><textarea value={question} onChange={e=>setQuestion(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askOrbit()}}} placeholder="Ask anything about this conversation..."/><div className="ask-footer"><span>AI may make mistakes</span><button disabled={asking || !question.trim()} onClick={()=>askOrbit()}><i className={`bi ${asking?'bi-hourglass-split':'bi-arrow-up'}`}/></button></div></div>
-      <div className="suggested-prompts"><span>Try asking</span><button disabled={asking} onClick={()=>askOrbit('What decisions were made today?')}>“What decisions were made today?”</button><button disabled={asking} onClick={()=>askOrbit('Who assigned me tasks?')}>“Who assigned me tasks?”</button></div>
+      {contextScope && <div className="alert alert-light border py-2 px-3 small mt-2 mb-2">This request used {contextScope.included_message_count}/{contextScope.window_message_count} messages in its selected window.{contextScope.excluded_participants?.length > 0 && <> Excluded authors: {contextScope.excluded_participants.join(', ')}.</>}</div>}
+      {result && <div className="border rounded-3 p-3 mt-2 small"><strong className="d-block mb-1">{resultTitle}</strong>{result}{pending && <div className="d-flex gap-2 mt-2"><button className="btn btn-sm btn-primary" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(false)}>Hủy</button></div>}</div>}
+      <div className="ask-card"><div className="ask-title"><span><i className="bi bi-stars"/></span><div><strong>Ask Orbit</strong><small>About this conversation</small></div></div><textarea value={question} onChange={event=>setQuestion(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askOrbit()}}} placeholder="Ask anything about this conversation..." disabled={!granted}/><div className="ask-footer"><span>AI may make mistakes</span><button disabled={!granted || asking || !question.trim()} onClick={()=>askOrbit()}><i className={`bi ${asking?'bi-hourglass-split':'bi-arrow-up'}`}/></button></div></div>
+      <div className="suggested-prompts"><span>Try asking</span><button disabled={asking || !granted} onClick={()=>askOrbit('What decisions were made today?')}>“What decisions were made today?”</button><button disabled={asking || !granted} onClick={()=>askOrbit('Who assigned me tasks?')}>“Who assigned me tasks?”</button></div>
     </aside></>
   )
 }

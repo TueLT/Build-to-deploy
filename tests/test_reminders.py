@@ -5,7 +5,7 @@ import pytest
 async def test_create_and_list_reminder(client, auth_headers):
     resp = await client.post(
         "/api/v1/reminders",
-        json={"title": "Send report", "due_at_iso": "2026-08-10T15:00:00", "lead_minutes": 30},
+        json={"title": "Send report", "due_at_iso": "2099-08-10T15:00:00", "lead_minutes": 30},
         headers=auth_headers,
     )
     assert resp.status_code == 201
@@ -31,7 +31,7 @@ async def test_cancel_reminder(client, auth_headers):
     created = (
         await client.post(
             "/api/v1/reminders",
-            json={"title": "Throwaway", "due_at_iso": "2026-08-10T15:00:00"},
+            json={"title": "Throwaway", "due_at_iso": "2099-08-10T15:00:00"},
             headers=auth_headers,
         )
     ).json()
@@ -55,7 +55,7 @@ async def test_reminder_not_visible_to_other_user(client, auth_headers, other_au
     created = (
         await client.post(
             "/api/v1/reminders",
-            json={"title": "Private reminder", "due_at_iso": "2026-08-10T15:00:00"},
+            json={"title": "Private reminder", "due_at_iso": "2099-08-10T15:00:00"},
             headers=auth_headers,
         )
     ).json()

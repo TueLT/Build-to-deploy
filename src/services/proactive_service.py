@@ -4,10 +4,12 @@ import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
+
 from src.config import get_settings
 from src.db import session as db_session
 from src.db.models import Conversation, Task
-from src.services import chat_service, usage_service
+from src.services import chat_service, consent_service, usage_service
 from src.services.llm import get_llm
 from src.websocket.manager import manager
 
@@ -32,7 +34,13 @@ def _strip_fence(text: str) -> str:
     return text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
 
-async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: str) -> None:
+async def maybe_suggest_task(
+    *,
+    conversation_id: str,
+    sender_id: str,
+    content: str,
+    message_id: str | None = None,
+) -> None:
     """Best-effort, fire-and-forget: if a new message looks like it contains a personal
     commitment/appointment/deadline, ask the LLM to confirm and, if so, drop a 'suggested' Task
     (same review flow as the manual Extract tasks action) for the sender to Accept/Dismiss.
@@ -45,8 +53,14 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
 
     try:
         async with db_session.async_session_maker() as db:
+            conversation = await db.get(Conversation, conversation_id)
             permission = await chat_service.get_ai_permission(db, conversation_id, sender_id)
-        if permission is None or not permission.granted:
+        if conversation is None:
+            return
+        if conversation.type == "group":
+            if not conversation.ai_enabled:
+                return
+        elif permission is None or not permission.granted or not permission.contribution_allowed:
             return
 
         # Ràng buộc đề bài: tối ưu chi phí - đây là lệnh gọi LLM tự động chạy nền trên MỌI tin
@@ -61,15 +75,17 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
             if conversation is None:
                 return
             workspace_id = conversation.workspace_id
+            consent_scope_hash = await consent_service.get_consent_scope_hash(db, conversation_id)
         llm = get_llm()
         prompt = (
-            "A message was just sent in a team chat app. Decide whether it describes a personal "
-            "commitment, appointment, or deadline for the person who sent it - something worth "
-            "reminding them about later. Output ONLY JSON, no prose, no markdown code fence, with "
-            'exactly these keys: "has_commitment" (boolean), "title" (short string in Vietnamese - '
-            'tiếng Việt, only meaningful if has_commitment is true), "due_at" (ISO 8601 datetime '
-            "string if a specific date/time was mentioned, otherwise null). If unsure, or it's just "
-            'casual conversation with no real commitment, output {"has_commitment": false}.\n\n'
+            "A message was just sent in a team chat app. Decide whether the AUTHOR OF THIS MESSAGE "
+            "personally commits themselves to an action, appointment, or deadline. An assignment, "
+            "request, or reminder directed at somebody else is NOT a sender commitment. A question "
+            "or tentative suggestion is also not a commitment. Output ONLY JSON, no prose or markdown, "
+            'with exactly these keys: "has_sender_commitment" (boolean), "title" (short Vietnamese '
+            'string, meaningful only when true), "due_at" (ISO 8601 datetime or null), and '
+            '"confidence" (number from 0 to 1). If unsure, output '
+            '{"has_sender_commitment": false, "title": "", "due_at": null, "confidence": 0}.\n\n'
             f"Message: {content}"
         )
         result = await llm.ainvoke(prompt)
@@ -81,7 +97,7 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
             workspace_id=workspace_id,
         )
         data = json.loads(_strip_fence(result.content))
-        if not data.get("has_commitment"):
+        if not data.get("has_sender_commitment"):
             return
 
         due_at = None
@@ -95,6 +111,18 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
                 due_at = None
 
         async with db_session.async_session_maker() as db:
+            if message_id:
+                existing = (
+                    await db.execute(
+                        select(Task).where(
+                            Task.conversation_id == conversation_id,
+                            Task.source == "proactive",
+                            Task.source_message_ids == [message_id],
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return
             task = Task(
                 workspace_id=workspace_id,
                 owner_id=sender_id,
@@ -103,6 +131,9 @@ async def maybe_suggest_task(*, conversation_id: str, sender_id: str, content: s
                 due_at=due_at,
                 priority="Medium",
                 source="proactive",
+                source_message_ids=[message_id] if message_id else None,
+                source_sender_id=sender_id,
+                consent_scope_hash=consent_scope_hash,
             )
             db.add(task)
             await db.commit()

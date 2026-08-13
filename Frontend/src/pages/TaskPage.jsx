@@ -43,7 +43,7 @@ export default function TaskPage() {
   }), [subscribe, workspaceId])
 
   const suggestions = tasks.filter(t => t.status === 'suggested')
-  const mainTasks = tasks.filter(t => t.status !== 'suggested' && t.status !== 'dismissed')
+  const mainTasks = tasks.filter(t => !['suggested', 'dismissed', 'invalidated'].includes(t.status))
   const shownTasks = mainTasks.filter(t => t.title.toLowerCase().includes(query.toLowerCase()))
   const completed = mainTasks.filter(t => t.status === 'completed').length
   const overdue = mainTasks.filter(t => t.status === 'pending' && t.due_at && new Date(t.due_at) < new Date()).length

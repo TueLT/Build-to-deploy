@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, ge=1, le=65535)
     app_host: str = "0.0.0.0"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = ""
+    cors_origin_regex: str = ""
 
     # LLM
     llm_provider: Literal["google", "groq", "openai"] = "google"
@@ -75,6 +76,8 @@ class Settings(BaseSettings):
         origins = {origin.strip() for origin in self.cors_origins.split(",") if origin.strip()}
         if not origins or "*" in origins:
             raise ValueError("CORS_ORIGINS must explicitly list trusted origins in production")
+        if self.cors_origin_regex:
+            raise ValueError("CORS_ORIGIN_REGEX must be empty in production; list trusted origins explicitly")
         if self.llm_provider == "google" and not self.google_api_key:
             raise ValueError("GOOGLE_API_KEY is required when LLM_PROVIDER=google in production")
         if self.llm_provider == "groq" and not self.groq_api_key:

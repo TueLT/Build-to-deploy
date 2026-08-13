@@ -273,7 +273,7 @@ async def test_admin_can_list_and_delete_reminders_and_cancels_scheduler_job(
     created = (
         await client.post(
             "/api/v1/reminders",
-            json={"title": "Admin-visible reminder", "due_at_iso": "2026-08-10T15:00:00"},
+            json={"title": "Admin-visible reminder", "due_at_iso": "2099-08-10T15:00:00"},
             headers=auth_headers,
         )
     ).json()

@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.models.auth_schemas import UserPublic
 
@@ -30,6 +30,8 @@ class ConversationSummary(BaseModel):
     last_message: MessageOut | None
     unread_count: int
     updated_at: str
+    my_resource_role: Literal["manager", "participant", "viewer"] | None = None
+    ai_enabled: bool = False
 
 
 class ConversationListResponse(BaseModel):
@@ -48,8 +50,22 @@ class SendMessageRequest(BaseModel):
 class AIPermissionOut(BaseModel):
     conversation_id: str
     granted: bool
+    contribution_allowed: bool
     updated_at: str | None = None
+    mode: Literal["individual", "group_managed"] = "individual"
+    can_manage: bool = False
+
+
+class GroupAIPolicyUpdateRequest(BaseModel):
+    enabled: bool
 
 
 class AIPermissionUpdateRequest(BaseModel):
-    granted: bool
+    granted: bool | None = None
+    contribution_allowed: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self):
+        if self.granted is None and self.contribution_allowed is None:
+            raise ValueError("At least one AI permission field must be provided")
+        return self

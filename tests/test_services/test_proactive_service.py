@@ -43,7 +43,11 @@ async def _create_conversation(client, creator_headers, other_headers):
 
 
 async def _grant_ai_permission(client, conversation_id, headers):
-    await client.put(f"/api/v1/conversations/{conversation_id}/ai-permission", json={"granted": True}, headers=headers)
+    await client.put(
+        f"/api/v1/conversations/{conversation_id}/ai-permission",
+        json={"granted": True, "contribution_allowed": True},
+        headers=headers,
+    )
 
 
 @pytest.mark.asyncio
@@ -81,7 +85,10 @@ async def test_maybe_suggest_task_skips_when_ai_permission_not_granted(
 async def test_maybe_suggest_task_creates_suggested_task(client, auth_headers, other_auth_headers, monkeypatch):
     fake_llm = AsyncMock()
     fake_llm.ainvoke.return_value = AsyncMock(
-        content='{"has_commitment": true, "title": "Gửi báo cáo", "due_at": "2026-08-10T09:00:00"}'
+        content=(
+            '{"has_sender_commitment": true, "title": "Gửi báo cáo", '
+            '"due_at": "2026-08-10T09:00:00", "confidence": 0.97}'
+        )
     )
     monkeypatch.setattr(proactive_service, "get_llm", lambda: fake_llm)
 
@@ -107,7 +114,9 @@ async def test_maybe_suggest_task_no_op_when_llm_says_no_commitment(
     client, auth_headers, other_auth_headers, monkeypatch
 ):
     fake_llm = AsyncMock()
-    fake_llm.ainvoke.return_value = AsyncMock(content='{"has_commitment": false}')
+    fake_llm.ainvoke.return_value = AsyncMock(
+        content='{"has_sender_commitment": false, "title": "", "due_at": null, "confidence": 0}'
+    )
     monkeypatch.setattr(proactive_service, "get_llm", lambda: fake_llm)
 
     sender_id = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()["id"]
@@ -160,3 +169,71 @@ async def test_maybe_suggest_task_never_raises_on_llm_error(client, auth_headers
     await proactive_service.maybe_suggest_task(
         conversation_id=conversation_id, sender_id=sender_id, content="meeting tomorrow"
     )
+
+
+@pytest.mark.asyncio
+async def test_assignment_to_somebody_else_is_not_a_sender_commitment(
+    client, auth_headers, other_auth_headers, monkeypatch
+):
+    fake_llm = AsyncMock()
+    fake_llm.ainvoke.return_value = AsyncMock(
+        content='{"has_sender_commitment": false, "title": "", "due_at": null, "confidence": 0.98}'
+    )
+    monkeypatch.setattr(proactive_service, "get_llm", lambda: fake_llm)
+
+    sender_id = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()["id"]
+    conversation_id, _ = await _create_conversation(client, auth_headers, other_auth_headers)
+    await _grant_ai_permission(client, conversation_id, auth_headers)
+
+    await proactive_service.maybe_suggest_task(
+        conversation_id=conversation_id,
+        sender_id=sender_id,
+        content="Susan gửi proposal trước thứ Sáu nhé",
+        message_id="message-assignment",
+    )
+
+    async with db_session.async_session_maker() as db:
+        tasks = (await db.execute(select(Task).where(Task.owner_id == sender_id))).scalars().all()
+    assert tasks == []
+
+
+@pytest.mark.asyncio
+async def test_revoking_source_consent_invalidates_unconfirmed_candidate(
+    client, auth_headers, other_auth_headers, monkeypatch
+):
+    fake_llm = AsyncMock()
+    fake_llm.ainvoke.return_value = AsyncMock(
+        content=(
+            '{"has_sender_commitment": true, "title": "Gửi báo cáo", '
+            '"due_at": null, "confidence": 0.95}'
+        )
+    )
+    monkeypatch.setattr(proactive_service, "get_llm", lambda: fake_llm)
+
+    sender_id = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()["id"]
+    conversation_id, _ = await _create_conversation(client, auth_headers, other_auth_headers)
+    await _grant_ai_permission(client, conversation_id, auth_headers)
+    await proactive_service.maybe_suggest_task(
+        conversation_id=conversation_id,
+        sender_id=sender_id,
+        content="Tôi sẽ gửi báo cáo trước deadline",
+        message_id="source-message-1",
+    )
+
+    await client.put(
+        f"/api/v1/conversations/{conversation_id}/ai-permission",
+        json={"contribution_allowed": False},
+        headers=auth_headers,
+    )
+
+    async with db_session.async_session_maker() as db:
+        task = (await db.execute(select(Task).where(Task.owner_id == sender_id))).scalar_one()
+        assert task.status == "invalidated"
+        assert task.invalidated_reason == "source_consent_revoked"
+
+    response = await client.patch(
+        f"/api/v1/tasks/{task.id}/status",
+        json={"status": "pending"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 409

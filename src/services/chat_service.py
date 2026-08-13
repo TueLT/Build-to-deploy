@@ -1,10 +1,20 @@
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db.models import AIPermission, Conversation, ConversationParticipant, Message, User, WorkspaceMembership
+from src.db.models import (
+    AIPermission,
+    Conversation,
+    ConversationParticipant,
+    EventCandidate,
+    EventExtractionCursor,
+    Message,
+    Task,
+    User,
+    WorkspaceMembership,
+)
 from src.models.auth_schemas import UserPublic
 from src.models.chat_schemas import ConversationSummary, MessageOut
 from src.services.authorization_service import (
@@ -55,24 +65,133 @@ async def get_ai_permission(db: AsyncSession, conversation_id: str, user_id: str
     ).scalar_one_or_none()
 
 
-async def set_ai_permission(db: AsyncSession, conversation_id: str, user_id: str, granted: bool) -> AIPermission:
+async def set_ai_permission(
+    db: AsyncSession,
+    conversation_id: str,
+    user_id: str,
+    granted: bool | None = None,
+    contribution_allowed: bool | None = None,
+) -> AIPermission:
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is not None and conversation.type == "group":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Group AI is controlled by a conversation manager",
+        )
     permission = await get_ai_permission(db, conversation_id, user_id)
+    changed = permission is None
+    contribution_revoked = False
     if permission is None:
-        permission = AIPermission(conversation_id=conversation_id, user_id=user_id, granted=granted)
+        permission = AIPermission(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            granted=bool(granted),
+            contribution_allowed=bool(contribution_allowed),
+        )
         db.add(permission)
     else:
-        permission.granted = granted
+        if granted is not None and permission.granted != granted:
+            permission.granted = granted
+            changed = True
+        if contribution_allowed is not None and permission.contribution_allowed != contribution_allowed:
+            contribution_revoked = permission.contribution_allowed and not contribution_allowed
+            permission.contribution_allowed = contribution_allowed
+            changed = True
+    if changed:
+        permission.updated_at = datetime.now(UTC)
+
+    # A manual extraction depends on the complete authorized view, so any real scope change makes
+    # its unconfirmed candidates stale.  A proactive candidate only depends on its source author
+    # and is invalidated specifically when that author revokes contribution processing.
+    if changed:
+        await db.execute(
+            update(Task)
+            .where(
+                Task.conversation_id == conversation_id,
+                Task.status == "suggested",
+                Task.source == "ai_extracted",
+            )
+            .values(status="invalidated", invalidated_reason="consent_scope_changed")
+        )
+    if contribution_revoked:
+        await db.execute(
+            update(Task)
+            .where(
+                Task.conversation_id == conversation_id,
+                Task.status == "suggested",
+                Task.source_sender_id == user_id,
+            )
+            .values(status="invalidated", invalidated_reason="source_consent_revoked")
+        )
     await db.commit()
     await db.refresh(permission)
     return permission
 
 
 async def assert_ai_permission(db: AsyncSession, conversation_id: str, user_id: str) -> None:
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    if conversation.type == "group":
+        if not conversation.ai_enabled:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="AI is not enabled by this conversation's manager",
+            )
+        return
     permission = await get_ai_permission(db, conversation_id, user_id)
     if permission is None or not permission.granted:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="AI permission not granted for this conversation"
         )
+
+
+async def set_group_ai_policy(
+    db: AsyncSession,
+    conversation_id: str,
+    actor: User,
+    enabled: bool,
+) -> Conversation:
+    """Change the one group-wide AI policy; only a conversation manager may do this."""
+    await require_conversation_access(db, actor, conversation_id, "manager")
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    if conversation.type != "group":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Group AI policy only applies to group conversations",
+        )
+    if conversation.ai_enabled == enabled:
+        return conversation
+
+    now = datetime.now(UTC)
+    conversation.ai_enabled = enabled
+    conversation.ai_policy_version += 1
+    conversation.ai_enabled_by_user_id = actor.id if enabled else None
+    conversation.ai_enabled_at = now if enabled else None
+    # Any unconfirmed output was derived under the previous authorization policy.  Confirmed
+    # tasks/calendar events are domain records and are not silently deleted.
+    await db.execute(
+        update(Task)
+        .where(Task.conversation_id == conversation_id, Task.status == "suggested")
+        .values(status="invalidated", invalidated_reason="group_ai_policy_changed")
+    )
+    cursor = await db.get(EventExtractionCursor, conversation_id)
+    if cursor is not None:
+        cursor.last_message_created_at = None
+        cursor.last_message_id = None
+        cursor.processed_message_count = 0
+        cursor.status = "idle"
+        cursor.last_error = None
+    await db.execute(
+        update(EventCandidate)
+        .where(EventCandidate.conversation_id == conversation_id, EventCandidate.status == "suggested")
+        .values(status="invalidated", invalidated_reason="group_ai_policy_changed")
+    )
+    await db.commit()
+    await db.refresh(conversation)
+    return conversation
 
 
 async def create_message(db: AsyncSession, conversation_id: str, sender_id: str, content: str) -> Message:
@@ -294,4 +413,6 @@ async def build_conversation_summary(
         last_message=last_message,
         unread_count=unread_count,
         updated_at=_iso(conversation.updated_at),
+        my_resource_role=my_participant.resource_role if my_participant else None,
+        ai_enabled=conversation.ai_enabled,
     )

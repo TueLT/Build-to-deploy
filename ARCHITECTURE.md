@@ -178,6 +178,22 @@ graph LR
 
 ## Data Flow
 
+### Group AI policy and calendar-fact memory (2026-08-10)
+
+Group conversations use `Conversation.ai_enabled + ai_policy_version`, controlled only by a current
+conversation `manager`. When enabled, `AuthorizedMessageView` keeps all current participant turns in
+the selected request window instead of deleting turns per author. Direct conversations continue to
+use the independent `AIPermission.granted` and `contribution_allowed` fields.
+
+Calendar facts have a separate durable retrieval path. `event_extraction_service.py` evaluates a
+small neighbourhood around each signal-bearing new message and reconciles it with existing
+`EventCandidate` rows. Candidates model `create`, `update`, and `cancel`, retain message provenance,
+and require manager confirmation before Google Calendar is mutated. `EventExtractionCursor` supports
+bounded chronological backfill of old messages. This avoids both unbounded prompt context and losing
+an event merely because its source message is months old.
+
+This calendar-fact index is deliberately not described as general conversation STM/LTM.
+
 1. User gửi tin nhắn/thao tác từ Frontend qua REST hoặc WebSocket.
 2. Route xác thực (JWT) và validate input (Pydantic schema trong `src/models/`).
 3. Với tin nhắn người-với-người: broadcast realtime qua `src/websocket/` tới thành viên khác, đồng
@@ -216,14 +232,14 @@ ngoài `ci.yml` (lint + test trên GitHub Actions). Đây là hạng mục lớn
 - `/api/v1/chat` verify current_user là participant của `conversation_id` trước khi agent xử lý —
   chặn user A mượn nội dung hội thoại của user B qua request tự chế.
 - Rate limiting: **chưa có** trên API endpoints — cân nhắc nếu deploy thật và mở public.
-- Quyền AI đọc hội thoại: bảng `ai_permissions` (`conversation_id`, `user_id`, `granted`) thật ở
-  backend — mỗi participant tự cấp/thu hồi quyền cho AI đọc hội thoại đó, độc lập với các thành
-  viên khác (không cần đồng thuận cả nhóm). `POST /api/v1/chat` (`src/api/routes.py`) gọi
-  `chat_service.assert_ai_permission` ngay sau `assert_participant`, trước khi build context cho
-  agent — 403 nếu chưa cấp quyền hoặc quyền đã bị thu hồi. `GET/PUT /conversations/{id}/ai-permission`
-  (`src/api/chat_routes.py`) cho FE đọc/ghi; `AIPanel.jsx` gọi API thật thay vì state cục bộ, mặc
-  định hiển thị "Permission required" cho tới khi fetch xong. Panel vẫn giữ dòng minh bạch báo
-  người dùng nội dung sẽ được gửi sang Gemini/Groq.
+- Quyền AI có hai lớp độc lập trong `ai_permissions`: `granted` cho phép chính user gọi Assistant
+  trong conversation, còn `contribution_allowed` cho phép xử lý message do user đó gửi. Mọi route
+  AI theo conversation dùng `consent_service.build_authorized_message_view`: backend lấy đúng cửa
+  sổ message rồi loại content của author chưa consent **trước** khi tới planner/tool/LLM. Response
+  trả coverage và included/excluded participants để UI minh bạch. Candidate chưa xác nhận giữ
+  source message IDs + consent snapshot; revoke làm candidate phụ thuộc nguồn thành `invalidated`.
+  HITL resume cũng revalidate snapshot để draft stale không thể thực thi. Chi tiết và invariants:
+  `docs/P0_AI_CONSENT_AND_ACTION_SAFETY.md`.
 - Không có mã hoá đầu-cuối (E2E) thật — quyết định có chủ đích, xem `ROADMAP.md`. Đã rà soát:
   không có nơi nào trong `src/` log/lưu nội dung tin nhắn thô ra ngoài DB của app —
   `usage_service.py` chỉ log số token (không log nội dung prompt), không có `print`/`logger` nào

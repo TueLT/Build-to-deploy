@@ -151,12 +151,10 @@ async def test_tasks_sorted_by_due_date_then_priority(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_accepting_proactive_task_with_due_date_creates_calendar_event_and_reminder(
+async def test_accepting_proactive_task_only_accepts_task_without_hidden_side_effects(
     client, auth_headers, monkeypatch
 ):
-    """Accept is the human confirmation - a proactively-suggested task with a due date, once
-    accepted, also becomes a real Calendar event and a real Reminder without a separate interrupt()
-    step for either."""
+    """A button labelled Accept task cannot silently confirm calendar/reminder writes too."""
     fake_service = MagicMock()
     fake_service.events.return_value.insert.return_value.execute.return_value = {
         "id": "evt-1", "htmlLink": "https://calendar.google.com/event?eid=evt1",
@@ -174,12 +172,10 @@ async def test_accepting_proactive_task_with_due_date_creates_calendar_event_and
     assert resp.status_code == 200
     assert resp.json()["status"] == "pending"
 
-    fake_service.events.return_value.insert.assert_called_once()
-    call_body = fake_service.events.return_value.insert.call_args.kwargs["body"]
-    assert call_body["summary"] == "Product launch call"
+    fake_service.events.return_value.insert.assert_not_called()
 
     reminders = (await client.get("/api/v1/reminders", headers=auth_headers)).json()
-    assert any(r["title"] == "Product launch call" and r["source"] == "proactive" for r in reminders)
+    assert not any(r["title"] == "Product launch call" for r in reminders)
 
 
 @pytest.mark.asyncio
@@ -220,8 +216,7 @@ async def test_accepting_proactive_task_without_due_date_does_not_touch_calendar
 
 
 @pytest.mark.asyncio
-async def test_accepting_proactive_task_survives_calendar_failure(client, auth_headers, monkeypatch):
-    """Best-effort: a Google Calendar failure must not block the task itself from being accepted."""
+async def test_accepting_proactive_task_never_calls_calendar(client, auth_headers, monkeypatch):
 
     def _broken_get_calendar_service():
         raise RuntimeError("Google API unreachable")
@@ -239,4 +234,4 @@ async def test_accepting_proactive_task_survives_calendar_failure(client, auth_h
     assert resp.json()["status"] == "pending"
 
     reminders = (await client.get("/api/v1/reminders", headers=auth_headers)).json()
-    assert any(r["title"] == "Flaky calendar" for r in reminders)
+    assert not any(r["title"] == "Flaky calendar" for r in reminders)

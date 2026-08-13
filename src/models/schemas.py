@@ -34,12 +34,23 @@ class InterruptPayload(BaseModel):
     draft: dict
 
 
+class AuthorizedContextMetadata(BaseModel):
+    included_participants: list[str] = Field(default_factory=list)
+    excluded_participants: list[str] = Field(default_factory=list)
+    included_message_count: int = 0
+    window_message_count: int = 0
+    coverage: float = 0.0
+    source_message_ids: list[str] = Field(default_factory=list)
+    consent_scope_hash: str = ""
+
+
 class ChatResponse(BaseModel):
     response: str = Field(default="", description="Phản hồi từ agent")
     analysis: str = Field(default="", description="Phân tích nội bộ")
     thread_id: str
     status: Literal["completed", "interrupted", "error"] = "completed"
     interrupt: InterruptPayload | None = None
+    context_scope: AuthorizedContextMetadata | None = None
 
 
 class ResumeRequest(BaseModel):

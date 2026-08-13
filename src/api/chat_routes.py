@@ -12,11 +12,12 @@ from src.models.chat_schemas import (
     ConversationCreateRequest,
     ConversationListResponse,
     ConversationSummary,
+    GroupAIPolicyUpdateRequest,
     MessageListResponse,
     MessageOut,
     SendMessageRequest,
 )
-from src.services import chat_service, proactive_service
+from src.services import chat_service, event_extraction_service, proactive_service
 from src.services.authorization_service import require_conversation_access
 from src.services.workspace_service import resolve_workspace_for_user
 from src.websocket.manager import manager
@@ -178,6 +179,12 @@ async def send_message(
         conversation_id=conversation_id,
         sender_id=current_user.id,
         content=request.content,
+        message_id=message.id,
+    )
+    background_tasks.add_task(
+        event_extraction_service.maybe_extract_event_candidate,
+        conversation_id=conversation_id,
+        message_id=message.id,
     )
     return message_out
 
@@ -188,12 +195,34 @@ async def get_conversation_ai_permission(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AIPermissionOut:
-    await chat_service.assert_participant(db, conversation_id, current_user.id)
+    participant = await chat_service.assert_participant(db, conversation_id, current_user.id)
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is not None and conversation.type == "group":
+        return AIPermissionOut(
+            conversation_id=conversation_id,
+            granted=conversation.ai_enabled,
+            contribution_allowed=conversation.ai_enabled,
+            updated_at=conversation.ai_enabled_at.isoformat() if conversation.ai_enabled_at else None,
+            mode="group_managed",
+            can_manage=participant.resource_role == "manager",
+        )
     permission = await chat_service.get_ai_permission(db, conversation_id, current_user.id)
     if permission is None:
-        return AIPermissionOut(conversation_id=conversation_id, granted=False, updated_at=None)
+        return AIPermissionOut(
+            conversation_id=conversation_id,
+            granted=False,
+            contribution_allowed=False,
+            updated_at=None,
+            mode="individual",
+            can_manage=False,
+        )
     return AIPermissionOut(
-        conversation_id=conversation_id, granted=permission.granted, updated_at=permission.updated_at.isoformat()
+        conversation_id=conversation_id,
+        granted=permission.granted,
+        contribution_allowed=permission.contribution_allowed,
+        updated_at=permission.updated_at.isoformat(),
+        mode="individual",
+        can_manage=False,
     )
 
 
@@ -205,9 +234,50 @@ async def update_conversation_ai_permission(
     db: AsyncSession = Depends(get_db),
 ) -> AIPermissionOut:
     await chat_service.assert_participant(db, conversation_id, current_user.id)
-    permission = await chat_service.set_ai_permission(db, conversation_id, current_user.id, request.granted)
+    permission = await chat_service.set_ai_permission(
+        db,
+        conversation_id,
+        current_user.id,
+        granted=request.granted,
+        contribution_allowed=request.contribution_allowed,
+    )
     return AIPermissionOut(
-        conversation_id=conversation_id, granted=permission.granted, updated_at=permission.updated_at.isoformat()
+        conversation_id=conversation_id,
+        granted=permission.granted,
+        contribution_allowed=permission.contribution_allowed,
+        updated_at=permission.updated_at.isoformat(),
+        mode="individual",
+        can_manage=False,
+    )
+
+
+@router.put("/conversations/{conversation_id}/ai-policy", response_model=AIPermissionOut)
+async def update_group_ai_policy(
+    conversation_id: str,
+    request: GroupAIPolicyUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AIPermissionOut:
+    conversation = await chat_service.set_group_ai_policy(
+        db, conversation_id, current_user, request.enabled
+    )
+    participant_ids = await chat_service.get_participant_ids(db, conversation_id)
+    await manager.broadcast_to_users(
+        participant_ids,
+        {
+            "type": "group_ai_policy_changed",
+            "conversation_id": conversation.id,
+            "enabled": conversation.ai_enabled,
+            "policy_version": conversation.ai_policy_version,
+        },
+    )
+    return AIPermissionOut(
+        conversation_id=conversation.id,
+        granted=conversation.ai_enabled,
+        contribution_allowed=conversation.ai_enabled,
+        updated_at=conversation.ai_enabled_at.isoformat() if conversation.ai_enabled_at else None,
+        mode="group_managed",
+        can_manage=True,
     )
 
 

@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-TaskStatus = Literal["suggested", "pending", "in_progress", "completed", "dismissed"]
+TaskStatus = Literal["suggested", "pending", "in_progress", "completed", "dismissed", "invalidated"]
 TaskPriority = Literal["High", "Medium", "Low"]
 
 
@@ -16,6 +16,9 @@ class TaskOut(BaseModel):
     priority: TaskPriority
     status: TaskStatus
     source: Literal["manual", "ai_extracted", "proactive"]
+    source_message_ids: list[str] | None = None
+    consent_scope_hash: str | None = None
+    invalidated_reason: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -27,6 +30,8 @@ class TaskCreateRequest(BaseModel):
     priority: TaskPriority = "Medium"
     conversation_id: str | None = None
     source: Literal["manual", "ai_extracted"] = "manual"
+    source_message_ids: list[str] | None = None
+    consent_scope_hash: str | None = None
 
 
 class UpdateTaskStatusRequest(BaseModel):

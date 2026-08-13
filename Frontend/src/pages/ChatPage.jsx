@@ -8,7 +8,7 @@ import NewConversationModal from '../components/chat/NewConversationModal'
 import { useAuth } from '../context/AuthContext'
 import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
-import { getAiPermission, markRead, setAiPermission } from '../api/chat'
+import { getAiPermission, markRead, setAiPermission, setGroupAiPolicy } from '../api/chat'
 import { useWorkspace } from '../context/WorkspaceContext'
 
 export default function ChatPage() {
@@ -21,6 +21,9 @@ export default function ChatPage() {
   const [newConvoOpen, setNewConvoOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(() => location.state?.conversationId || null)
   const [aiGranted, setAiGranted] = useState(false)
+  const [aiContributionAllowed, setAiContributionAllowed] = useState(false)
+  const [aiMode, setAiMode] = useState('individual')
+  const [canManageAi, setCanManageAi] = useState(false)
   const { conversations, setConversations } = useConversations(token, workspaceId)
   const { messages, setMessages } = useMessages(token, selectedId)
 
@@ -28,14 +31,41 @@ export default function ChatPage() {
   // and the AI panel's Grant/Revoke buttons always agree, instead of each fetching/toggling it
   // independently.
   useEffect(() => {
-    if (!selectedId) { setAiGranted(false); return }
+    if (!selectedId) { setAiGranted(false); setAiContributionAllowed(false); setAiMode('individual'); setCanManageAi(false); return }
     let cancelled = false
-    getAiPermission(token, selectedId).then(res => { if (!cancelled) setAiGranted(res.granted) }).catch(() => {})
+    getAiPermission(token, selectedId).then(res => {
+      if (!cancelled) {
+        setAiGranted(res.granted)
+        setAiContributionAllowed(res.contribution_allowed)
+        setAiMode(res.mode || 'individual')
+        setCanManageAi(Boolean(res.can_manage))
+      }
+    }).catch(() => {})
     return () => { cancelled = true }
   }, [selectedId, token])
 
-  const onToggleAi = (next) =>
-    setAiPermission(token, selectedId, next).then(res => { setAiGranted(res.granted); return res })
+  const onToggleAi = (next) => {
+    const update = aiMode === 'group_managed'
+      ? setGroupAiPolicy(token, selectedId, next)
+      : setAiPermission(token, selectedId, { granted: next })
+    return update.then(res => {
+      setAiGranted(res.granted)
+      setAiContributionAllowed(res.contribution_allowed)
+      setAiMode(res.mode || 'individual')
+      setCanManageAi(Boolean(res.can_manage))
+      if (res.mode === 'group_managed') {
+        setConversations(prev => prev.map(c => c.id === selectedId ? { ...c, ai_enabled: res.granted } : c))
+      }
+      return res
+    })
+  }
+
+  const onToggleContribution = (next) =>
+    setAiPermission(token, selectedId, { contribution_allowed: next }).then(res => {
+      setAiGranted(res.granted)
+      setAiContributionAllowed(res.contribution_allowed)
+      return res
+    })
 
   const stateRef = useRef({ selectedId, userId: user?.id })
   stateRef.current = { selectedId, userId: user?.id }
@@ -47,7 +77,25 @@ export default function ChatPage() {
     }
   }, [location.state?.conversationId])
 
+  useEffect(() => {
+    if (!conversations.length) return
+    if (selectedId && conversations.some(conversation => conversation.id === selectedId)) return
+
+    const fallbackId = conversations[0].id
+    setSelectedId(fallbackId)
+    setConversations(prev => prev.map(c => c.id === fallbackId ? { ...c, unread_count: 0 } : c))
+    markRead(token, fallbackId).catch(() => {})
+  }, [conversations, selectedId, setConversations, token])
+
   useEffect(() => subscribe((data) => {
+    if (data.type === 'group_ai_policy_changed') {
+      setConversations(prev => prev.map(c => c.id === data.conversation_id ? { ...c, ai_enabled: data.enabled } : c))
+      if (data.conversation_id === stateRef.current.selectedId) {
+        setAiGranted(data.enabled)
+        setAiContributionAllowed(data.enabled)
+      }
+      return
+    }
     if (data.type !== 'new_message') return
     const { selectedId, userId } = stateRef.current
     const msg = data.message
@@ -84,14 +132,26 @@ export default function ChatPage() {
       <section className="conversation-pane">
         {selectedConversation ? (
           <>
-            <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={() => setAiOpen(true)} aiGranted={aiGranted} onToggleAi={onToggleAi} />
+            <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={() => setAiOpen(true)} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} />
             <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} />
           </>
         ) : (
           <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Select a conversation or start a new one</p></div>
         )}
       </section>
-      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} messages={messages} conversationId={selectedId} workspaceId={workspaceId} granted={aiGranted} onToggleGrant={onToggleAi} />
+      <AIPanel
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
+        messages={messages}
+        conversationId={selectedId}
+        workspaceId={workspaceId}
+        granted={aiGranted}
+        contributionAllowed={aiContributionAllowed}
+        onToggleGrant={onToggleAi}
+        onToggleContribution={onToggleContribution}
+        aiMode={aiMode}
+        canManageAi={canManageAi}
+      />
       <NewConversationModal open={newConvoOpen} onClose={() => setNewConvoOpen(false)} onCreated={onCreated} />
     </div>
   )

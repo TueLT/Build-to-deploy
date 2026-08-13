@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import PageHeader from '../components/common/PageHeader'
 import { createConversation } from '../api/chat'
@@ -151,19 +151,33 @@ export default function RelationshipsPage() {
   const [teamOpen, setTeamOpen] = useState(false)
   const [members, setMembers] = useState([])
   const [memberForm, setMemberForm] = useState(EMPTY_MEMBER)
+  const loadRequestRef = useRef(0)
+  const loadedWorkspaceIdRef = useRef(null)
 
   const load = async () => {
-    if (!token || !workspaceId) return
+    const requestId = ++loadRequestRef.current
+    loadedWorkspaceIdRef.current = null
+    if (!token || !workspaceId) {
+      setInsights([])
+      setExternal([])
+      setLoading(false)
+      return
+    }
     setLoading(true); setError('')
     try {
       const [peopleItems, relationshipItems] = await Promise.all([
         workspace?.type === 'organization' ? listPeopleInsights(token, workspaceId) : Promise.resolve([]),
         listRelationships(token, workspaceId),
       ])
+      if (requestId !== loadRequestRef.current) return
       setInsights(peopleItems)
       setExternal(relationshipItems.filter(item => item.subject_kind === 'external_contact'))
-    } catch (requestError) { setError(requestError.detail || 'Could not load the people directory.') }
-    finally { setLoading(false) }
+      loadedWorkspaceIdRef.current = workspaceId
+    } catch (requestError) {
+      if (requestId === loadRequestRef.current) setError(requestError.detail || requestError.message || 'Could not load the people directory.')
+    } finally {
+      if (requestId === loadRequestRef.current) setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [token, workspaceId, workspace?.type])
@@ -197,11 +211,19 @@ export default function RelationshipsPage() {
   }
 
   const messagePerson = async item => {
+    if (!workspaceId || workspace?.type !== 'organization') {
+      setError('Direct conversations are only available in a team workspace.')
+      return
+    }
+    if (loadedWorkspaceIdRef.current !== workspaceId) {
+      setError('The selected workspace is still loading. Please try again in a moment.')
+      return
+    }
     setSaving(true); setError('')
     try {
       const conversation = await createConversation(token, {type:'direct',participant_ids:[item.user_id],name:null,workspace_id:workspaceId})
       navigate('/chat', {state:{conversationId:conversation.id}})
-    } catch (requestError) { setError(requestError.detail || 'Could not start a conversation.') }
+    } catch (requestError) { setError(requestError.detail || requestError.message || 'Could not start a conversation.') }
     finally { setSaving(false) }
   }
 

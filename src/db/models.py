@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -291,6 +292,13 @@ class Conversation(Base):
     type: Mapped[str]  # "direct" | "group"
     name: Mapped[str | None] = mapped_column(default=None)
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    # Group conversations use one explicit, manager-controlled AI policy.  This avoids creating
+    # syntactically valid but semantically broken context by deleting individual authors' turns.
+    # Direct conversations keep the per-user AIPermission model below.
+    ai_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_policy_version: Mapped[int] = mapped_column(Integer, default=0)
+    ai_enabled_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    ai_enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
@@ -353,16 +361,21 @@ class ConversationParticipant(Base):
 
 
 class AIPermission(Base):
-    """Per (conversation, user) consent for the AI agent to read that conversation's messages.
+    """Per-user AI choices inside one conversation.
 
-    Keyed per-user rather than per-conversation: each participant grants/revokes independently for
-    themselves, no consensus from other members required."""
+    ``granted`` means this user may invoke the assistant for the conversation.  It deliberately
+    does not grant the assistant permission to process messages authored by somebody else.
+    ``contribution_allowed`` is the independent author-side consent used by the server-side
+    authorized-message resolver.  Keeping the two choices separate avoids treating "I want to use
+    AI" as "every participant has allowed my AI to process their content".
+    """
 
     __tablename__ = "ai_permissions"
 
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
     granted: Mapped[bool] = mapped_column(default=False)
+    contribution_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
@@ -384,7 +397,7 @@ class Task(Base):
     __table_args__ = (
         CheckConstraint("priority IN ('High', 'Medium', 'Low')", name="ck_task_priority"),
         CheckConstraint(
-            "status IN ('suggested', 'pending', 'in_progress', 'completed', 'dismissed')",
+            "status IN ('suggested', 'pending', 'in_progress', 'completed', 'dismissed', 'invalidated')",
             name="ck_task_status",
         ),
         CheckConstraint("source IN ('manual', 'ai_extracted', 'proactive')", name="ck_task_source"),
@@ -402,11 +415,76 @@ class Task(Base):
     status: Mapped[str] = mapped_column(default="suggested")
     # "suggested" | "pending" | "in_progress" | "completed" | "dismissed"
     source: Mapped[str] = mapped_column(default="manual")  # "manual" | "ai_extracted" | "proactive"
+    # P0 provenance for unconfirmed AI candidates.  Confirmed domain state may outlive a later
+    # source-consent revocation, but a still-suggested candidate is invalidated when its source
+    # author revokes contribution processing.
+    source_message_ids: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    source_sender_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    consent_scope_hash: Mapped[str | None] = mapped_column(default=None, index=True)
+    invalidated_reason: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
-    owner: Mapped["User"] = relationship()
+    owner: Mapped["User"] = relationship(foreign_keys=[owner_id])
     conversation: Mapped["Conversation | None"] = relationship()
+
+
+class EventCandidate(Base):
+    """A consent-scoped calendar fact extracted incrementally from conversation messages.
+
+    Candidates are durable retrieval records, not Google Calendar side effects.  A conversation
+    manager must explicitly confirm a complete candidate before an external event is created.
+    """
+
+    __tablename__ = "event_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('suggested', 'confirmed', 'superseded', 'dismissed', 'cancelled', 'invalidated')",
+            name="ck_event_candidate_status",
+        ),
+        CheckConstraint(
+            "operation IN ('create', 'update', 'cancel')",
+            name="ck_event_candidate_operation",
+        ),
+        Index("ix_event_candidates_conversation_status", "conversation_id", "status"),
+        Index("ix_event_candidates_workspace_start", "workspace_id", "start_at"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    operation: Mapped[str] = mapped_column(default="create")
+    target_candidate_id: Mapped[str | None] = mapped_column(
+        ForeignKey("event_candidates.id"), default=None, index=True
+    )
+    title: Mapped[str]
+    start_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    location: Mapped[str | None] = mapped_column(default=None)
+    attendees: Mapped[list[str]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(default="suggested")
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    missing_fields: Mapped[list[str]] = mapped_column(JSON, default=list)
+    source_message_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    authorization_scope_hash: Mapped[str] = mapped_column(index=True)
+    calendar_event_id: Mapped[str | None] = mapped_column(default=None, index=True)
+    invalidated_reason: Mapped[str | None] = mapped_column(default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class EventExtractionCursor(Base):
+    """Resumable cursor for bounded historical event extraction."""
+
+    __tablename__ = "event_extraction_cursors"
+
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), primary_key=True)
+    last_message_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    last_message_id: Mapped[str | None] = mapped_column(default=None)
+    processed_message_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(default="idle")
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
 class UsageLog(Base):

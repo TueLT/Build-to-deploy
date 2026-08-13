@@ -1,5 +1,3 @@
-import logging
-from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,12 +9,10 @@ from src.config import get_settings
 from src.db.models import Conversation, Task, User
 from src.db.session import get_db
 from src.models.task_schemas import TaskCreateRequest, TaskOut, UpdateTaskStatusRequest
-from src.services import calendar_service, reminder_service
+from src.services import consent_service
 from src.services.authorization_service import require_conversation_access
 from src.services.workspace_service import resolve_workspace_for_user
 from src.websocket.manager import manager
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -35,6 +31,9 @@ def _to_out(task: Task, *, due_at_override=None) -> TaskOut:
         priority=task.priority,
         status=task.status,
         source=task.source,
+        source_message_ids=task.source_message_ids,
+        consent_scope_hash=task.consent_scope_hash,
+        invalidated_reason=task.invalidated_reason,
         created_at=task.created_at,
         updated_at=task.updated_at,
     )
@@ -90,6 +89,46 @@ async def create_task(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="conversation_id does not belong to the selected workspace",
             )
+    if request.source == "ai_extracted":
+        if (
+            request.conversation_id is None
+            or not request.source_message_ids
+            or not request.consent_scope_hash
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="AI-extracted candidates require conversation provenance and a consent snapshot",
+            )
+        current_hash = await consent_service.get_consent_scope_hash(db, request.conversation_id)
+        if current_hash != request.consent_scope_hash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Conversation AI consent changed; extract the candidate again",
+            )
+        if not await consent_service.validate_authorized_source_ids(
+            db, request.conversation_id, request.source_message_ids
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Candidate provenance includes a message that AI is not allowed to process",
+            )
+
+        existing = (
+            await db.execute(
+                select(Task).where(
+                    Task.owner_id == current_user.id,
+                    Task.workspace_id == workspace.id,
+                    Task.conversation_id == request.conversation_id,
+                    Task.source == "ai_extracted",
+                    Task.status == "suggested",
+                    Task.title == request.title,
+                    Task.consent_scope_hash == request.consent_scope_hash,
+                    Task.source_message_ids == request.source_message_ids,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return _to_out(existing)
     due_at = request.due_at
     if due_at is not None and due_at.tzinfo is None:
         # Same ambiguity reminder_service/proactive_service already guard against: a naive due_at
@@ -108,6 +147,8 @@ async def create_task(
         priority=request.priority,
         status="pending" if request.source == "manual" else "suggested",
         source=request.source,
+        source_message_ids=request.source_message_ids if request.source == "ai_extracted" else None,
+        consent_scope_hash=request.consent_scope_hash if request.source == "ai_extracted" else None,
     )
     db.add(task)
     await db.commit()
@@ -115,34 +156,6 @@ async def create_task(
     out = _to_out(task, due_at_override=due_at)
     await manager.broadcast_to_users([current_user.id], {"type": "task_created", "task": out.model_dump(mode="json")})
     return out
-
-
-async def _add_to_calendar_and_reminder(task: Task, owner_id: str) -> None:
-    """A proactively-detected task with a due date, once explicitly Accepted, also gets a real
-    Google Calendar event and a real Reminder - the Accept click is the human confirmation, so
-    neither needs its own interrupt() step. Best-effort: the task itself must stay accepted even
-    if Calendar/Reminder creation fails."""
-    start_iso = task.due_at.isoformat()
-    end_iso = (task.due_at + timedelta(minutes=30)).isoformat()
-    try:
-        event = calendar_service.create_event(summary=task.title, start_iso=start_iso, end_iso=end_iso)
-        await calendar_service.broadcast_change(
-            "calendar_event_created", {"event": calendar_service.to_out_dict(event)}
-        )
-    except Exception:  # noqa: BLE001 - best-effort, must not block the task Accept
-        logger.exception("Auto-create calendar event for accepted task %s failed", task.id)
-
-    try:
-        await reminder_service.schedule_reminder(
-            workspace_id=task.workspace_id,
-            owner_id=owner_id,
-            title=task.title,
-            due_at_iso=start_iso,
-            lead_minutes=30,
-            source="proactive",
-        )
-    except Exception:  # noqa: BLE001 - best-effort, must not block the task Accept
-        logger.exception("Auto-create reminder for accepted task %s failed", task.id)
 
 
 @router.patch("/tasks/{task_id}/status", response_model=TaskOut)
@@ -153,20 +166,16 @@ async def update_task_status(
     db: AsyncSession = Depends(get_db),
 ) -> TaskOut:
     task = await _get_own_task_or_404(task_id, current_user, db)
-    is_accepting_proactive_schedule = (
-        task.status == "suggested"
-        and request.status == "pending"
-        and task.source == "proactive"
-        and task.due_at is not None
-    )
+    if task.status == "invalidated":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This AI candidate is no longer valid because its source consent changed",
+        )
     task.status = request.status
     await db.commit()
     await db.refresh(task)
     out = _to_out(task)
     await manager.broadcast_to_users([current_user.id], {"type": "task_updated", "task": out.model_dump(mode="json")})
-
-    if is_accepting_proactive_schedule:
-        await _add_to_calendar_and_reminder(task, current_user.id)
 
     return out
 

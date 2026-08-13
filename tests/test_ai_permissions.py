@@ -30,6 +30,7 @@ async def test_get_ai_permission_defaults_to_not_granted(client, auth_headers, o
     assert response.status_code == 200
     data = response.json()
     assert data["granted"] is False
+    assert data["contribution_allowed"] is False
     assert data["conversation_id"] == conversation_id
 
 
@@ -77,6 +78,30 @@ async def test_ai_permission_grant_is_per_user_not_shared(client, auth_headers, 
         f"/api/v1/conversations/{conversation_id}/ai-permission", headers=other_auth_headers
     )
     assert other_get.json()["granted"] is False
+
+
+@pytest.mark.asyncio
+async def test_assistant_access_and_contribution_consent_are_independent(
+    client, auth_headers, other_auth_headers
+):
+    conversation_id = await _create_direct_conversation(client, auth_headers, other_auth_headers)
+
+    response = await client.put(
+        f"/api/v1/conversations/{conversation_id}/ai-permission",
+        json={"contribution_allowed": True},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["granted"] is False
+    assert response.json()["contribution_allowed"] is True
+
+    response = await client.put(
+        f"/api/v1/conversations/{conversation_id}/ai-permission",
+        json={"granted": True},
+        headers=auth_headers,
+    )
+    assert response.json()["granted"] is True
+    assert response.json()["contribution_allowed"] is True
 
 
 @pytest.mark.asyncio

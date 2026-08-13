@@ -17,3 +17,15 @@ export const updateCalendarEvent = (token, workspaceId, eventId, { summary, star
 
 export const deleteCalendarEvent = (token, workspaceId, eventId) =>
   apiFetch(`/calendar/events/${eventId}?workspace_id=${encodeURIComponent(workspaceId)}`, { method: 'DELETE', token })
+
+export const listEventCandidates = (token, conversationId) =>
+  apiFetch(`/calendar/candidates?conversation_id=${encodeURIComponent(conversationId)}`, { token })
+
+export const confirmEventCandidate = (token, candidateId) =>
+  apiFetch(`/calendar/candidates/${candidateId}/confirm`, { method: 'POST', token })
+
+export const dismissEventCandidate = (token, candidateId) =>
+  apiFetch(`/calendar/candidates/${candidateId}/dismiss`, { method: 'POST', token })
+
+export const backfillEventCandidates = (token, conversationId, batchSize = 200) =>
+  apiFetch(`/conversations/${conversationId}/event-backfill`, { method: 'POST', token, body: { batch_size: batchSize } })

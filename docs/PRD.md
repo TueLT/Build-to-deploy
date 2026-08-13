@@ -1,7 +1,7 @@
 # PRD — Orbit
 
 > Product Requirements Document · AI Agent Trợ lý cá nhân trong Chat
-> Team DRIVER ENGINEER (P-132) · Cập nhật 2026-08-04
+> Team DRIVER ENGINEER (P-132) · Cập nhật 2026-08-10
 
 Tài liệu này mô tả **yêu cầu sản phẩm và trạng thái thực tế đã build**. Kiến trúc kỹ thuật chi tiết
 xem [../ARCHITECTURE.md](../ARCHITECTURE.md); tiến độ theo đề bài xem [../ROADMAP.md](../ROADMAP.md);
@@ -96,20 +96,27 @@ dùng rời khỏi app chat và không bao giờ tự ý hành động thay họ
 
 **Là** người dùng, **tôi muốn** agent tự phát hiện cam kết ngay khi tin nhắn tới.
 
-- [x] Sau mỗi tin nhắn mới (cả REST lẫn WebSocket): pre-filter regex (VI+EN) → kiểm tra người gửi đã
-      cấp `ai_permissions` cho hội thoại đó chưa (tắt là bỏ qua, không gọi LLM) → hỏi LLM xác nhận.
-- [x] Nếu là cam kết/lịch hẹn → tạo `Task` (`source="proactive"`, `status="suggested"`) cho người gửi.
+- [x] Sau mỗi tin nhắn mới (cả REST lẫn WebSocket): pre-filter regex (VI+EN) → kiểm tra sender bật
+      cả Assistant access và contribution processing → hỏi LLM xem chính sender có cam kết không.
+- [x] Assignment/request cho người khác không bị gán thành task của sender; chỉ sender commitment
+      mới tạo `Task` (`source="proactive"`, `status="suggested"`) cho người gửi.
 - [x] Đẩy WebSocket `task_suggested` → toast trỏ tới Tasks inbox.
 - [x] Chạy nền (`asyncio.create_task` / `BackgroundTasks`), **không chặn gửi tin nhắn**, không raise
       ra ngoài. Pre-filter regex + kiểm tra quyền trước khi gọi LLM là tối ưu chi phí thực tế của hệ
       thống.
-- [x] **Accept** một suggestion có `due_at` trong `/tasks` (chính là bước xác nhận human-in-the-loop)
-      tự tạo thêm 1 sự kiện Google Calendar thật + 1 Reminder thật (`task_routes.py::
-      _add_to_calendar_and_reminder`) — best-effort, lỗi Google Calendar không chặn việc Accept task.
+- [x] **Accept task chỉ thêm task**. Calendar/Reminder là side effect độc lập và phải dùng flow xác
+      nhận riêng; một nút mang nhãn Accept không còn ngầm xác nhận ba hành động.
 
-### US-8 — Memory 🟢
+### US-8 — Memory 🟡
 
-- [x] **Memory hội thoại**: LangGraph checkpointer — `AsyncPostgresSaver`, bền vững qua restart.
+- [x] **Calendar-fact memory cho group chat**: incremental `EventCandidate` create/update/cancel,
+      source-message lineage, manager confirmation, và backfill lịch sử theo cursor/batch.
+- [x] **Group AI governance**: conversation manager bật/tắt một policy chung; group context không bị
+      cắt rời theo consent từng tác giả. Direct chat giữ policy cá nhân.
+
+- [x] **Agent thread checkpoint**: `AsyncPostgresSaver`, bền vững qua restart.
+- [ ] **Conversation STM theo `conversation_id + consent_scope`**: chưa triển khai; không đồng nhất
+      LangGraph thread checkpoint với rolling summary/working memory của conversation.
 - [x] **Memory dài hạn**: bảng `memories` (category/title/detail) + CRUD + trang `/memory` có
       search và tab lọc theo category sinh động từ dữ liệu thật.
 
@@ -246,6 +253,7 @@ erDiagram
         string conversation_id PK
         string user_id PK
         boolean granted
+        boolean contribution_allowed
         datetime updated_at
     }
     google_identities {
@@ -264,8 +272,8 @@ là khoá ngoại.
 
 - `users.role`: `user` | `admin`
 - `conversations.type`: `direct` | `group`
-- `tasks.status`: `suggested` | `pending` | `in_progress` | `completed` | `dismissed`
-- `tasks.source`: `manual` | `proactive` · `tasks.priority`: `High` | `Medium` | `Low`
+- `tasks.status`: `suggested` | `pending` | `in_progress` | `completed` | `dismissed` | `invalidated`
+- `tasks.source`: `manual` | `ai_extracted` | `proactive` · `tasks.priority`: `High` | `Medium` | `Low`
 - `reminders.status`: `scheduled` | `fired` | `cancelled` · `reminders.source`: `manual` | `agent` | `proactive`
 
 Sự kiện lịch **không lưu trong DB** — nguồn sự thật là Google Calendar; `calendar_sync_state` chỉ giữ

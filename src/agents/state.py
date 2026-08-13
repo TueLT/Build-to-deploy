@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Annotated, TypedDict
+from typing import Annotated
+
+from typing_extensions import TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -21,6 +23,9 @@ class AgentState(TypedDict, total=False):
     metadata: dict
     user_id: str | None  # id of the user driving this run, for tools that push WS updates to them
     workspace_id: str | None  # active workspace for tenant-scoped tools
+    conversation_id: str | None
+    consent_scope_hash: str | None
+    source_message_ids: list[str]
 
     # Tool-calling planner loop (messages, ToolNode, tools_condition all require this).
     messages: Annotated[list[AnyMessage], add_messages]
