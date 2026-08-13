@@ -77,6 +77,7 @@ async def maybe_suggest_task(
             workspace_id = conversation.workspace_id
             consent_scope_hash = await consent_service.get_consent_scope_hash(db, conversation_id)
         llm = get_llm()
+        now = datetime.now(ZoneInfo(settings.calendar_timezone))
         prompt = (
             "A message was just sent in a team chat app. Decide whether the AUTHOR OF THIS MESSAGE "
             "personally commits themselves to an action, appointment, or deadline. An assignment, "
@@ -85,7 +86,9 @@ async def maybe_suggest_task(
             'with exactly these keys: "has_sender_commitment" (boolean), "title" (short Vietnamese '
             'string, meaningful only when true), "due_at" (ISO 8601 datetime or null), and '
             '"confidence" (number from 0 to 1). If unsure, output '
-            '{"has_sender_commitment": false, "title": "", "due_at": null, "confidence": 0}.\n\n'
+            '{"has_sender_commitment": false, "title": "", "due_at": null, "confidence": 0}. '
+            'Resolve relative dates and times such as "hôm nay", "ngày mai", or "next Monday" '
+            f'against {now.strftime("%A, %Y-%m-%d %H:%M")} ({settings.calendar_timezone}).\n\n'
             f"Message: {content}"
         )
         result = await llm.ainvoke(prompt)

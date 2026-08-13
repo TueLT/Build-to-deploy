@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
+import momentTimezonePlugin from '@fullcalendar/moment-timezone'
 import PageHeader from '../components/common/PageHeader'
 import NewEventModal from '../components/calendar/NewEventModal'
 import { useAuth } from '../context/AuthContext'
@@ -22,17 +23,28 @@ export default function CalendarPage() {
   const [selected, setSelected] = useState(null)
   const [newEventOpen, setNewEventOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const visibleRange = useRef(null)
 
-  const refresh = () => {
+  const refresh = (range = visibleRange.current) => {
     setLoading(true); setError('')
-    if (!workspaceId) return
-    listCalendarEvents(token, workspaceId)
+    if (!workspaceId) { setLoading(false); return }
+    listCalendarEvents(token, workspaceId, range || {})
       .then(list => setEvents(list.map(e => ({ ...e, color: getColor(e.id) }))))
       .catch(err => setError(err.detail || 'Could not load Google Calendar events.'))
       .finally(() => setLoading(false))
   }
 
-  useEffect(() => { refresh() }, [token, workspaceId])
+  useEffect(() => {
+    setEvents([])
+    if (!workspaceId) setLoading(false)
+    else if (visibleRange.current) refresh()
+  }, [token, workspaceId])
+
+  const onDatesSet = ({ start, end }) => {
+    const range = { time_min: start.toISOString(), time_max: end.toISOString() }
+    visibleRange.current = range
+    refresh(range)
+  }
 
   const upsertEvent = (event) => setEvents(prev => [...prev.filter(e => e.id !== event.id), { ...event, color: getColor(event.id) }])
   const removeEvent = (eventId) => setEvents(prev => prev.filter(e => e.id !== eventId))
@@ -60,11 +72,12 @@ export default function CalendarPage() {
   return <div className="page-container calendar-page">
     <PageHeader eyebrow="Schedule" title="Calendar" description={`Google Calendar integration for ${workspace?.name || 'the active workspace'}.`} action={<button className="btn btn-primary" onClick={() => setNewEventOpen(true)} disabled={!workspaceId}><i className="bi bi-plus-lg me-2"/>New event</button>}/>
     {error && <div className="auth-error mb-3">{error}</div>}
-    {loading ? <p className="text-muted small">Loading calendar...</p> : (
-      <div className="calendar-layout"><section className="content-card calendar-card"><FullCalendar plugins={[dayGridPlugin,timeGridPlugin,interactionPlugin]} initialView="dayGridMonth" timeZone={HANOI_TZ} headerToolbar={{left:'prev,next today',center:'title',right:'dayGridMonth,timeGridWeek,timeGridDay'}} events={events} eventClick={({event:e})=>setSelected(e)} height="auto"/></section>
+    <div className="calendar-layout"><section className="content-card calendar-card">
+      {loading && <p className="text-muted small mb-2">Refreshing calendar...</p>}
+      <FullCalendar plugins={[dayGridPlugin,timeGridPlugin,interactionPlugin,momentTimezonePlugin]} initialView="dayGridMonth" timeZone={HANOI_TZ} headerToolbar={{left:'prev,next today',center:'title',right:'dayGridMonth,timeGridWeek,timeGridDay'}} events={events} eventClick={({event:e})=>setSelected(e)} datesSet={onDatesSet} height="auto"/>
+    </section>
         <aside className="detected-sidebar"><div className="detected-head"><span><i className="bi bi-stars"/></span><div><h3>AI-detected events</h3><p>Active</p></div></div><p className="text-muted small">Orbit đang tự động rà tin nhắn tìm cam kết/lịch hẹn. Khi phát hiện, việc gợi ý sẽ xuất hiện trong <Link to="/tasks">Tasks → AI suggestions</Link> để bạn Accept/Dismiss trước khi tạo event thật.</p></aside>
-      </div>
-    )}
+    </div>
     {selected && <div className="modal-backdrop-custom" onClick={()=>setSelected(null)}><div className="event-modal" onClick={e=>e.stopPropagation()}><button className="icon-btn modal-close" onClick={()=>setSelected(null)}><i className="bi bi-x-lg"/></button><div className="event-modal-icon"><i className="bi bi-calendar-event"/></div><span className="eyebrow">Event details</span><h3>{selected.title}</h3><div className="event-detail-row"><i className="bi bi-clock"/><span><strong>{formatDateTime(selected.start)}</strong>{selected.end && <small>{' → '}{formatDateTime(selected.end)}</small>}</span></div>{selected.url && <a className="btn btn-primary w-100 mt-3" href={selected.url} target="_blank" rel="noreferrer">Open in Google Calendar</a>}<button className="btn btn-light text-danger w-100 mt-2" onClick={removeSelected} disabled={deleting}><i className="bi bi-trash me-2"/>{deleting?'Deleting...':'Delete event'}</button></div></div>}
     <NewEventModal open={newEventOpen} onClose={() => setNewEventOpen(false)} onCreated={upsertEvent} />
   </div>
