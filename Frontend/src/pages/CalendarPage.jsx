@@ -8,7 +8,6 @@ import PageHeader from '../components/common/PageHeader'
 import NewEventModal from '../components/calendar/NewEventModal'
 import ConnectCalendarCard from '../components/calendar/ConnectCalendarCard'
 import { useAuth } from '../context/AuthContext'
-import { useWorkspace } from '../context/WorkspaceContext'
 import {
   listCalendarEvents, deleteCalendarEvent,
   getCalendarConnection, disconnectCalendar,
@@ -18,7 +17,6 @@ import { HANOI_TZ, formatDateTime } from '../utils/datetime'
 
 export default function CalendarPage() {
   const { token } = useAuth()
-  const { workspaceId, workspace } = useWorkspace()
   const { subscribe } = useOutletContext()
   const [connected, setConnected] = useState(null) // null = not checked yet
   const [events, setEvents] = useState([])
@@ -30,7 +28,7 @@ export default function CalendarPage() {
 
   const refresh = () => {
     setLoading(true); setError('')
-    listCalendarEvents(token, workspaceId)
+    listCalendarEvents(token)
       .then(list => { setConnected(true); setEvents(list.map(e => ({ ...e, color: getColor(e.id) }))) })
       .catch(err => {
         if (err.status === 409) { setConnected(false); setEvents([]) } // not connected, not an error
@@ -57,16 +55,15 @@ export default function CalendarPage() {
   // owner. Source: this UI, another tab, the agent in chat, or a direct edit in Google Calendar
   // itself (caught by syncToken polling while this user is online).
   useEffect(() => subscribe((data) => {
-    if (data.workspace_id && data.workspace_id !== workspaceId) return
     if (data.type === 'calendar_event_created' || data.type === 'calendar_event_updated') upsertEvent(data.event)
     if (data.type === 'calendar_event_deleted') removeEvent(data.event_id)
-  }), [subscribe, workspaceId])
+  }), [subscribe])
 
   const removeSelected = async () => {
     if (!selected || deleting) return
     setDeleting(true)
     try {
-      await deleteCalendarEvent(token, workspaceId, selected.id)
+      await deleteCalendarEvent(token, selected.id)
       removeEvent(selected.id)
       setSelected(null)
     } catch (err) {

@@ -53,7 +53,6 @@ async def log_usage(
     model: str,
     usage_metadata: dict | None,
     user_id: str | None = None,
-    workspace_id: str | None = None,
 ) -> None:
     """Best-effort token usage logging. Never lets a logging failure break the chat turn."""
     if not isinstance(usage_metadata, dict) or not usage_metadata:
@@ -70,7 +69,6 @@ async def log_usage(
             db.add(
                 UsageLog(
                     user_id=user_id,
-                    workspace_id=workspace_id,
                     provider=provider,
                     model=model,
                     prompt_tokens=usage_metadata.get("input_tokens", 0),
@@ -118,7 +116,7 @@ async def _maybe_alert_budget(*, before_tokens: int, after_tokens: int) -> None:
     )
 
 
-async def get_usage_today(workspace_id: str | None = None) -> dict:
+async def get_usage_today() -> dict:
     since = _midnight_local_as_utc()
     async with db_session.async_session_maker() as db:
         stmt = select(
@@ -131,8 +129,6 @@ async def get_usage_today(workspace_id: str | None = None) -> dict:
         ).where(
             UsageLog.created_at >= since,
         )
-        if workspace_id:
-            stmt = stmt.where(UsageLog.workspace_id == workspace_id)
         rows = (await db.execute(stmt.group_by(UsageLog.provider, UsageLog.model))).all()
 
     prompt_tokens = sum(row[2] for row in rows)

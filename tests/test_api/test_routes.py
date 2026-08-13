@@ -13,23 +13,6 @@ def _no_live_llm(monkeypatch, fake_llm_factory):
     return llm
 
 
-async def _team_workspace(client, owner_headers, member: dict) -> dict:
-    workspace_response = await client.post(
-        "/api/v1/workspaces",
-        json={"name": "Agent route test team"},
-        headers=owner_headers,
-    )
-    assert workspace_response.status_code == 201
-    workspace = workspace_response.json()
-    member_response = await client.post(
-        f"/api/v1/workspaces/{workspace['id']}/members",
-        json={"email": member["email"], "role": "member"},
-        headers=owner_headers,
-    )
-    assert member_response.status_code == 201
-    return workspace
-
-
 @pytest.mark.asyncio
 async def test_health(client):
     response = await client.get("/health")
@@ -66,10 +49,9 @@ async def test_chat_rejects_conversation_id_caller_is_not_a_participant_of(
     third_headers = {"Authorization": f"Bearer {third.json()['access_token']}"}
     other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
     other = other_me.json()
-    workspace = await _team_workspace(client, third_headers, other)
     conv = await client.post(
         "/api/v1/conversations",
-        json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+        json={"type": "direct", "participant_ids": [other["id"]]},
         headers=third_headers,
     )
     conversation_id = conv.json()["id"]
@@ -88,10 +70,9 @@ async def test_chat_rejects_conversation_id_caller_is_not_a_participant_of(
 async def test_chat_rejects_conversation_id_when_ai_permission_not_granted(client, auth_headers, other_auth_headers):
     other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
     other = other_me.json()
-    workspace = await _team_workspace(client, auth_headers, other)
     conv = await client.post(
         "/api/v1/conversations",
-        json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+        json={"type": "direct", "participant_ids": [other["id"]]},
         headers=auth_headers,
     )
     conversation_id = conv.json()["id"]
@@ -109,10 +90,9 @@ async def test_chat_rejects_conversation_id_when_ai_permission_not_granted(clien
 async def test_chat_allows_conversation_id_caller_is_a_participant_of(client, auth_headers, other_auth_headers):
     other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
     other = other_me.json()
-    workspace = await _team_workspace(client, auth_headers, other)
     conv = await client.post(
         "/api/v1/conversations",
-        json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+        json={"type": "direct", "participant_ids": [other["id"]]},
         headers=auth_headers,
     )
     conversation_id = conv.json()["id"]
@@ -142,19 +122,9 @@ async def test_chat_with_scope_queries_db_instead_of_trusting_client_messages(
 
     other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
     other_id = other_me.json()["id"]
-    workspace = (
-        await client.post(
-            "/api/v1/workspaces", json={"name": "Scoped conversation"}, headers=auth_headers
-        )
-    ).json()
-    await client.post(
-        f"/api/v1/workspaces/{workspace['id']}/members",
-        json={"email": other_me.json()["email"], "role": "member"},
-        headers=auth_headers,
-    )
     conv = await client.post(
         "/api/v1/conversations",
-        json={"type": "direct", "participant_ids": [other_id], "workspace_id": workspace["id"]},
+        json={"type": "direct", "participant_ids": [other_id]},
         headers=auth_headers,
     )
     conversation_id = conv.json()["id"]

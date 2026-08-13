@@ -154,6 +154,8 @@ def _harden_constraints(connection) -> None:
 
 def upgrade() -> None:
     connection = op.get_bind()
+    if "workspaces" not in _tables(connection):
+        return
     _add_user_profile_columns(connection)
     _create_missing_tables(connection)
 

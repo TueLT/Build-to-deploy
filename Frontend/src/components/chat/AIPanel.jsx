@@ -48,7 +48,6 @@ export default function AIPanel({
   onClose,
   messages = [],
   conversationId = null,
-  workspaceId = null,
   granted = false,
   onToggleGrant,
 }) {

@@ -6,15 +6,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
-from src.db.models import AIPermission, Conversation, ConversationParticipant, Message, User, WorkspaceMembership
+from src.db.models import AIPermission, Conversation, ConversationParticipant, Message, User
 from src.models.auth_schemas import UserPublic
 from src.models.chat_schemas import ConversationSummary, MessageOut
 from src.models.schemas import ChatMessage, MessageScope
-from src.services.authorization_service import (
-    get_authorized_participant_ids,
-    require_workspace_member,
-)
-from src.services.workspace_service import resolve_workspace_for_user
+from src.services.authorization_service import get_authorized_participant_ids
 
 
 def _iso(dt: datetime) -> str:
@@ -120,48 +116,22 @@ async def mark_read(db: AsyncSession, conversation_id: str, user_id: str) -> Non
     await db.commit()
 
 
-async def _assert_workspace_participants(
-    db: AsyncSession,
-    workspace_id: str,
-    user_ids: set[str],
-) -> None:
+async def _assert_active_users(db: AsyncSession, user_ids: set[str]) -> None:
     if not user_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least one participant is required")
-    rows = (
-        (
-            await db.execute(
-                select(WorkspaceMembership.user_id).where(
-                    WorkspaceMembership.workspace_id == workspace_id,
-                    WorkspaceMembership.user_id.in_(user_ids),
-                    WorkspaceMembership.status == "active",
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = (await db.execute(select(User.id).where(User.id.in_(user_ids), User.is_active.is_(True)))).scalars().all()
     if set(rows) != user_ids:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Participant is outside the workspace")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more participants were not found")
 
 
 async def get_or_create_direct_conversation(
     db: AsyncSession,
     user_a_id: str,
     user_b_id: str,
-    workspace_id: str | None = None,
 ) -> Conversation:
     if user_a_id == user_b_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot create a conversation with self")
-    if workspace_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace_id is required")
-    workspace = await resolve_workspace_for_user(db, user_a_id, workspace_id)
-    if workspace.type != "organization":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Direct conversations require an organization workspace",
-        )
-    await require_workspace_member(db, await db.get(User, user_a_id), workspace_id)
-    await _assert_workspace_participants(db, workspace_id, {user_a_id, user_b_id})
+    await _assert_active_users(db, {user_a_id, user_b_id})
 
     candidate_ids = (
         (
@@ -169,7 +139,6 @@ async def get_or_create_direct_conversation(
                 select(ConversationParticipant.conversation_id)
                 .join(Conversation, Conversation.id == ConversationParticipant.conversation_id)
                 .where(
-                    Conversation.workspace_id == workspace_id,
                     Conversation.type == "direct",
                     ConversationParticipant.user_id == user_a_id,
                     ConversationParticipant.revoked_at.is_(None),
@@ -195,7 +164,7 @@ async def get_or_create_direct_conversation(
         if set(participant_ids) == {user_a_id, user_b_id}:
             return await db.get(Conversation, cid)
 
-    conversation = Conversation(workspace_id=workspace_id, type="direct", name=None, created_by=user_a_id)
+    conversation = Conversation(type="direct", name=None, created_by=user_a_id)
     db.add(conversation)
     await db.flush()
     db.add_all(
@@ -203,14 +172,12 @@ async def get_or_create_direct_conversation(
             ConversationParticipant(
                 conversation_id=conversation.id,
                 user_id=user_a_id,
-                principal_kind="workspace_user",
                 resource_role="manager",
                 invited_by_user_id=user_a_id,
             ),
             ConversationParticipant(
                 conversation_id=conversation.id,
                 user_id=user_b_id,
-                principal_kind="workspace_user",
                 resource_role="participant",
                 invited_by_user_id=user_a_id,
             ),
@@ -226,18 +193,9 @@ async def create_group_conversation(
     creator_id: str,
     member_ids: list[str],
     name: str,
-    workspace_id: str | None = None,
 ) -> Conversation:
-    if workspace_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace_id is required")
-    workspace = await resolve_workspace_for_user(db, creator_id, workspace_id)
-    if workspace.type != "organization":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Group conversations require an organization workspace",
-        )
-    await _assert_workspace_participants(db, workspace_id, {creator_id, *member_ids})
-    conversation = Conversation(workspace_id=workspace_id, type="group", name=name, created_by=creator_id)
+    await _assert_active_users(db, {creator_id, *member_ids})
+    conversation = Conversation(type="group", name=name, created_by=creator_id)
     db.add(conversation)
     await db.flush()
     all_member_ids = {creator_id, *member_ids}
@@ -246,7 +204,6 @@ async def create_group_conversation(
             ConversationParticipant(
                 conversation_id=conversation.id,
                 user_id=member_id,
-                principal_kind="workspace_user",
                 resource_role="manager" if member_id == creator_id else "participant",
                 invited_by_user_id=creator_id,
             )
@@ -276,7 +233,6 @@ async def build_conversation_summary(
             id=user.id,
             email=user.email,
             display_name=user.display_name,
-            role=user.role,
             platform_role=user.platform_role,
         )
         for user, _ in participant_rows
@@ -314,7 +270,6 @@ async def build_conversation_summary(
 
     return ConversationSummary(
         id=conversation.id,
-        workspace_id=conversation.workspace_id,
         type=conversation.type,
         name=name,
         participants=participants,

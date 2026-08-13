@@ -2,15 +2,11 @@
 
 Dự án AI20K Build Phase: một AI agent nhúng trong ứng dụng chat, giúp tóm tắt hội thoại, trích xuất công việc/lịch hẹn, tạo nhắc nhở (có xác nhận trước khi thực hiện) và quản lý lịch cá nhân. Repo gồm 2 phần: **backend** (FastAPI + LangGraph, thư mục `src/`) và **frontend** (React + Vite, thư mục `Frontend/`).
 
-## Nhánh G19-T132-Lương-Trí-Tuệ
+## Mô hình sản phẩm
 
-Nhánh hiện tại tập trung vào chat realtime, authentication/admin, LangGraph agent và nền tảng authorization theo mô hình workspace-first. Báo cáo chi tiết về phần đã làm, phần còn mock, công nghệ và cách kiểm thử nằm tại:
-
-- [Báo cáo nhánh G19-T132-Lương-Trí-Tuệ](docs/branches/G19-T132-Luong-Tri-Tue.md)
-- [Workspace Authorization Design](docs/superpowers/specs/2026-08-03-workspace-authorization-foundation-design.md)
-- [Workspace Authorization Implementation Plan](docs/superpowers/plans/2026-08-03-workspace-authorization-foundation.md)
-
-Nền tảng workspace đã được triển khai xuyên suốt database, REST/WebSocket authorization, AI state và frontend. Mọi dữ liệu Task, Memory, Reminder, Calendar và usage đều được ràng buộc theo workspace; migration Alembic hiện tại là `20260806_06`.
+Orbit dùng hai loại tài khoản: người dùng và `platform_admin`. Task, Memory, Reminder và Calendar
+thuộc trực tiếp về từng người dùng. Hội thoại chỉ có thể được đọc bởi participant đang hoạt động;
+platform admin không có đường API đọc nội dung tin nhắn gốc.
 
 ## Hiện có gì
 
@@ -22,7 +18,7 @@ Nền tảng workspace đã được triển khai xuyên suốt database, REST/W
 - **Nhắn tin 1-1 và theo nhóm, real-time**: tạo cuộc trò chuyện 1-1 hoặc nhóm (chọn nhiều người), gửi/nhận tin nhắn tức thời qua WebSocket, xem lại lịch sử tin nhắn, đếm tin nhắn chưa đọc.
 - **AI Agent (chat với AI)**: endpoint `/api/v1/chat` (yêu cầu đăng nhập) dùng LangGraph, có tool gọi Google Calendar và tạo nhắc nhở với bước xác nhận (human-in-the-loop) trước khi thực hiện. Hỗ trợ 3 provider LLM (Google Gemini, Groq, hoặc OpenAI — đổi qua `LLM_PROVIDER` trong `.env`) để dễ chuyển khi một bên hết quota.
 - **AI Assistant cá nhân** (`/assistant`): khung chat riêng nối thẳng vào agent thật ở trên (không phải dữ liệu mẫu) — hỏi tự do, khi agent muốn tạo lịch/nhắc việc sẽ hiện nút Xác nhận/Huỷ ngay trong chat.
-- **Phân quyền Admin tách biệt**: quyền nền tảng dùng `platform_role`, quyền workspace dùng membership (`owner/admin/member/guest`). Platform admin quản lý tài khoản và thống kê nhưng không mặc nhiên đọc dữ liệu riêng tư. Muốn hỗ trợ Task/Memory/Reminder của một workspace, admin phải gửi yêu cầu có lý do và thời hạn; chủ workspace có thể approve/reject/revoke, mọi thao tác nhạy cảm được ghi audit log.
+- **Phân quyền Admin tách biệt**: quyền nền tảng dùng `platform_role`. Platform admin quản lý tài khoản, cấu hình AI, thống kê usage và audit log; không có API đọc/quản lý hội thoại, Task, Memory hay Reminder của người dùng.
 - **Cảnh báo + tự chặn khi vượt hạn mức token/chi phí**: khi lượng dùng vượt ngưỡng cấu hình, platform admin đang online nhận cảnh báo realtime; các lượt gọi LLM mới bị chặn khi hết ngân sách nhưng lượt xác nhận đang chờ vẫn được hoàn tất.
 - **Tóm tắt hội thoại theo yêu cầu**: trong trang Chat, bấm icon AI trên header → **Summarize** — AI đọc tin nhắn thật (theo scope 20/50 tin gần nhất đang chọn) và trả về bản tóm tắt.
 - **Trích xuất Task từ hội thoại**: cùng panel AI → **Extract tasks** — AI tìm việc cần làm/lịch hẹn trong hội thoại, lưu vào trang `/tasks` mục "AI suggestions"; người dùng bấm **Accept**/**Dismiss** để xác nhận. Panel AI còn có **Find schedule**, **Deadlines**, **Suggest reminder** (hiện nút Xác nhận/Huỷ ngay trong panel vì tạo reminder cần human-in-the-loop), cùng ô **Ask Orbit** để hỏi tự do về hội thoại đang xem.
@@ -30,7 +26,7 @@ Nền tảng workspace đã được triển khai xuyên suốt database, REST/W
 - **Lịch cá nhân (Google Calendar thật, per-user, đồng bộ 2 chiều, realtime)**: trang `/calendar` — mỗi người tự bấm **Connect Google Calendar** (OAuth Client riêng, xem mục "Cách chạy web" bước 2) để nối đúng Google Calendar của chính họ; chưa Connect thì trang chỉ hiện nút mời kết nối, không có sự kiện nào. Sau khi kết nối, xem/tạo/sửa/xoá sự kiện thật trên calendar của người đó. Agent cũng dùng chung API này (`list/create/update/delete_calendar_event` tool, tự biết đang thao tác trên calendar của ai đang chat) nên có thể quản lý lịch qua chat, không chỉ qua UI. Mọi thay đổi (từ UI, từ chat, hoặc tạo/sửa/xoá trực tiếp trong chính Google Calendar) đều đẩy qua WebSocket — chỉ tới đúng người sở hữu calendar đó, không phải mọi người đang mở `/calendar`. Thay đổi từ phía Google được bắt bằng cách polling định kỳ cho từng user **đang online** đã kết nối (`CALENDAR_POLL_INTERVAL_SECONDS`, mặc định 20s) chứ chưa dùng webhook thật của Google (cần domain public HTTPS mà project chưa deploy).
 - **Nhắc nhở bền vững + realtime**: trang `/reminders` tạo nhắc nhở thật, lưu DB, sống sót qua restart server (APScheduler + `SQLAlchemyJobStore`); khi đến giờ, đẩy thông báo realtime qua WebSocket dù đang ở trang nào.
 - **Hồ sơ cá nhân** (`/profile`): sửa tên/chức danh/timezone/tuỳ chọn thông báo và đổi mật khẩu — lưu thật vào database, không còn là dữ liệu mẫu.
-- **Memory có phạm vi rõ ràng** (`/memory`): thêm/sửa/xoá "điều Orbit nên nhớ về bạn" theo từng workspace. Agent chỉ tìm kiếm memory và task thuộc đúng user/workspace của lượt chat hiện tại.
+- **Memory có phạm vi rõ ràng** (`/memory`): thêm/sửa/xoá "điều Orbit nên nhớ về bạn". Agent chỉ tìm kiếm memory và task thuộc đúng user của lượt chat hiện tại.
 - **Agent chủ động (proactive), realtime**: mỗi tin nhắn mới trong Chat được rà tự động (pre-filter rẻ + LLM xác nhận) — nếu chứa cam kết/lịch hẹn/hạn chót, Orbit tự tạo gợi ý và đẩy thẳng vào `/tasks` mục "AI suggestions" qua WebSocket (không cần refresh) kèm toast, không cần người dùng chủ động yêu cầu. Toàn bộ thao tác Task (accept/dismiss/complete/xoá) cũng đồng bộ realtime giữa các tab/thiết bị.
 - **Múi giờ thống nhất Asia/Ho_Chi_Minh (Hà Nội)**: mọi nơi hiển thị ngày giờ (Chat, Task, Calendar, Reminder, Memory, Admin) đều quy về giờ Hà Nội bất kể múi giờ máy người xem, qua `Frontend/src/utils/datetime.js`. Backend cũng cố định giờ Hà Nội cho scheduler (reminder fire đúng giờ dù server chạy múi giờ khác) và mốc "hôm nay" của thống kê token.
 
@@ -244,22 +240,15 @@ pytest tests/ -v
 # hoặc: make test
 ```
 
-### Kiểm tra và chạy Workspace migration
+### Chạy database migration
 
-Luôn chạy preflight trước; lệnh dry-run không ghi database:
-
-```bash
-python scripts/migrate_workspace_foundation.py --dry-run
-```
-
-Nếu database có nhiều legacy admin, chỉ định rõ owner; không chọn ngẫu nhiên:
+Sao lưu database trước khi nâng cấp, sau đó chạy:
 
 ```bash
-python scripts/migrate_workspace_foundation.py --dry-run --bootstrap-owner-user-id <USER_ID>
-python scripts/migrate_workspace_foundation.py --bootstrap-owner-user-id <USER_ID>
+alembic upgrade head
 ```
 
-Migration thật chỉ được chạy sau khi dry-run trả `"can_run": true` và đã sao lưu database. Chuỗi migration đến revision `20260805_04` backfill workspace scope cho conversation, Task, Memory, Reminder, Calendar sync state và usage log cũ, đồng thời bổ sung index/constraint cần thiết.
+Revision `20260813_08` loại bỏ schema phân vùng cũ nhưng giữ nguyên hội thoại, tin nhắn và dữ liệu cá nhân của các tài khoản đã đăng ký.
 
 ### Checklist chạy production
 
@@ -296,7 +285,7 @@ Docker Compose hiện chỉ chạy backend tại cổng `8000`; frontend chạy 
 | --- | --- |
 | AI Agent | LangGraph + LangChain (Google Gemini, Groq hoặc OpenAI, đổi qua `LLM_PROVIDER`) |
 | Backend | FastAPI, Pydantic 2, SQLAlchemy 2 async + SQLite/PostgreSQL, JWT (PyJWT) + bcrypt, WebSocket |
-| Migration | Alembic (bao gồm workspace, conversation principals và relationships) |
+| Migration | Alembic (schema hiện tại dùng user ownership và conversation participants) |
 | Agent memory | LangGraph checkpointer — `MemorySaver` (SQLite, mất khi restart) hoặc `AsyncPostgresSaver` (bền vững, khi `DATABASE_URL` là Postgres) |
 | Frontend | React 18, Vite, React Router, React Hook Form, Bootstrap 5, Framer Motion |
 | Calendar / Scheduler | Google Calendar API clients, APScheduler |

@@ -18,7 +18,7 @@ export default function Sidebar({ open, onClose }) {
       <aside className={`app-sidebar ${open ? 'open' : ''}`}>
         <div className="brand"><span className="brand-mark"><i className="bi bi-command" /></span><span>Orbit</span></div>
         <nav className="sidebar-nav">
-          <div className="nav-caption">Workspace</div>
+          <div className="nav-caption">Personal</div>
           {nav.map(([path, icon, label]) => (
             // `end` matters here: without it, `/tasks` would also read as "active" while on
             // `/tasks/inbox` (NavLink prefix-matches by default), highlighting both at once.

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import PageHeader from '../components/common/PageHeader'
 import MemoryModal from '../components/memory/MemoryModal'
 import { useAuth } from '../context/AuthContext'
-import { useWorkspace } from '../context/WorkspaceContext'
 import { listMemories, deleteMemory } from '../api/memories'
 import { formatDateShort } from '../utils/datetime'
 
@@ -17,7 +16,6 @@ const DEFAULT_STYLE = { icon: 'bi-stars', color: '#64748b' }
 
 export default function MemoryPage() {
   const { token } = useAuth()
-  const { workspaceId } = useWorkspace()
   const [memories, setMemories] = useState([])
   const [loading, setLoading] = useState(true)
   const [query, setQuery] = useState('')
@@ -28,12 +26,11 @@ export default function MemoryPage() {
 
   const refresh = () => {
     setLoading(true)
-    if (!workspaceId) return
     setError('')
-    listMemories(token, workspaceId).then(setMemories).catch(err => setError(err.detail || 'Could not load memories.')).finally(() => setLoading(false))
+    listMemories(token).then(setMemories).catch(err => setError(err.detail || 'Could not load memories.')).finally(() => setLoading(false))
   }
 
-  useEffect(() => { refresh() }, [token, workspaceId])
+  useEffect(() => { refresh() }, [token])
 
   const categories = ['All', ...new Set(memories.map(m => m.category))]
   const shown = memories

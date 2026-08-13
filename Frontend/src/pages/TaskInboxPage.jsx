@@ -4,7 +4,6 @@ import PageHeader from '../components/common/PageHeader'
 import StatCard from '../components/common/StatCard'
 import { formatDue } from '../components/task/TaskTable'
 import { useAuth } from '../context/AuthContext'
-import { useWorkspace } from '../context/WorkspaceContext'
 import { listTasks, updateTaskStatus } from '../api/tasks'
 
 const sourceLabel = { manual: 'Manual', proactive: 'AI suggestion' }
@@ -23,31 +22,28 @@ const byDueAtThenPriority = (a, b) => {
 // only what needs a decision or attention *right now*, ranked instead of just chronological.
 export default function TaskInboxPage() {
   const { token } = useAuth()
-  const { workspaceId } = useWorkspace()
   const { subscribe } = useOutletContext()
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(true)
 
   const refresh = () => {
     setLoading(true)
-    if (!token || !workspaceId) {
+    if (!token) {
       setTasks([])
       setLoading(false)
       return
     }
-    listTasks(token, workspaceId).then(setTasks).finally(() => setLoading(false))
+    listTasks(token).then(setTasks).finally(() => setLoading(false))
   }
 
-  useEffect(() => { refresh() }, [token, workspaceId])
+  useEffect(() => { refresh() }, [token])
 
   const upsertTask = (task) => setTasks(prev => [...prev.filter(t => t.id !== task.id), task])
 
   useEffect(() => subscribe((data) => {
-    const eventWorkspaceId = data.workspace_id || data.task?.workspace_id
-    if (eventWorkspaceId && eventWorkspaceId !== workspaceId) return
     if (data.type === 'task_suggested' || data.type === 'task_created' || data.type === 'task_updated') upsertTask(data.task)
     if (data.type === 'task_deleted') setTasks(prev => prev.filter(t => t.id !== data.task_id))
-  }), [subscribe, workspaceId])
+  }), [subscribe])
 
   const now = Date.now()
   const soonCutoff = now + DUE_SOON_HOURS * 3600 * 1000
@@ -100,7 +96,7 @@ export default function TaskInboxPage() {
   return (
     <div className="page-container">
       <PageHeader
-        eyebrow="Workspace"
+        eyebrow="Personal"
         title="Task Inbox"
         description="What needs your attention first — ranked, not just listed."
         action={<Link to="/tasks" className="btn btn-light rounded-3"><i className="bi bi-list-task me-2" />All tasks</Link>}

@@ -15,7 +15,7 @@ export default function AdminLoginPage() {
     setSubmitting(true)
     try {
       const data = await loginAdmin(email, password)
-      if (data.user.role !== 'admin') {
+      if (data.user.platform_role !== 'platform_admin') {
         logout()
         setError('This account is not a platform administrator.')
         return

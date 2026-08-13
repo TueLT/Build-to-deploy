@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 
 class MemoryOut(BaseModel):
     id: str
-    workspace_id: str
     category: str
     title: str
     detail: str
@@ -14,7 +13,6 @@ class MemoryOut(BaseModel):
 
 
 class MemoryCreateRequest(BaseModel):
-    workspace_id: str | None = None
     category: str = Field(..., min_length=1, max_length=40)
     title: str = Field(..., min_length=1, max_length=200)
     detail: str = Field(default="", max_length=10000)

@@ -6,28 +6,10 @@ async def _other_user(client, other_auth_headers):
     return resp.json()
 
 
-async def _team_workspace(client, auth_headers, other_auth_headers):
-    other = await _other_user(client, other_auth_headers)
-    workspace = (
-        await client.post(
-            "/api/v1/workspaces",
-            json={"name": "Chat Team"},
-            headers=auth_headers,
-        )
-    ).json()
-    response = await client.post(
-        f"/api/v1/workspaces/{workspace['id']}/members",
-        json={"email": other["email"], "role": "member"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 201
-    return workspace, other
-
-
 @pytest.mark.asyncio
 async def test_create_and_dedupe_direct_conversation(client, auth_headers, other_auth_headers):
-    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
-    payload = {"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]}
+    other = await _other_user(client, other_auth_headers)
+    payload = {"type": "direct", "participant_ids": [other["id"]]}
 
     resp1 = await client.post("/api/v1/conversations", json=payload, headers=auth_headers)
     assert resp1.status_code == 200
@@ -42,10 +24,10 @@ async def test_create_and_dedupe_direct_conversation(client, auth_headers, other
 
 @pytest.mark.asyncio
 async def test_group_conversation_requires_name(client, auth_headers, other_auth_headers):
-    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    other = await _other_user(client, other_auth_headers)
     resp = await client.post(
         "/api/v1/conversations",
-        json={"type": "group", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+        json={"type": "group", "participant_ids": [other["id"]]},
         headers=auth_headers,
     )
     assert resp.status_code == 400
@@ -53,14 +35,13 @@ async def test_group_conversation_requires_name(client, auth_headers, other_auth
 
 @pytest.mark.asyncio
 async def test_group_conversation_with_name(client, auth_headers, other_auth_headers):
-    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    other = await _other_user(client, other_auth_headers)
     resp = await client.post(
         "/api/v1/conversations",
         json={
             "type": "group",
             "participant_ids": [other["id"]],
             "name": "Team",
-            "workspace_id": workspace["id"],
         },
         headers=auth_headers,
     )
@@ -73,11 +54,11 @@ async def test_group_conversation_with_name(client, auth_headers, other_auth_hea
 
 @pytest.mark.asyncio
 async def test_send_and_list_messages(client, auth_headers, other_auth_headers):
-    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    other = await _other_user(client, other_auth_headers)
     conv = (
         await client.post(
             "/api/v1/conversations",
-            json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+            json={"type": "direct", "participant_ids": [other["id"]]},
             headers=auth_headers,
         )
     ).json()
@@ -98,39 +79,33 @@ async def test_send_and_list_messages(client, auth_headers, other_auth_headers):
 
 @pytest.mark.asyncio
 async def test_unread_count_and_mark_read(client, auth_headers, other_auth_headers):
-    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    other = await _other_user(client, other_auth_headers)
     conv = (
         await client.post(
             "/api/v1/conversations",
-            json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+            json={"type": "direct", "participant_ids": [other["id"]]},
             headers=auth_headers,
         )
     ).json()
     await client.post(f"/api/v1/conversations/{conv['id']}/messages", json={"content": "hi bob"}, headers=auth_headers)
 
-    listed = await client.get(
-        f"/api/v1/conversations?workspace_id={workspace['id']}",
-        headers=other_auth_headers,
-    )
+    listed = await client.get("/api/v1/conversations", headers=other_auth_headers)
     summary = next(c for c in listed.json()["conversations"] if c["id"] == conv["id"])
     assert summary["unread_count"] == 1
 
     await client.post(f"/api/v1/conversations/{conv['id']}/read", headers=other_auth_headers)
-    listed_again = await client.get(
-        f"/api/v1/conversations?workspace_id={workspace['id']}",
-        headers=other_auth_headers,
-    )
+    listed_again = await client.get("/api/v1/conversations", headers=other_auth_headers)
     summary_again = next(c for c in listed_again.json()["conversations"] if c["id"] == conv["id"])
     assert summary_again["unread_count"] == 0
 
 
 @pytest.mark.asyncio
 async def test_non_participant_forbidden(client, auth_headers, other_auth_headers):
-    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    other = await _other_user(client, other_auth_headers)
     conv = (
         await client.post(
             "/api/v1/conversations",
-            json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+            json={"type": "direct", "participant_ids": [other["id"]]},
             headers=auth_headers,
         )
     ).json()
@@ -156,8 +131,8 @@ async def test_non_participant_forbidden(client, auth_headers, other_auth_header
 
 @pytest.mark.asyncio
 async def test_list_users_excludes_self(client, auth_headers, other_auth_headers):
-    workspace, _ = await _team_workspace(client, auth_headers, other_auth_headers)
-    resp = await client.get(f"/api/v1/users?workspace_id={workspace['id']}", headers=auth_headers)
+    await _other_user(client, other_auth_headers)
+    resp = await client.get("/api/v1/users", headers=auth_headers)
     assert resp.status_code == 200
     emails = [u["email"] for u in resp.json()]
     assert "bob@example.com" in emails

@@ -4,18 +4,9 @@ import pytest
 async def _create_direct_conversation(client, creator_headers, other_headers):
     other_me = await client.get("/api/v1/auth/me", headers=other_headers)
     other = other_me.json()
-    workspace = (
-        await client.post("/api/v1/workspaces", json={"name": "AI permission test"}, headers=creator_headers)
-    ).json()
-    member = await client.post(
-        f"/api/v1/workspaces/{workspace['id']}/members",
-        json={"email": other["email"], "role": "member"},
-        headers=creator_headers,
-    )
-    assert member.status_code == 201
     conv = await client.post(
         "/api/v1/conversations",
-        json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+        json={"type": "direct", "participant_ids": [other["id"]]},
         headers=creator_headers,
     )
     assert conv.status_code == 200

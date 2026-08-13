@@ -16,7 +16,7 @@ def _config():
 
 
 def _agent_input(message):
-    return {"messages": [HumanMessage(content=message)], "user_id": "user-1", "workspace_id": "workspace-1"}
+    return {"messages": [HumanMessage(content=message)], "user_id": "user-1"}
 
 
 def _allow_calendar(monkeypatch):

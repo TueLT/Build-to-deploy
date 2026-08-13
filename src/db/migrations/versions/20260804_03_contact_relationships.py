@@ -11,6 +11,8 @@ depends_on = None
 
 
 def upgrade() -> None:
+    if "workspaces" not in set(sa.inspect(op.get_bind()).get_table_names()):
+        return
     connection = op.get_bind()
     if "contact_relationships" in set(sa.inspect(connection).get_table_names()):
         return

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from src.agents import graph as agent_graph
 from src.agents.tools import search_tool
 from src.db import session as db_session
-from src.db.models import Conversation, ConversationParticipant, Message, User, Workspace
+from src.db.models import Conversation, ConversationParticipant, Message, User
 
 
 async def _get_user_id(email: str) -> str:
@@ -19,12 +19,7 @@ async def _get_user_id(email: str) -> str:
 
 async def _seed_conversation(alice_id: str, bob_id: str, messages: list[tuple[str, str, datetime]]) -> str:
     async with db_session.async_session_maker() as db:
-        workspace = (
-            await db.execute(
-                select(Workspace).where(Workspace.type == "personal", Workspace.personal_owner_user_id == alice_id)
-            )
-        ).scalar_one()
-        conversation = Conversation(workspace_id=workspace.id, type="direct", name=None, created_by=alice_id)
+        conversation = Conversation(type="direct", name=None, created_by=alice_id)
         db.add(conversation)
         await db.flush()
         for uid in (alice_id, bob_id):

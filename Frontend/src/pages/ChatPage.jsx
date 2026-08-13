@@ -9,11 +9,9 @@ import { useAuth } from '../context/AuthContext'
 import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
 import { getAiPermission, markRead, setAiPermission } from '../api/chat'
-import { useWorkspace } from '../context/WorkspaceContext'
 
 export default function ChatPage() {
   const { token, user } = useAuth()
-  const { workspaceId } = useWorkspace()
   const location = useLocation()
   const { sendJson, subscribe } = useOutletContext()
   const [mobileChat, setMobileChat] = useState(false)
@@ -21,7 +19,7 @@ export default function ChatPage() {
   const [newConvoOpen, setNewConvoOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(() => location.state?.conversationId || null)
   const [aiGranted, setAiGranted] = useState(false)
-  const { conversations, setConversations } = useConversations(token, workspaceId)
+  const { conversations, setConversations } = useConversations(token)
   const { messages, setMessages } = useMessages(token, selectedId)
 
   // AI permission is per (conversation, user) on the backend - shared here so the header badge
@@ -91,7 +89,7 @@ export default function ChatPage() {
           <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Select a conversation or start a new one</p></div>
         )}
       </section>
-      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} messages={messages} conversationId={selectedId} workspaceId={workspaceId} granted={aiGranted} onToggleGrant={onToggleAi} />
+      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} messages={messages} conversationId={selectedId} granted={aiGranted} onToggleGrant={onToggleAi} />
       <NewConversationModal open={newConvoOpen} onClose={() => setNewConvoOpen(false)} onCreated={onCreated} />
     </div>
   )

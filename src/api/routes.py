@@ -8,12 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents import graph as agent_graph
 from src.auth.dependencies import get_current_user
-from src.db.models import Conversation, Message, User
+from src.db.models import Message, User
 from src.db.session import get_db
 from src.models.schemas import ChatMessage, ChatRequest, ChatResponse, InterruptPayload, ResumeRequest
 from src.services import chat_service, usage_service
 from src.services.authorization_service import require_conversation_access
-from src.services.workspace_service import resolve_workspace_for_user
 
 router = APIRouter()
 
@@ -85,18 +84,6 @@ async def chat(
     """Chat với AI agent."""
     if request.conversation_id is not None:
         await require_conversation_access(db, current_user, request.conversation_id, "viewer")
-        conversation = await db.get(Conversation, request.conversation_id)
-        if conversation is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-        if request.workspace_id is not None and request.workspace_id != conversation.workspace_id:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="conversation_id does not belong to workspace_id",
-            )
-        workspace_id = conversation.workspace_id
-    else:
-        workspace = await resolve_workspace_for_user(db, current_user.id, request.workspace_id)
-        workspace_id = workspace.id
     if request.conversation_id is not None:
         # Conversation membership and AI consent are separate checks.
         await chat_service.assert_ai_permission(db, request.conversation_id, current_user.id)
@@ -130,7 +117,6 @@ async def chat(
         "messages": [HumanMessage(content=request.message)],
         "context": context_text,
         "user_id": current_user.id,
-        "workspace_id": workspace_id,
         "conversation_id": request.conversation_id,
     }
     try:

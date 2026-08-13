@@ -24,7 +24,7 @@ async def test_google_auth_new_user_creates_account(client, monkeypatch):
     body = resp.json()
     assert body["user"]["email"] == "newgoogle@example.com"
     assert body["user"]["display_name"] == "New Googler"
-    assert body["user"]["role"] == "user"
+    assert body["user"]["platform_role"] == "user"
 
     async with db_session.async_session_maker() as db:
         identity = (
@@ -121,7 +121,7 @@ async def test_google_auth_signup_is_always_a_user(client, monkeypatch):
 
     resp = await client.post("/api/v1/auth/google", json={"id_token": "fake"})
     assert resp.status_code == 200
-    assert resp.json()["user"]["role"] == "user"
+    assert resp.json()["user"]["platform_role"] == "user"
 
 
 @pytest.mark.asyncio

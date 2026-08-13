@@ -12,7 +12,6 @@ class CalendarEventOut(BaseModel):
 
 
 class CalendarEventCreateRequest(BaseModel):
-    workspace_id: str
     summary: str = Field(..., min_length=1, max_length=200)
     start_iso: datetime
     end_iso: datetime

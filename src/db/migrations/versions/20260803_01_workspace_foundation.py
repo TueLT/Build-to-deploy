@@ -268,6 +268,11 @@ def _finalize_conversations(connection) -> None:
 def upgrade() -> None:
     connection = op.get_bind()
     _create_schema(connection)
+    # A fresh installation is created directly from the current (workspace-free) metadata.
+    # Legacy revisions remain in the chain only to upgrade databases that actually contain the
+    # former workspace schema.
+    if "workspaces" not in _table_names(connection):
+        return
     conversation_count = connection.execute(sa.text("SELECT COUNT(*) FROM conversations")).scalar_one()
     owner_user_id = _resolve_owner(connection) if conversation_count else None
     _backfill(connection, owner_user_id)

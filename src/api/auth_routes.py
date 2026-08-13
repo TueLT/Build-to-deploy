@@ -22,7 +22,6 @@ from src.models.auth_schemas import (
     UserPublic,
 )
 from src.services.audit_service import record_audit_event
-from src.services.workspace_service import create_personal_workspace
 
 router = APIRouter()
 
@@ -32,17 +31,11 @@ def _to_public(user: User) -> UserPublic:
         id=user.id,
         email=user.email,
         display_name=user.display_name,
-        role=user.role,
         platform_role=user.platform_role,
         job_title=user.job_title,
         timezone=user.timezone,
         preferences=user.preferences,
     )
-
-
-def _initial_role_for(_email: str) -> str:
-    """Public signup never grants platform-admin access."""
-    return "user"
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
@@ -52,24 +45,20 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     if existing is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
 
-    role = _initial_role_for(normalized_email)
     user = User(
         email=normalized_email,
         password_hash=hash_password(request.password),
         display_name=request.display_name,
-        role=role,
-        platform_role="platform_admin" if role == "admin" else "user",
+        platform_role="user",
     )
     db.add(user)
     await db.flush()
-    workspace = await create_personal_workspace(db, user)
     await record_audit_event(
         db,
         actor=user,
         action="auth.account_registered",
         target_type="user",
         target_id=user.id,
-        workspace_id=workspace.id,
         metadata={"method": "password"},
     )
     await db.commit()
@@ -96,7 +85,7 @@ async def register_admin(request: AdminRegisterRequest, db: AsyncSession = Depen
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid admin bootstrap key")
 
     admin_exists = (
-        await db.execute(select(User.id).where(User.role == "admin").limit(1))
+        await db.execute(select(User.id).where(User.platform_role == "platform_admin").limit(1))
     ).scalar_one_or_none()
     if admin_exists is not None:
         raise HTTPException(
@@ -113,19 +102,16 @@ async def register_admin(request: AdminRegisterRequest, db: AsyncSession = Depen
         email=normalized_email,
         password_hash=hash_password(request.password),
         display_name=request.display_name,
-        role="admin",
         platform_role="platform_admin",
     )
     db.add(user)
     await db.flush()
-    workspace = await create_personal_workspace(db, user)
     await record_audit_event(
         db,
         actor=user,
         action="auth.admin_account_registered",
         target_type="user",
         target_id=user.id,
-        workspace_id=workspace.id,
         metadata={"method": "password"},
     )
     await db.commit()
@@ -149,7 +135,6 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Au
         action="auth.login_succeeded",
         target_type="session",
         target_id=None,
-        workspace_id=None,
         metadata={"method": "password"},
     )
     await db.commit()
@@ -165,7 +150,7 @@ async def admin_login(request: LoginRequest, db: AsyncSession = Depends(get_db))
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
-    if user.role != "admin":
+    if user.platform_role != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
     await record_audit_event(
@@ -174,7 +159,6 @@ async def admin_login(request: LoginRequest, db: AsyncSession = Depends(get_db))
         action="auth.admin_login_succeeded",
         target_type="session",
         target_id=None,
-        workspace_id=None,
         metadata={"method": "password"},
     )
     await db.commit()
@@ -221,11 +205,10 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
                 # (correct: nobody ever set a password for it) until/unless they set one later.
                 password_hash=hash_password(secrets.token_urlsafe(32)),
                 display_name=claims.get("name") or email.split("@")[0],
-                role="user",
+                platform_role="user",
             )
             db.add(user)
             await db.flush()
-            await create_personal_workspace(db, user)
         db.add(GoogleIdentity(user_id=user.id, google_sub=google_sub, email=email))
         await db.commit()
         await db.refresh(user)
@@ -239,7 +222,6 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
         action="auth.login_succeeded",
         target_type="session",
         target_id=None,
-        workspace_id=None,
         metadata={"method": "google"},
     )
     await db.commit()
@@ -267,7 +249,6 @@ async def update_me(
         action="profile.updated",
         target_type="user",
         target_id=current_user.id,
-        workspace_id=None,
         metadata={"fields": sorted(updates)},
     )
     await db.commit()
@@ -290,6 +271,5 @@ async def change_password(
         action="auth.password_changed",
         target_type="user",
         target_id=current_user.id,
-        workspace_id=None,
     )
     await db.commit()

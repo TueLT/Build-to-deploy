@@ -9,7 +9,6 @@ TaskPriority = Literal["High", "Medium", "Low"]
 
 class TaskOut(BaseModel):
     id: str
-    workspace_id: str
     conversation_id: str | None
     title: str
     due_at: datetime | None
@@ -21,7 +20,6 @@ class TaskOut(BaseModel):
 
 
 class TaskCreateRequest(BaseModel):
-    workspace_id: str | None = None
     title: str = Field(..., min_length=1, max_length=200)
     due_at: datetime | None = None
     priority: TaskPriority = "Medium"

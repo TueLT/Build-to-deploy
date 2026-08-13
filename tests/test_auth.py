@@ -41,14 +41,14 @@ async def test_admin_bootstrap_creates_admin_without_user_registration(client, m
         },
     )
     assert resp.status_code == 200
-    assert resp.json()["user"]["role"] == "admin"
+    assert resp.json()["user"]["platform_role"] == "platform_admin"
 
     normal_signup = await client.post(
         "/api/v1/auth/register",
         json={"email": "normal@example.com", "password": "password123", "display_name": "Normal"},
     )
     assert normal_signup.status_code == 201
-    assert normal_signup.json()["user"]["role"] == "user"
+    assert normal_signup.json()["user"]["platform_role"] == "user"
 
 
 @pytest.mark.asyncio

@@ -14,14 +14,6 @@ _NOT_CONNECTED_MSG = (
 )
 
 
-def _agent_identity(state: AgentState | None) -> tuple[str, str]:
-    user_id = (state or {}).get("user_id")
-    workspace_id = (state or {}).get("workspace_id")
-    if not user_id or not workspace_id:
-        raise ValueError("Authenticated user and workspace context are required")
-    return user_id, workspace_id
-
-
 @tool
 async def create_calendar_event(
     summary: str,

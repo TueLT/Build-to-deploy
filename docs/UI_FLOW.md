@@ -43,7 +43,7 @@ graph TD
     style AdminOnly fill:#fce7f3,stroke:#db2777,color:#000
 ```
 
-**Layout chung (`AppLayout`):** Sidebar trái (Workspace: AI Assistant · Chats · Tasks · Calendar ·
+**Layout chung (`AppLayout`):** Sidebar trái (Personal: AI Assistant · Chats · Tasks · Calendar ·
 Reminders · Memory · Profile; mục Admin chỉ hiện với role admin) + TopNavbar + vùng nội dung.
 Một kết nối WebSocket duy nhất mở ở `AppLayout` và chia sẻ xuống các trang qua Outlet context.
 

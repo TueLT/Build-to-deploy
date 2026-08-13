@@ -64,7 +64,7 @@ async def test_events_returns_409_when_not_connected(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_list_events_maps_google_events(client, auth_headers, personal_workspace, monkeypatch):
+async def test_list_events_maps_google_events(client, auth_headers, monkeypatch):
     async def _fake_service(user_id):
         assert user_id  # route must actually pass the caller's id down
         fake = MagicMock()
@@ -83,9 +83,7 @@ async def test_list_events_maps_google_events(client, auth_headers, personal_wor
 
     monkeypatch.setattr(calendar_service, "_service", _fake_service)
 
-    resp = await client.get(
-        f"/api/v1/calendar/events?workspace_id={personal_workspace['id']}", headers=auth_headers
-    )
+    resp = await client.get("/api/v1/calendar/events", headers=auth_headers)
     assert resp.status_code == 200
     body = resp.json()
     assert len(body) == 1
@@ -96,20 +94,18 @@ async def test_list_events_maps_google_events(client, auth_headers, personal_wor
 
 
 @pytest.mark.asyncio
-async def test_list_events_upstream_error_returns_502(client, auth_headers, personal_workspace, monkeypatch):
+async def test_list_events_upstream_error_returns_502(client, auth_headers, monkeypatch):
     async def _boom(user_id):
         raise RuntimeError("token expired")
 
     monkeypatch.setattr(calendar_service, "_service", _boom)
 
-    resp = await client.get(
-        f"/api/v1/calendar/events?workspace_id={personal_workspace['id']}", headers=auth_headers
-    )
+    resp = await client.get("/api/v1/calendar/events", headers=auth_headers)
     assert resp.status_code == 502
 
 
 @pytest.mark.asyncio
-async def test_create_event(client, auth_headers, personal_workspace, monkeypatch):
+async def test_create_event(client, auth_headers, monkeypatch):
     captured = {}
     fake_service = MagicMock()
 
@@ -137,7 +133,6 @@ async def test_create_event(client, auth_headers, personal_workspace, monkeypatc
     resp = await client.post(
         "/api/v1/calendar/events",
         json={
-            "workspace_id": personal_workspace["id"],
             "summary": "Design sync",
             "start_iso": "2026-08-11T09:00:00+07:00",
             "end_iso": "2026-08-11T09:30:00+07:00",

@@ -64,16 +64,8 @@ async def auth_headers(client):
 
 
 @pytest_asyncio.fixture
-async def personal_workspace(client, auth_headers):
-    """Returns the personal workspace created automatically at registration."""
-    resp = await client.get("/api/v1/workspaces", headers=auth_headers)
-    assert resp.status_code == 200
-    return next(workspace for workspace in resp.json() if workspace["type"] == "personal")
-
-
-@pytest_asyncio.fixture
 async def admin_auth_headers(client):
-    """Registers a test user with both legacy and platform admin roles."""
+    """Registers a platform administrator."""
     await client.post(
         "/api/v1/auth/register",
         json={"email": "admin@example.com", "password": "password123", "display_name": "Admin"},
@@ -81,7 +73,6 @@ async def admin_auth_headers(client):
 
     async with db_session.async_session_maker() as session:
         user = (await session.execute(select(User).where(User.email == "admin@example.com"))).scalar_one()
-        user.role = "admin"
         user.platform_role = "platform_admin"
         await session.commit()
 
@@ -95,7 +86,7 @@ async def admin_auth_headers(client):
 
 @pytest_asyncio.fixture
 async def platform_admin_headers(client):
-    """Registers a platform admin without granting any workspace role."""
+    """Registers a second platform administrator."""
     await client.post(
         "/api/v1/auth/register",
         json={"email": "platform@example.com", "password": "password123", "display_name": "Platform Admin"},
@@ -112,28 +103,6 @@ async def platform_admin_headers(client):
     )
     token = resp.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
-
-
-@pytest_asyncio.fixture
-async def legacy_admin_headers(client):
-    """Registers an account carrying only the deprecated global admin role."""
-    await client.post(
-        "/api/v1/auth/register",
-        json={"email": "legacy-admin@example.com", "password": "password123", "display_name": "Legacy Admin"},
-    )
-
-    async with db_session.async_session_maker() as session:
-        user = (await session.execute(select(User).where(User.email == "legacy-admin@example.com"))).scalar_one()
-        user.role = "admin"
-        await session.commit()
-
-    resp = await client.post(
-        "/api/v1/auth/login",
-        json={"email": "legacy-admin@example.com", "password": "password123"},
-    )
-    token = resp.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
-
 
 @pytest_asyncio.fixture
 async def other_auth_headers(client):

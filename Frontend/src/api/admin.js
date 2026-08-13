@@ -1,7 +1,5 @@
 import { apiFetch } from './client'
 
-export const getStats = (token) => apiFetch('/admin/stats', { token })
-
 export const getSystemHealth = (token) => apiFetch('/admin/system-health', { token })
 
 export const getAIManagement = (token) => apiFetch('/admin/ai-management', { token })
