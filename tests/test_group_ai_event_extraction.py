@@ -226,6 +226,7 @@ async def test_confirm_event_candidate_requires_manager_and_writes_calendar_only
     assert confirmed.status_code == 200
     assert confirmed.json()["status"] == "confirmed"
     assert confirmed.json()["calendar_event_id"] == "google-1"
+    assert confirmed.json()["calendar_owner_user_id"] == manager["id"]
 
 
 @pytest.mark.asyncio

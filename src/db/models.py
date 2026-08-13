@@ -481,6 +481,7 @@ class EventCandidate(Base):
     source_message_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     authorization_scope_hash: Mapped[str] = mapped_column(index=True)
     calendar_event_id: Mapped[str | None] = mapped_column(default=None, index=True)
+    calendar_owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     invalidated_reason: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
@@ -538,6 +539,25 @@ class CalendarSyncState(Base):
     workspace_id: Mapped[str] = mapped_column("id", ForeignKey("workspaces.id"), primary_key=True)
     sync_token: Mapped[str | None] = mapped_column(default=None)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class GoogleCalendarCredential(Base):
+    """Encrypted per-user OAuth credential and incremental sync cursor."""
+
+    __tablename__ = "google_calendar_credentials"
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    google_email: Mapped[str] = mapped_column(default="")
+    refresh_token_enc: Mapped[str] = mapped_column(Text)
+    access_token_enc: Mapped[str | None] = mapped_column(Text, default=None)
+    token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    scopes: Mapped[str] = mapped_column(default="")
+    sync_token: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    user: Mapped["User"] = relationship()
 
 
 class Reminder(Base):

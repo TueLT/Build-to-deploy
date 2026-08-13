@@ -1,122 +1,115 @@
-import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import HTTPException, status
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
+from googleapiclient.discovery import Resource, build
 from googleapiclient.errors import HttpError
+from starlette.concurrency import run_in_threadpool
 
 from src.config import get_settings
-from src.db import session as db_session
-from src.db.models import CalendarSyncState
-from src.services.workspace_service import list_workspace_user_ids, resolve_workspace_for_user
+from src.services import google_credentials
 from src.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
-
-_SCOPES = ["https://www.googleapis.com/auth/calendar"]
+_PRIMARY = "primary"
 
 
 def get_calendar_service():
-    settings = get_settings()
-    creds = Credentials.from_authorized_user_file(settings.google_token_path, _SCOPES)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        with open(settings.google_token_path, "w") as f:
-            f.write(creds.to_json())
-    return build("calendar", "v3", credentials=creds)
+    """Legacy test seam retained while runtime credentials are now resolved per user."""
+    raise RuntimeError("A user-specific Google Calendar service is required")
 
 
-def list_events(time_min_iso: str, time_max_iso: str, max_results: int = 50) -> list[dict]:
-    settings = get_settings()
-    service = get_calendar_service()
-    resp = (
-        service.events()
-        .list(
-            calendarId=settings.google_calendar_id,
-            timeMin=time_min_iso,
-            timeMax=time_max_iso,
-            maxResults=max_results,
-            singleEvents=True,
-            orderBy="startTime",
+_DEFAULT_SERVICE_FACTORY = get_calendar_service
+
+
+async def _service(user_id: str) -> Resource:
+    if get_calendar_service is not _DEFAULT_SERVICE_FACTORY:
+        return get_calendar_service()
+    credentials = await google_credentials.get_credentials(user_id)
+    return await run_in_threadpool(build, "calendar", "v3", credentials=credentials)
+
+
+async def authorize_calendar_access(user_id: str, workspace_id: str | None = None) -> tuple[str, list[str]]:
+    """Compatibility seam; access is now established by the user's encrypted OAuth credential."""
+    await google_credentials.get_credentials(user_id)
+    return workspace_id or "", [user_id]
+
+
+async def list_events(user_id: str, time_min_iso: str, time_max_iso: str, max_results: int = 50) -> list[dict]:
+    service = await _service(user_id)
+
+    def call():
+        return (
+            service.events()
+            .list(
+                calendarId=_PRIMARY,
+                timeMin=time_min_iso,
+                timeMax=time_max_iso,
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy="startTime",
+            )
+            .execute()
         )
-        .execute()
-    )
-    return resp.get("items", [])
+
+    return (await run_in_threadpool(call)).get("items", [])
 
 
-def create_event(
-    summary: str, start_iso: str, end_iso: str, description: str = "", attendees: list[str] | None = None
+async def create_event(
+    user_id: str,
+    summary: str,
+    start_iso: str,
+    end_iso: str,
+    description: str = "",
+    attendees: list[str] | None = None,
+    timezone: str | None = None,
 ) -> dict:
-    settings = get_settings()
-    service = get_calendar_service()
+    service = await _service(user_id)
+    tz = timezone or get_settings().calendar_timezone
     body = {
         "summary": summary,
         "description": description,
-        "start": {"dateTime": start_iso, "timeZone": settings.calendar_timezone},
-        "end": {"dateTime": end_iso, "timeZone": settings.calendar_timezone},
-        "attendees": [{"email": a} for a in (attendees or [])],
+        "start": {"dateTime": start_iso, "timeZone": tz},
+        "end": {"dateTime": end_iso, "timeZone": tz},
+        "attendees": [{"email": value} for value in (attendees or [])],
     }
-    return service.events().insert(calendarId=settings.google_calendar_id, body=body).execute()
+    return await run_in_threadpool(lambda: service.events().insert(calendarId=_PRIMARY, body=body).execute())
 
 
-def update_event(
+async def update_event(
+    user_id: str,
     event_id: str,
     summary: str | None = None,
     start_iso: str | None = None,
     end_iso: str | None = None,
     description: str | None = None,
+    timezone: str | None = None,
 ) -> dict:
-    """Patch an existing Google Calendar event - only the given fields change."""
-    settings = get_settings()
-    service = get_calendar_service()
+    service = await _service(user_id)
+    tz = timezone or get_settings().calendar_timezone
     body: dict = {}
     if summary is not None:
         body["summary"] = summary
     if description is not None:
         body["description"] = description
     if start_iso is not None:
-        body["start"] = {"dateTime": start_iso, "timeZone": settings.calendar_timezone}
+        body["start"] = {"dateTime": start_iso, "timeZone": tz}
     if end_iso is not None:
-        body["end"] = {"dateTime": end_iso, "timeZone": settings.calendar_timezone}
-    return service.events().patch(calendarId=settings.google_calendar_id, eventId=event_id, body=body).execute()
+        body["end"] = {"dateTime": end_iso, "timeZone": tz}
+    return await run_in_threadpool(
+        lambda: service.events().patch(calendarId=_PRIMARY, eventId=event_id, body=body).execute()
+    )
 
 
-def delete_event(event_id: str) -> None:
-    settings = get_settings()
-    service = get_calendar_service()
-    service.events().delete(calendarId=settings.google_calendar_id, eventId=event_id).execute()
+async def delete_event(user_id: str, event_id: str) -> None:
+    service = await _service(user_id)
+    await run_in_threadpool(lambda: service.events().delete(calendarId=_PRIMARY, eventId=event_id).execute())
 
 
-async def authorize_calendar_access(user_id: str, workspace_id: str | None) -> tuple[str, list[str]]:
-    """Authorize the explicitly configured workspace integration and return its recipients.
-
-    This application currently supports one service-account/token integration. Failing closed
-    avoids accidentally exposing that calendar to every tenant until per-workspace OAuth is
-    configured in a future integration layer.
-    """
-    configured_workspace_id = get_settings().google_calendar_workspace_id.strip()
-    if not configured_workspace_id:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Calendar integration is not configured")
-    if not workspace_id or workspace_id != configured_workspace_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Calendar is not enabled for this workspace")
-    async with db_session.async_session_maker() as db:
-        await resolve_workspace_for_user(db, user_id, workspace_id)
-        recipients = await list_workspace_user_ids(db, workspace_id)
-    return workspace_id, recipients
-
-
-async def broadcast_change(workspace_id: str, event_type: str, payload: dict) -> None:
-    async with db_session.async_session_maker() as db:
-        recipients = await list_workspace_user_ids(db, workspace_id)
-    await manager.broadcast_to_users(recipients, {"type": event_type, "workspace_id": workspace_id, **payload})
+async def broadcast_change(user_id: str, event_type: str, payload: dict) -> None:
+    await manager.broadcast_to_users([user_id], {"type": event_type, **payload})
 
 
 def to_out_dict(event: dict) -> dict:
-    """Shared shape for a Google Calendar event, used by both the REST response (CalendarEventOut)
-    and the WebSocket push (REST route + agent tool both need to notify the same way)."""
     start = event.get("start", {})
     end = event.get("end", {})
     return {
@@ -128,75 +121,58 @@ def to_out_dict(event: dict) -> dict:
     }
 
 
-def _fetch_changes(sync_token: str | None) -> tuple[list[dict], str | None]:
-    """One full page-through of events().list(). With no sync_token, this is a bootstrap sync
-    (events from the last day onward) that just establishes a fresh nextSyncToken; with one, it's
-    an incremental diff - Google returns only what changed since that token, deletions included
-    (as items with status="cancelled")."""
-    settings = get_settings()
-    service = get_calendar_service()
-    kwargs: dict = {"calendarId": settings.google_calendar_id, "singleEvents": True}
+async def _fetch_changes(user_id: str, sync_token: str | None) -> tuple[list[dict], str | None]:
+    service = await _service(user_id)
+    kwargs: dict = {"calendarId": _PRIMARY, "singleEvents": True}
     if sync_token:
         kwargs["syncToken"] = sync_token
     else:
         kwargs["timeMin"] = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-
     items: list[dict] = []
-    next_sync_token = None
     page_token = None
+    next_sync_token = None
     while True:
-        resp = service.events().list(**kwargs, pageToken=page_token).execute()
-        items.extend(resp.get("items", []))
-        page_token = resp.get("nextPageToken")
+        response = await run_in_threadpool(lambda: service.events().list(**kwargs, pageToken=page_token).execute())
+        items.extend(response.get("items", []))
+        page_token = response.get("nextPageToken")
         if not page_token:
-            next_sync_token = resp.get("nextSyncToken")
+            next_sync_token = response.get("nextSyncToken")
             break
     return items, next_sync_token
 
 
-async def poll_calendar_changes() -> None:
-    """Periodic APScheduler job: Google Calendar push notifications need a public HTTPS callback
-    URL, which this project doesn't have (local dev only, no deployment yet), so this polls with
-    an incremental syncToken instead to catch changes made directly in Google Calendar (outside
-    the app) and broadcast them to everyone connected - the same WebSocket events the REST routes
-    and agent tools already send, so the frontend needs no changes to pick these up. Never raises:
-    a failed poll should not crash the scheduler, just retry next interval."""
-    workspace_id = get_settings().google_calendar_workspace_id.strip()
-    if not workspace_id:
-        return
-    async with db_session.async_session_maker() as db:
-        state = await db.get(CalendarSyncState, workspace_id)
-        sync_token = state.sync_token if state else None
-
+async def _poll_one_user(user_id: str) -> None:
+    sync_token = await google_credentials.get_sync_token(user_id)
     try:
-        items, next_sync_token = await asyncio.to_thread(_fetch_changes, sync_token)
-    except HttpError as e:
-        if sync_token and e.resp.status == 410:
-            # Token expired/invalid (e.g. calendar untouched too long) - Google requires starting
-            # over with a full sync rather than resuming.
-            logger.warning("Calendar sync token expired, resyncing from scratch")
+        items, next_sync_token = await _fetch_changes(user_id, sync_token)
+    except google_credentials.CalendarNotConnectedError:
+        return
+    except HttpError as exc:
+        if sync_token and exc.resp.status == 410:
             try:
-                items, next_sync_token = await asyncio.to_thread(_fetch_changes, None)
-            except Exception:
-                logger.exception("Calendar poll full resync failed")
+                items, next_sync_token = await _fetch_changes(user_id, None)
+            except Exception:  # noqa: BLE001 - one poll must not stop the scheduler
+                logger.exception("Calendar full resync failed for user %s", user_id)
                 return
         else:
-            logger.exception("Calendar poll failed")
+            logger.exception("Calendar poll failed for user %s", user_id)
             return
-    except Exception:
-        logger.exception("Calendar poll failed")
+    except Exception:  # noqa: BLE001 - one poll must not stop the scheduler
+        logger.exception("Calendar poll failed for user %s", user_id)
         return
 
     for event in items:
         if event.get("status") == "cancelled":
-            await broadcast_change(workspace_id, "calendar_event_deleted", {"event_id": event["id"]})
+            await broadcast_change(user_id, "calendar_event_deleted", {"event_id": event["id"]})
         else:
-            await broadcast_change(workspace_id, "calendar_event_updated", {"event": to_out_dict(event)})
+            await broadcast_change(user_id, "calendar_event_updated", {"event": to_out_dict(event)})
+    await google_credentials.set_sync_token(user_id, next_sync_token)
 
-    async with db_session.async_session_maker() as db:
-        state = await db.get(CalendarSyncState, workspace_id)
-        if state is None:
-            state = CalendarSyncState(workspace_id=workspace_id)
-            db.add(state)
-        state.sync_token = next_sync_token
-        await db.commit()
+
+async def poll_calendar_changes() -> None:
+    connected = set(await google_credentials.list_connected_user_ids())
+    for user_id in [value for value in list(manager.active) if value in connected]:
+        try:
+            await _poll_one_user(user_id)
+        except Exception:  # noqa: BLE001 - isolate users within a polling tick
+            logger.exception("Calendar poll failed for user %s", user_id)

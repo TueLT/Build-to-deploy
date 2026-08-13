@@ -7,7 +7,18 @@ from sqlalchemy.orm import selectinload
 
 from src.auth.dependencies import require_admin
 from src.config import get_settings
-from src.db.models import AIPermission, AuditLog, Conversation, Memory, Message, Reminder, SystemConfig, Task, User
+from src.db.models import (
+    AIPermission,
+    AuditLog,
+    Conversation,
+    GoogleCalendarCredential,
+    Memory,
+    Message,
+    Reminder,
+    SystemConfig,
+    Task,
+    User,
+)
 from src.db.session import get_db
 from src.models.admin_schemas import (
     AdminAIManagement,
@@ -124,13 +135,22 @@ async def get_system_health(db: AsyncSession = Depends(get_db)) -> AdminSystemHe
             ),
         }
     )
-    calendar_configured = bool(settings.google_calendar_workspace_id)
+    calendar_configured = bool(
+        settings.google_calendar_client_id
+        and settings.google_calendar_client_secret
+        and settings.credential_encryption_key
+    )
+    connected_calendars = (await db.execute(select(func.count()).select_from(GoogleCalendarCredential))).scalar_one()
     components.append(
         {
             "key": "calendar",
             "label": "Google Calendar",
             "status": "operational" if calendar_configured else "degraded",
-            "detail": "Workspace calendar configured" if calendar_configured else "Workspace calendar not configured",
+            "detail": (
+                f"Configured; {connected_calendars} connected accounts"
+                if calendar_configured
+                else "Per-user Calendar OAuth not configured"
+            ),
         }
     )
     statuses = {component["status"] for component in components}

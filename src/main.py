@@ -6,10 +6,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.agents.graph import close_checkpointer, init_checkpointer
 from src.api.admin_routes import router as admin_router
 from src.api.auth_routes import router as auth_router
+from src.api.calendar_routes import public_router as calendar_public_router
 from src.api.calendar_routes import router as calendar_router
 from src.api.chat_routes import router as chat_router
 from src.api.memory_routes import router as memory_router
 from src.api.platform_routes import router as platform_router
+from src.api.rate_limit import RateLimitMiddleware
 from src.api.relationship_routes import router as relationship_router
 from src.api.reminder_routes import router as reminder_router
 from src.api.routes import router
@@ -32,14 +34,13 @@ async def lifespan(app: FastAPI):
     await load_saved_ai_configuration()
     await init_checkpointer()
     scheduler.start()
-    if settings.google_calendar_workspace_id:
-        scheduler.add_job(
-            calendar_service.poll_calendar_changes,
-            "interval",
-            seconds=settings.calendar_poll_interval_seconds,
-            id=f"calendar_poll:{settings.google_calendar_workspace_id}",
-            replace_existing=True,
-        )
+    scheduler.add_job(
+        calendar_service.poll_calendar_changes,
+        "interval",
+        seconds=settings.calendar_poll_interval_seconds,
+        id="calendar_poll",
+        replace_existing=True,
+    )
     yield
     scheduler.shutdown(wait=False)
     await close_checkpointer()
@@ -54,6 +55,7 @@ app = FastAPI(
 )
 
 settings = get_settings()
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
@@ -73,6 +75,7 @@ app.include_router(workspace_router, prefix="/api/v1/workspaces", tags=["workspa
 app.include_router(relationship_router, prefix="/api/v1/workspaces", tags=["relationships"])
 app.include_router(task_router, prefix="/api/v1", tags=["tasks"])
 app.include_router(calendar_router, prefix="/api/v1", tags=["calendar"])
+app.include_router(calendar_public_router, prefix="/api/v1", tags=["calendar"])
 app.include_router(reminder_router, prefix="/api/v1", tags=["reminders"])
 app.include_router(memory_router, prefix="/api/v1", tags=["memory"])
 

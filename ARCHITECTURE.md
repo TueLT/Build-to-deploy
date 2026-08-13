@@ -164,7 +164,8 @@ graph LR
   suggested/pending/in_progress/completed/dismissed, source manual/proactive), `Reminder` (status
   scheduled/fired/cancelled), `Memory` (ghi chú cá nhân người dùng tự thêm — category/title/detail,
   **khác** với agent checkpoint memory ở trên), `UsageLog` (token mỗi lần gọi LLM),
-  `CalendarSyncState` (1 dòng, lưu `syncToken` cho polling đồng bộ Google Calendar). Ngoài ra
+  `GoogleCalendarCredential` (mỗi user một bản ghi OAuth mã hóa kèm `syncToken`; `CalendarSyncState`
+  cũ chỉ còn để tương thích dữ liệu đã triển khai). Ngoài ra
   APScheduler tự quản bảng `apscheduler_jobs`, và khi dùng Postgres, LangGraph tự quản các bảng
   `checkpoints`/`checkpoint_blobs`/`checkpoint_writes`/`checkpoint_migrations`.
 

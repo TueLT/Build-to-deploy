@@ -13,7 +13,6 @@ class CalendarEventOut(BaseModel):
 
 
 class CalendarEventCreateRequest(BaseModel):
-    workspace_id: str
     summary: str = Field(..., min_length=1, max_length=200)
     start_iso: datetime
     end_iso: datetime
@@ -56,6 +55,7 @@ class EventCandidateOut(BaseModel):
     missing_fields: list[str]
     source_message_ids: list[str]
     calendar_event_id: str | None
+    calendar_owner_user_id: str | None
     invalidated_reason: str | None
     created_at: datetime
     updated_at: datetime
@@ -70,3 +70,9 @@ class EventBackfillOut(BaseModel):
     processed: int
     extracted: int = 0
     has_more: bool
+
+
+class CalendarConnectionStatusOut(BaseModel):
+    connected: bool
+    google_email: str | None = None
+    connected_at: datetime | None = None

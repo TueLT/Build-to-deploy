@@ -1,14 +1,21 @@
-import asyncio
+import html
+import inspect
+import json
+import logging
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from src.auth.dependencies import get_current_user
+from src.config import get_settings
 from src.db.models import EventCandidate, User
 from src.db.session import get_db
 from src.models.calendar_schemas import (
+    CalendarConnectionStatusOut,
     CalendarEventCreateRequest,
     CalendarEventOut,
     CalendarEventUpdateRequest,
@@ -16,10 +23,18 @@ from src.models.calendar_schemas import (
     EventBackfillRequest,
     EventCandidateOut,
 )
-from src.services import calendar_service, consent_service, event_extraction_service
+from src.services import calendar_service, consent_service, event_extraction_service, google_credentials
 from src.services.authorization_service import require_conversation_access
+from src.services.google_credentials import CalendarNotConnectedError
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+public_router = APIRouter()
+
+
+async def _resolve_calendar_call(value):
+    """Resolve async Calendar operations while preserving simple synchronous test doubles."""
+    return await value if inspect.isawaitable(value) else value
 
 
 def _to_out(event: dict) -> CalendarEventOut:
@@ -30,14 +45,70 @@ def _candidate_out(candidate: EventCandidate) -> EventCandidateOut:
     return EventCandidateOut.model_validate(candidate, from_attributes=True)
 
 
-async def _candidate_for_manager(
-    db: AsyncSession, candidate_id: str, current_user: User
-) -> EventCandidate:
+def _not_connected() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={"code": "calendar_not_connected", "message": "Google Calendar not connected"},
+    )
+
+
+async def _candidate_for_manager(db: AsyncSession, candidate_id: str, current_user: User) -> EventCandidate:
     candidate = await db.get(EventCandidate, candidate_id)
     if candidate is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event candidate not found")
     await require_conversation_access(db, current_user, candidate.conversation_id, "manager")
     return candidate
+
+
+@router.get("/calendar/connection", response_model=CalendarConnectionStatusOut)
+async def get_calendar_connection(
+    current_user: User = Depends(get_current_user),
+) -> CalendarConnectionStatusOut:
+    return CalendarConnectionStatusOut(**(await google_credentials.get_connection_info(current_user.id)))
+
+
+@router.get("/calendar/oauth/url")
+async def calendar_oauth_url(current_user: User = Depends(get_current_user)) -> dict:
+    try:
+        return {"url": google_credentials.build_authorization_url(current_user.id)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
+
+
+@router.delete("/calendar/connection", status_code=status.HTTP_204_NO_CONTENT)
+async def disconnect_calendar(current_user: User = Depends(get_current_user)) -> None:
+    await google_credentials.disconnect(current_user.id)
+
+
+@public_router.get("/calendar/oauth/callback", response_class=HTMLResponse)
+async def calendar_oauth_callback(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+) -> HTMLResponse:
+    def page(ok: bool, message: str, status_code: int = 200) -> HTMLResponse:
+        origin = json.dumps(get_settings().frontend_origin)
+        safe_message = html.escape(message)
+        document = f"""<!doctype html><meta charset=\"utf-8\"><title>Google Calendar</title>
+<body style=\"font-family:system-ui;padding:2rem;text-align:center\"><p>{safe_message}</p>
+<script>if(window.opener)window.opener.postMessage({{type:'calendar_oauth',ok:{str(ok).lower()}}},{origin});
+setTimeout(function(){{window.close()}},800);</script></body>"""
+        return HTMLResponse(document, status_code=status_code)
+
+    if error or not code or not state:
+        return page(False, f"Connection failed: {error or 'missing parameters'}.", 400)
+    try:
+        user_id = google_credentials.read_oauth_state(state)
+    except google_credentials.OAuthStateError:
+        return page(False, "This connection attempt is invalid or expired.", 400)
+    try:
+        credentials = await run_in_threadpool(google_credentials.exchange_code, code)
+        email = await run_in_threadpool(google_credentials.fetch_google_email, credentials)
+        await google_credentials.save_credentials(user_id, credentials, google_email=email)
+    except Exception:  # noqa: BLE001 - callback returns a safe page, details stay in logs
+        logger.exception("Google Calendar OAuth exchange failed")
+        return page(False, "Could not connect Google Calendar.", 502)
+    return page(True, "Google Calendar connected. You can close this window.")
 
 
 @router.get("/calendar/candidates", response_model=list[EventCandidateOut])
@@ -48,11 +119,11 @@ async def list_event_candidates(
     db: AsyncSession = Depends(get_db),
 ) -> list[EventCandidateOut]:
     await require_conversation_access(db, current_user, conversation_id, "viewer")
-    stmt = select(EventCandidate).where(EventCandidate.conversation_id == conversation_id)
+    statement = select(EventCandidate).where(EventCandidate.conversation_id == conversation_id)
     if not include_terminal:
-        stmt = stmt.where(EventCandidate.status == "suggested")
+        statement = statement.where(EventCandidate.status == "suggested")
     candidates = list(
-        (await db.execute(stmt.order_by(EventCandidate.updated_at.desc()).limit(100))).scalars().all()
+        (await db.execute(statement.order_by(EventCandidate.updated_at.desc()).limit(100))).scalars().all()
     )
     return [_candidate_out(candidate) for candidate in candidates]
 
@@ -76,8 +147,14 @@ async def confirm_event_candidate(
         await db.commit()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="AI policy changed; extract again")
 
-    await calendar_service.authorize_calendar_access(current_user.id, candidate.workspace_id)
     target = await db.get(EventCandidate, candidate.target_candidate_id) if candidate.target_candidate_id else None
+    if candidate.operation != "create" and (
+        target is None or not target.calendar_event_id or target.calendar_owner_user_id != current_user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The manager who owns the original calendar event must confirm this change",
+        )
     try:
         if candidate.operation == "create":
             if candidate.missing_fields or candidate.start_at is None or candidate.end_at is None:
@@ -85,57 +162,56 @@ async def confirm_event_candidate(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail=f"Candidate is incomplete: {', '.join(candidate.missing_fields)}",
                 )
-            created = await asyncio.to_thread(
-                calendar_service.create_event,
+            changed = await _resolve_calendar_call(calendar_service.create_event(
+                current_user.id,
                 candidate.title,
                 candidate.start_at.isoformat(),
                 candidate.end_at.isoformat(),
-                f"Extracted from group conversation {candidate.conversation_id}. Participants mentioned: "
-                + ", ".join(candidate.attendees),
-                [],
-            )
-            candidate.calendar_event_id = created.get("id")
-            broadcast_type = "calendar_event_created"
-            broadcast_payload = {"event": calendar_service.to_out_dict(created)}
+                f"Extracted from group conversation {candidate.conversation_id}.",
+                candidate.attendees,
+                current_user.timezone,
+            ))
+            candidate.calendar_event_id = changed.get("id")
+            candidate.calendar_owner_user_id = current_user.id
+            event_type = "calendar_event_created"
+            payload = {"event": calendar_service.to_out_dict(changed)}
         elif candidate.operation == "update":
-            if target is None or not target.calendar_event_id:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Target event is unavailable")
             if candidate.missing_fields or candidate.start_at is None or candidate.end_at is None:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Update is incomplete")
-            updated = await asyncio.to_thread(
-                calendar_service.update_event,
+            changed = await _resolve_calendar_call(calendar_service.update_event(
+                current_user.id,
                 target.calendar_event_id,
                 candidate.title,
                 candidate.start_at.isoformat(),
                 candidate.end_at.isoformat(),
                 f"Updated from group conversation {candidate.conversation_id}.",
+                current_user.timezone,
+            ))
+            candidate.calendar_event_id = target.calendar_event_id
+            candidate.calendar_owner_user_id = current_user.id
+            target.status = "superseded"
+            event_type = "calendar_event_updated"
+            payload = {"event": calendar_service.to_out_dict(changed)}
+        else:
+            await _resolve_calendar_call(
+                calendar_service.delete_event(current_user.id, target.calendar_event_id)
             )
             candidate.calendar_event_id = target.calendar_event_id
-            target.title = candidate.title
-            target.start_at = candidate.start_at
-            target.end_at = candidate.end_at
-            target.location = candidate.location
-            target.attendees = candidate.attendees
-            target.status = "superseded"
-            broadcast_type = "calendar_event_updated"
-            broadcast_payload = {"event": calendar_service.to_out_dict(updated)}
-        else:
-            if target is None or not target.calendar_event_id:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Target event is unavailable")
-            await asyncio.to_thread(calendar_service.delete_event, target.calendar_event_id)
-            candidate.calendar_event_id = target.calendar_event_id
+            candidate.calendar_owner_user_id = current_user.id
             target.status = "cancelled"
-            broadcast_type = "calendar_event_deleted"
-            broadcast_payload = {"event_id": target.calendar_event_id}
+            event_type = "calendar_event_deleted"
+            payload = {"event_id": target.calendar_event_id}
+    except CalendarNotConnectedError:
+        raise _not_connected() from None
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
 
     candidate.status = "confirmed"
     await db.commit()
     await db.refresh(candidate)
-    await calendar_service.broadcast_change(candidate.workspace_id, broadcast_type, broadcast_payload)
+    await calendar_service.broadcast_change(current_user.id, event_type, payload)
     return _candidate_out(candidate)
 
 
@@ -162,28 +238,30 @@ async def backfill_event_candidates(
     db: AsyncSession = Depends(get_db),
 ) -> EventBackfillOut:
     await require_conversation_access(db, current_user, conversation_id, "manager")
-    result = await event_extraction_service.process_event_backfill_batch(
-        conversation_id, request.batch_size
+    return EventBackfillOut(
+        **(await event_extraction_service.process_event_backfill_batch(conversation_id, request.batch_size))
     )
-    return EventBackfillOut(**result)
 
 
 @router.get("/calendar/events", response_model=list[CalendarEventOut])
 async def list_events(
-    workspace_id: str = Query(...),
     time_min: str | None = Query(default=None),
     time_max: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
 ) -> list[CalendarEventOut]:
-    await calendar_service.authorize_calendar_access(current_user.id, workspace_id)
     now = datetime.now(UTC)
-    time_min = time_min or now.isoformat()
-    time_max = time_max or (now + timedelta(days=60)).isoformat()
     try:
-        items = await asyncio.to_thread(calendar_service.list_events, time_min, time_max, 100)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {e}")
-    return [_to_out(e) for e in items]
+        items = await calendar_service.list_events(
+            current_user.id,
+            time_min or now.isoformat(),
+            time_max or (now + timedelta(days=60)).isoformat(),
+            100,
+        )
+    except CalendarNotConnectedError:
+        raise _not_connected() from None
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
+    return [_to_out(event) for event in items]
 
 
 @router.post("/calendar/events", response_model=CalendarEventOut, status_code=status.HTTP_201_CREATED)
@@ -191,20 +269,22 @@ async def create_event(
     request: CalendarEventCreateRequest,
     current_user: User = Depends(get_current_user),
 ) -> CalendarEventOut:
-    workspace_id, _ = await calendar_service.authorize_calendar_access(current_user.id, request.workspace_id)
     try:
-        created = await asyncio.to_thread(
-            calendar_service.create_event,
+        created = await calendar_service.create_event(
+            current_user.id,
             request.summary,
             request.start_iso.isoformat(),
             request.end_iso.isoformat(),
             request.description,
-            [str(attendee) for attendee in (request.attendees or [])],
+            [str(value) for value in (request.attendees or [])],
+            current_user.timezone,
         )
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {e}")
+    except CalendarNotConnectedError:
+        raise _not_connected() from None
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
     out = _to_out(created)
-    await calendar_service.broadcast_change(workspace_id, "calendar_event_created", {"event": out.model_dump()})
+    await calendar_service.broadcast_change(current_user.id, "calendar_event_created", {"event": out.model_dump()})
     return out
 
 
@@ -212,35 +292,33 @@ async def create_event(
 async def update_event(
     event_id: str,
     request: CalendarEventUpdateRequest,
-    workspace_id: str = Query(...),
     current_user: User = Depends(get_current_user),
 ) -> CalendarEventOut:
-    workspace_id, _ = await calendar_service.authorize_calendar_access(current_user.id, workspace_id)
     try:
-        updated = await asyncio.to_thread(
-            calendar_service.update_event,
+        updated = await calendar_service.update_event(
+            current_user.id,
             event_id,
             request.summary,
             request.start_iso.isoformat() if request.start_iso else None,
             request.end_iso.isoformat() if request.end_iso else None,
             request.description,
+            current_user.timezone,
         )
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {e}")
+    except CalendarNotConnectedError:
+        raise _not_connected() from None
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
     out = _to_out(updated)
-    await calendar_service.broadcast_change(workspace_id, "calendar_event_updated", {"event": out.model_dump()})
+    await calendar_service.broadcast_change(current_user.id, "calendar_event_updated", {"event": out.model_dump()})
     return out
 
 
 @router.delete("/calendar/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_event(
-    event_id: str,
-    workspace_id: str = Query(...),
-    current_user: User = Depends(get_current_user),
-) -> None:
-    workspace_id, _ = await calendar_service.authorize_calendar_access(current_user.id, workspace_id)
+async def delete_event(event_id: str, current_user: User = Depends(get_current_user)) -> None:
     try:
-        await asyncio.to_thread(calendar_service.delete_event, event_id)
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {e}")
-    await calendar_service.broadcast_change(workspace_id, "calendar_event_deleted", {"event_id": event_id})
+        await calendar_service.delete_event(current_user.id, event_id)
+    except CalendarNotConnectedError:
+        raise _not_connected() from None
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
+    await calendar_service.broadcast_change(current_user.id, "calendar_event_deleted", {"event_id": event_id})

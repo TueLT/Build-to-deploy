@@ -43,19 +43,19 @@ class Settings(BaseSettings):
     initial_admin_email: str = ""
     bootstrap_owner_user_id: str = ""
     # "Sign in with Google" - Web application OAuth Client ID (audience for ID-token verification).
-    # Distinct from google_credentials_path/google_token_path below (those are for the Calendar
-    # integration's single shared Desktop-app token, unrelated to per-user login). No client secret
-    # needed - only ID-token verification, never an authorization-code exchange.
+    # Distinct from the per-user Calendar OAuth client below. No client secret is needed here:
+    # this setting only verifies Google Sign-In ID tokens.
     google_oauth_client_id: str = ""
 
     # Vector Store
     chroma_persist_dir: str = "./data/chroma"
 
     # Google Calendar
-    google_credentials_path: str = "./secrets/credentials.json"
-    google_token_path: str = "./secrets/token.json"
-    google_calendar_id: str = "primary"
-    google_calendar_workspace_id: str = ""
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    google_calendar_redirect_uri: str = "http://localhost:8000/api/v1/calendar/oauth/callback"
+    credential_encryption_key: str = ""
+    frontend_origin: str = "http://localhost:5173"
     calendar_timezone: str = "Asia/Ho_Chi_Minh"
 
     # Reminders / scheduler
@@ -64,6 +64,14 @@ class Settings(BaseSettings):
     # Calendar polling (no public HTTPS URL yet for Google's real push/webhook channels, so
     # changes made directly in Google Calendar are picked up by polling with a syncToken instead)
     calendar_poll_interval_seconds: int = Field(default=20, ge=5)
+
+    # Per-process burst protection. The deployment is intentionally single-worker because
+    # WebSocket connections and the scheduler are process-local.
+    rate_limit_enabled: bool = True
+    rate_limit_auth: str = "10/minute"
+    rate_limit_register: str = "5/minute"
+    rate_limit_chat: str = "15/minute"
+    rate_limit_crud: str = "60/minute"
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":

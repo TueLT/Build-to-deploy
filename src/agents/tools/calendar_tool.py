@@ -1,4 +1,3 @@
-import asyncio
 from typing import Annotated
 
 from langchain_core.tools import tool
@@ -7,6 +6,7 @@ from langgraph.types import interrupt
 
 from src.agents.state import AgentState
 from src.services import calendar_service
+from src.services.google_credentials import CalendarNotConnectedError
 
 
 def _agent_identity(state: AgentState | None) -> tuple[str, str]:
@@ -49,17 +49,19 @@ async def create_calendar_event(
 
     draft.update(decision.get("edits") or {})
     user_id, workspace_id = _agent_identity(state)
-    await calendar_service.authorize_calendar_access(user_id, workspace_id)
-    created = await asyncio.to_thread(
-        calendar_service.create_event,
-        draft["summary"],
-        draft["start"],
-        draft["end"],
-        draft["description"],
-        draft["attendees"],
-    )
+    try:
+        created = await calendar_service.create_event(
+            user_id,
+            draft["summary"],
+            draft["start"],
+            draft["end"],
+            draft["description"],
+            draft["attendees"],
+        )
+    except CalendarNotConnectedError:
+        return "Connect Google Calendar from the Calendar page before creating an event."
     await calendar_service.broadcast_change(
-        workspace_id, "calendar_event_created", {"event": calendar_service.to_out_dict(created)}
+        user_id, "calendar_event_created", {"event": calendar_service.to_out_dict(created)}
     )
     return f"Event created: {created.get('htmlLink', created.get('id'))}"
 
@@ -78,14 +80,15 @@ async def list_calendar_events(
         time_max_iso: End of the range as an ISO 8601 datetime string.
         max_results: Maximum number of events to return.
     """
-    user_id, workspace_id = _agent_identity(state)
-    await calendar_service.authorize_calendar_access(user_id, workspace_id)
-    items = await asyncio.to_thread(calendar_service.list_events, time_min_iso, time_max_iso, max_results)
+    user_id, _workspace_id = _agent_identity(state)
+    try:
+        items = await calendar_service.list_events(user_id, time_min_iso, time_max_iso, max_results)
+    except CalendarNotConnectedError:
+        return "Connect Google Calendar from the Calendar page before listing events."
     if not items:
         return "No events found in that range."
     return "\n".join(
-        f"- {e.get('summary')} (id={e.get('id')}, {e['start'].get('dateTime', e['start'].get('date'))})"
-        for e in items
+        f"- {e.get('summary')} (id={e.get('id')}, {e['start'].get('dateTime', e['start'].get('date'))})" for e in items
     )
 
 
@@ -116,17 +119,19 @@ async def update_calendar_event(
 
     draft.update(decision.get("edits") or {})
     user_id, workspace_id = _agent_identity(state)
-    await calendar_service.authorize_calendar_access(user_id, workspace_id)
-    updated = await asyncio.to_thread(
-        calendar_service.update_event,
-        draft["event_id"],
-        draft["summary"],
-        draft["start"],
-        draft["end"],
-        draft["description"],
-    )
+    try:
+        updated = await calendar_service.update_event(
+            user_id,
+            draft["event_id"],
+            draft["summary"],
+            draft["start"],
+            draft["end"],
+            draft["description"],
+        )
+    except CalendarNotConnectedError:
+        return "Connect Google Calendar from the Calendar page before updating an event."
     await calendar_service.broadcast_change(
-        workspace_id, "calendar_event_updated", {"event": calendar_service.to_out_dict(updated)}
+        user_id, "calendar_event_updated", {"event": calendar_service.to_out_dict(updated)}
     )
     return f"Event updated: {updated.get('htmlLink', updated.get('id'))}"
 
@@ -147,7 +152,9 @@ async def delete_calendar_event(
         return "Calendar event was not deleted (user declined)."
 
     user_id, workspace_id = _agent_identity(state)
-    await calendar_service.authorize_calendar_access(user_id, workspace_id)
-    await asyncio.to_thread(calendar_service.delete_event, event_id)
-    await calendar_service.broadcast_change(workspace_id, "calendar_event_deleted", {"event_id": event_id})
+    try:
+        await calendar_service.delete_event(user_id, event_id)
+    except CalendarNotConnectedError:
+        return "Connect Google Calendar from the Calendar page before deleting an event."
+    await calendar_service.broadcast_change(user_id, "calendar_event_deleted", {"event_id": event_id})
     return "Event deleted."
