@@ -10,6 +10,7 @@ def _production_settings(**overrides):
         "secret_key": "x" * 32,
         "database_url": "postgresql://orbit:secret@db/orbit",
         "cors_origins": "https://app.example.com",
+        "cors_origin_regex": "",
         "llm_provider": "google",
         "google_api_key": "test-api-key",
     }
