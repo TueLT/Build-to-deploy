@@ -71,12 +71,13 @@ graph TB
 ### 1. Frontend (React + Vite)
 - **Purpose:** SPA cho toàn bộ trải nghiệm người dùng — auth, chat realtime, AI assistant, quản lý
   cá nhân (task/lịch/nhắc việc/memory/hồ sơ), admin.
-- **Trang chính** (`Frontend/src/pages/`): `LoginPage`/`RegisterPage`, `ChatPage`, `TaskPage`,
+- **Ứng dụng người dùng** (`Frontend/user/src/pages/`): `LoginPage`/`RegisterPage`, `ChatPage`, `TaskPage`,
   `CalendarPage`, `ReminderPage`, `MemoryPage`, `ProfilePage`, `PersonalAssistantPage` (`/assistant`
   — chat trực tiếp với agent, có nút Xác nhận/Huỷ khi agent cần human-in-the-loop), và 4 trang admin
   (`admin/AdminDashboardPage`, `AdminUsersPage`, `AdminConversationsPage`, `AdminUserDataPage` —
-  quản lý Task/Reminder/Memory toàn hệ thống). Tất cả gọi API thật qua `Frontend/src/api/`, không
-  còn trang nào dùng `Frontend/src/data/mockData.js`.
+  quản lý Task/Reminder/Memory trong workspace. **Ứng dụng quản trị** nằm độc lập tại
+  `Frontend/admin/src/`, có entry point, router, session key và bundle riêng. Cả hai gọi chung
+  FastAPI backend; frontend guard chỉ phục vụ UX, quyền thật luôn được backend kiểm tra.
 - **Panel AI trong chat** (`AIPanel.jsx`): Summarize, Extract tasks, Find schedule, Deadlines,
   Suggest reminder (có nút Xác nhận/Huỷ ngay trong panel), và ô tự do "Ask Orbit".
 - **State Management:** React Context (`AuthContext` cho JWT/user hiện tại) + hook riêng theo tính
