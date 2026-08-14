@@ -22,6 +22,21 @@ def test_valid_production_settings_are_accepted():
     assert settings.app_env == "production"
 
 
+def test_development_requires_postgres():
+    with pytest.raises(ValidationError, match="Development and production require a PostgreSQL DATABASE_URL"):
+        Settings(_env_file=None, app_env="development", database_url="sqlite:///./data/app.db")
+
+
+def test_test_environment_accepts_sqlite():
+    settings = Settings(_env_file=None, app_env="test", database_url="sqlite+aiosqlite:///:memory:")
+    assert settings.database_url.startswith("sqlite")
+
+
+def test_database_url_is_required():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, app_env="development")
+
+
 @pytest.mark.parametrize(
     "override",
     [

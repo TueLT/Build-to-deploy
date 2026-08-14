@@ -185,7 +185,9 @@ Các tool đang được đăng ký:
 | `create_reminder` | Lên lịch nhắc trước thời hạn | Bắt buộc | Chỉ lưu trong RAM và callback hiện mới ghi log |
 | `list_reminders` | Liệt kê reminder trong bộ nhớ hiện tại | Không | Dữ liệu mất khi backend restart |
 
-LangGraph dùng `MemorySaver`, vì vậy state theo `thread_id` cũng chỉ tồn tại trong process hiện tại và mất khi backend restart.
+Trong development và production, LangGraph dùng `AsyncPostgresSaver`, vì vậy state theo
+`thread_id` tồn tại qua restart và được chia sẻ giữa các backend worker. `MemorySaver` chỉ dùng
+trong unit test khi `APP_ENV=test`.
 
 ### 3.4 Dữ liệu
 

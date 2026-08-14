@@ -46,22 +46,21 @@ def build_graph(checkpointer):
 
 
 _settings = get_settings()
-_use_postgres = _settings.database_url.startswith(("postgresql://", "postgresql+asyncpg://", "postgres://"))
 
-# PostgreSQL is initialized during application startup. Lightweight development and tests use
-# MemorySaver so importing the graph never requires a running event loop or external database.
-if _use_postgres:
-    checkpointer, checkpointer_pool, agent = None, None, None
-else:
+# Unit tests deliberately use an isolated in-memory saver. Every real runtime is validated to use
+# PostgreSQL and initializes AsyncPostgresSaver during application startup.
+if _settings.app_env == "test":
     checkpointer, checkpointer_pool = MemorySaver(), None
     agent = build_graph(checkpointer)
+else:
+    checkpointer, checkpointer_pool, agent = None, None, None
 
 
 async def init_checkpointer() -> None:
     """Build the Postgres checkpointer/pool and compile `agent` with it. Must be awaited once,
     inside the event loop that will go on to serve requests, before any /chat call."""
     global checkpointer, checkpointer_pool, agent
-    if not _use_postgres:
+    if _settings.app_env == "test":
         return
 
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver

@@ -147,8 +147,8 @@ graph LR
 
 ### 5. Database
 - **Type:** **PostgreSQL only** qua SQLAlchemy async (`asyncpg`), cấu hình qua `DATABASE_URL` trong
-  `.env` — bắt buộc, không có default, không còn nhánh SQLite. `src/db/session.py::_async_url()`
-  chỉ còn việc đổi scheme `postgresql://` → `postgresql+asyncpg://`.
+  `.env` — bắt buộc, không có default, không có SQLite fallback khi chạy development/production.
+  SQLite in-memory chỉ tồn tại trong unit test để tạo dữ liệu cô lập nhanh.
 - **Windows:** bắt buộc chạy bằng `python scripts/run_dev.py` thay vì `uvicorn` CLI trực tiếp —
   `AsyncPostgresSaver` cần `SelectorEventLoop`, nhưng CLI `uvicorn` trên Windows luôn chọn
   `ProactorEventLoop` trước khi app được import, không cờ nào sửa được; `run_dev.py` gọi
@@ -156,13 +156,9 @@ graph LR
 - **Migration:** không dùng Alembic — bảng mới tạo tự động qua `Base.metadata.create_all()`, không
   ALTER cột trên bảng cũ (không cần nữa từ khi bỏ SQLite — file DB SQLite cũ không còn tồn tại để
   phải vá).
-- **Test suite:** chạy trên database Postgres riêng (`orbit_test` mặc định, đổi qua
-  `TEST_DATABASE_URL`) — tạo schema 1 lần cho cả phiên test (`tests/conftest.py::_test_database`,
-  session-scoped), truncate toàn bộ bảng sau mỗi test để cách ly. Engine dùng `NullPool` khi
-  `APP_ENV=test` vì test chạy app qua nhiều event loop khác nhau (`client` fixture dùng loop chính
-  của pytest-asyncio, `TestClient` cho WebSocket test dùng loop riêng trong thread nền) — asyncpg
-  connection bị bind cứng vào loop đã tạo ra nó, pool connection tái sử dụng giữa 2 loop sẽ lỗi
-  "attached to a different loop".
+- **Test suite:** unit test đặt rõ `APP_ENV=test`, dùng SQLite in-memory cho dữ liệu ứng dụng và
+  `MemorySaver` cho graph. Integration test checkpoint dùng database PostgreSQL riêng khi có
+  `TEST_DATABASE_URL`; CI cung cấp database này để kiểm tra persistence thật của LangGraph.
 - **Tables hiện có** (`src/db/models.py`): `User` (role, is_active, job_title, timezone,
   preferences), `GoogleIdentity` (link `user_id` ↔ `google_sub` cho đăng nhập Google — bảng riêng,
   không thêm cột vào `User`), `Conversation`, `ConversationParticipant`, `Message`, `Task` (status
@@ -246,7 +242,7 @@ ngoài `ci.yml` (lint + test trên GitHub Actions). Đây là hạng mục lớn
 | Backend framework | FastAPI | Async, auto-docs (`/docs`), type-safe qua Pydantic |
 | Agent orchestration | LangGraph | Quản lý state + human-in-the-loop (`interrupt`) sẵn có, phù hợp yêu cầu xác nhận trước hành động |
 | LLM provider | Google Gemini hoặc Groq (`src/services/llm.py::get_llm()`, đổi qua `LLM_PROVIDER`) | Đổi được khi 1 bên hết quota — thực tế đã cần dùng đến (Gemini free-tier từng về 0 quota) |
-| Database | PostgreSQL only (bỏ SQLite) | Cần cho agent memory bền vững qua restart (`AsyncPostgresSaver`), FK constraint thật (SQLite không enforce mặc định), một DB duy nhất cho cả dev lẫn test |
+| Database | PostgreSQL cho runtime, SQLite chỉ cho unit test | Runtime cần memory bền vững qua restart (`AsyncPostgresSaver`) và FK constraint thật; SQLite in-memory giúp unit test nhanh, cô lập |
 | Vector store | Không triển khai | Yêu cầu memory đã đạt qua checkpointer + tính năng Memory ghi chú; không có nhu cầu semantic search rõ ràng để biện minh thêm 1 service |
 | Frontend framework | React + Vite | Giữ nguyên so với đề bài gợi ý Next.js — tránh viết lại toàn bộ frontend không tương xứng lợi ích |
 | Realtime | WebSocket thuần (FastAPI) | Dùng chung 1 kênh cho chat, reminder-fired, proactive-suggestion, calendar sync — không mở kênh song song |

@@ -76,7 +76,7 @@ uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
 # Windows luôn chọn ProactorEventLoop trước khi app được import, không có cờ CLI nào sửa được.
 Health check: GET http://localhost:8000/health → {"status":"ok",...}
 Swagger UI: http://localhost:8000/docs
-DB: PostgreSQL bắt buộc qua DATABASE_URL trong .env (không có default, không còn hỗ trợ SQLite) — xem README.md để tạo database. Test suite dùng database Postgres riêng (orbit_test mặc định, đổi qua TEST_DATABASE_URL).
+DB: PostgreSQL bắt buộc qua DATABASE_URL trong .env (không có default, không có SQLite fallback cho development/production) — xem README.md để tạo database. Unit test dùng SQLite in-memory; integration test checkpoint PostgreSQL chạy khi có TEST_DATABASE_URL.
 Nếu sửa .env mà hành vi backend không đổi, kiểm tra có tiến trình uvicorn/scripts/run_dev.py cũ nào còn sống trên port 8000 trước khi nghi code sai — uvicorn --reload trên Windows để lại tiến trình con (spawn qua multiprocessing) vẫn giữ cổng dù tiến trình cha đã bị tắt, nhiều bản cũ/mới có thể cùng nhận request. Kiểm tra: netstat -ano | findstr :8000 rồi Stop-Process -Id <pid> -Force cho từng tiến trình tìm thấy, sau đó khởi động lại.
 Frontend
 bash

@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     daily_token_budget: int = Field(default=200_000, ge=0)
 
     # Database
-    database_url: str = "sqlite:///./data/app.db"
+    # Required for every real runtime. Unit tests may explicitly opt into an isolated
+    # SQLite database, but development and production always use PostgreSQL so LangGraph
+    # checkpoints and application data have the same persistence guarantees.
+    database_url: str
     db_pool_size: int = Field(default=10, ge=1, le=100)
     db_max_overflow: int = Field(default=20, ge=0, le=200)
     db_pool_timeout_seconds: int = Field(default=30, ge=1, le=300)
@@ -83,13 +86,22 @@ class Settings(BaseSettings):
     calendar_poll_interval_seconds: int = Field(default=20, ge=5)
 
     @model_validator(mode="after")
-    def validate_production_settings(self) -> "Settings":
+    def validate_environment_settings(self) -> "Settings":
+        is_postgres = self.database_url.startswith(("postgres://", "postgresql://", "postgresql+asyncpg://"))
+        is_sqlite = self.database_url.startswith(("sqlite://", "sqlite+aiosqlite://"))
+
+        if self.app_env == "test":
+            if not (is_postgres or is_sqlite):
+                raise ValueError("Tests require a PostgreSQL or SQLite DATABASE_URL")
+            return self
+
+        if not is_postgres:
+            raise ValueError("Development and production require a PostgreSQL DATABASE_URL")
+
         if self.app_env != "production":
             return self
         if len(self.secret_key.encode("utf-8")) < 32 or "change-me" in self.secret_key:
             raise ValueError("SECRET_KEY must contain at least 32 bytes of non-placeholder data in production")
-        if self.database_url.startswith("sqlite"):
-            raise ValueError("Production requires PostgreSQL; SQLite is supported only for development and tests")
         origins = {origin.strip() for origin in self.cors_origins.split(",") if origin.strip()}
         if not origins or "*" in origins:
             raise ValueError("CORS_ORIGINS must explicitly list trusted origins in production")

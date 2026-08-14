@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 # Tests must not inherit a developer's local PostgreSQL configuration. Set this before
 # importing application modules so the agent uses its isolated in-memory checkpointer.
+os.environ["APP_ENV"] = "test"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["SECRET_KEY"] = "test-only-secret-key-with-at-least-32-bytes"
 os.environ["CREDENTIAL_ENCRYPTION_KEY"] = "Uc71afyZ76TsyFDJ-5XTdXEQNfXxdOsYKjfUV-EC88g="

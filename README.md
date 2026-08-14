@@ -226,14 +226,9 @@ Lỗi thường gặp khi test theo nhóm:
 
 ### Chạy test backend
 
-Test chạy trên một database Postgres riêng (không đụng tới database dev) — tạo 1 lần:
-
-```bash
-psql -U postgres -c "CREATE DATABASE orbit_test;"
-```
-
-Mặc định test kết nối `postgresql://postgres:123456@localhost:5432/orbit_test`; đổi bằng biến môi
-trường `TEST_DATABASE_URL` nếu Postgres local dùng user/password khác.
+Unit test dùng SQLite in-memory và `MemorySaver`, không đụng tới database dev. Các integration test
+checkpoint PostgreSQL chỉ chạy khi có `TEST_DATABASE_URL`; nếu muốn chạy chúng, tạo database riêng
+và đặt biến môi trường đó trước khi gọi pytest.
 
 ```bash
 pytest tests/ -v
@@ -284,9 +279,9 @@ Docker Compose hiện chỉ chạy backend tại cổng `8000`; frontend chạy 
 | Layer | Công nghệ |
 | --- | --- |
 | AI Agent | LangGraph + LangChain (Google Gemini, Groq hoặc OpenAI, đổi qua `LLM_PROVIDER`) |
-| Backend | FastAPI, Pydantic 2, SQLAlchemy 2 async + SQLite/PostgreSQL, JWT (PyJWT) + bcrypt, WebSocket |
+| Backend | FastAPI, Pydantic 2, SQLAlchemy 2 async + PostgreSQL, JWT (PyJWT) + bcrypt, WebSocket |
 | Migration | Alembic (schema hiện tại dùng user ownership và conversation participants) |
-| Agent memory | LangGraph checkpointer — `MemorySaver` (SQLite, mất khi restart) hoặc `AsyncPostgresSaver` (bền vững, khi `DATABASE_URL` là Postgres) |
+| Agent memory | `AsyncPostgresSaver` trong development/production; `MemorySaver` cô lập trong unit test |
 | Frontend | React 18, Vite, React Router, React Hook Form, Bootstrap 5, Framer Motion |
 | Calendar / Scheduler | Google Calendar API clients, APScheduler |
 | Test | pytest, pytest-asyncio, httpx |

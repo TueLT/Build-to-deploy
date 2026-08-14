@@ -18,8 +18,6 @@ target_metadata = Base.metadata
 
 
 def _async_url(url: str) -> str:
-    if url.startswith("sqlite:///") and "+aiosqlite" not in url:
-        return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql+asyncpg://", 1)
     if url.startswith("postgresql://") and "+asyncpg" not in url:
@@ -28,9 +26,6 @@ def _async_url(url: str) -> str:
 
 
 def _configured_url() -> str:
-    configured = config.get_main_option("sqlalchemy.url")
-    if configured and configured != "sqlite:///./data/app.db":
-        return configured
     return get_settings().database_url
 
 
@@ -51,7 +46,6 @@ def do_run_migrations(connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
-        render_as_batch=connection.dialect.name == "sqlite",
     )
     with context.begin_transaction():
         context.run_migrations()
