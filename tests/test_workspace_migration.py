@@ -199,9 +199,10 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
         "reminders",
         "event_candidates",
         "event_extraction_cursors",
+        "assistant_threads",
     }.issubset(tables)
     assert "people_preferences" in tables
-    assert revision == "20260813_11"
+    assert revision == "20260815_12"
     assert {"google_identities", "ai_permissions"}.issubset(tables)
 
 
