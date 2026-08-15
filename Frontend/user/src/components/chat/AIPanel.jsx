@@ -35,7 +35,13 @@ function parseJsonArray(text) {
 function describeInterrupt(interrupt) {
   const d = interrupt.draft
   if (interrupt.type === 'reminder') return `Tạo nhắc nhở "${d.title}" lúc ${d.due_at}?`
-  if (interrupt.type === 'calendar_event') return `Tạo sự kiện "${d.summary}" từ ${d.start} đến ${d.end}?`
+  if (interrupt.type === 'calendar_event') {
+    if (d.conflicts?.length) {
+      const clash = d.conflicts.map(conflict => conflict.title).join(', ')
+      return `Trùng với "${clash}" (${d.start} - ${d.end}). Tạo "${d.summary}" vào giờ đó, hay chọn giờ thay thế bên dưới?`
+    }
+    return `Tạo sự kiện "${d.summary}" từ ${d.start} đến ${d.end}?`
+  }
   if (interrupt.type === 'calendar_event_update') return `Cập nhật sự kiện ${d.event_id}?`
   if (interrupt.type === 'calendar_event_delete') return `Xóa sự kiện ${d.event_id}?`
   return 'Xác nhận hành động này?'
@@ -168,11 +174,11 @@ export default function AIPanel({
     'Suggest reminder': () => callAgent('Suggest reminder', 'Find the most important deadline or appointment and draft a reminder. Ask me to confirm first.', 'Suggest reminder'),
   }
 
-  const respondToInterrupt = async (approved) => {
+  const respondToInterrupt = async (approved, edits) => {
     if (!pending || runningAction) return
     setRunningAction('__resume__'); setError('')
     try {
-      const response = await resumeAgent(token, { thread_id: pending.thread_id, approved })
+      const response = await resumeAgent(token, { thread_id: pending.thread_id, approved, edits })
       setPending(null)
       if (!handleAgentResult(response)) {
         setResultTitle(approved ? 'Done' : 'Cancelled')
@@ -239,7 +245,7 @@ export default function AIPanel({
       <div className="quick-grid">{actions.map(([icon,title,sub,color])=>{ const isRunning = runningAction === title; const invalidCustom = scope === 'custom' && (!customSince || !customUntil); return <motion.button key={title} whileHover={{y:-2}} whileTap={{scale:.98}} disabled={!granted || Boolean(runningAction) || invalidCustom} onClick={handlers[title]}><span style={{color,background:`${color}12`}}><i className={`bi ${isRunning ? 'bi-hourglass-split' : icon}`}/></span><strong>{title}</strong><small>{isRunning ? 'Working...' : sub}</small></motion.button> })}</div>
       {error && <div className="auth-error">{error}</div>}
       {contextScope && <div className="alert alert-light border py-2 px-3 small mt-2 mb-2">This request used {contextScope.included_message_count}/{contextScope.window_message_count} messages in its selected window.{contextScope.excluded_participants?.length > 0 && <> Excluded authors: {contextScope.excluded_participants.join(', ')}.</>}</div>}
-      {result && <div className="border rounded-3 p-3 mt-2 small"><strong className="d-block mb-1">{resultTitle}</strong>{result}{pending && <div className="d-flex gap-2 mt-2"><button className="btn btn-sm btn-primary" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(false)}>Hủy</button></div>}</div>}
+      {result && <div className="border rounded-3 p-3 mt-2 small"><strong className="d-block mb-1">{resultTitle}</strong>{result}{pending && <div className="d-flex flex-wrap gap-2 mt-2">{pending.interrupt?.draft?.alternatives?.map((alternative, index) => <button className="btn btn-sm btn-outline-primary" disabled={runningAction==='__resume__'} key={`${alternative.start}-${index}`} onClick={()=>respondToInterrupt(true, {start: alternative.start, end: alternative.end})}>Dùng {alternative.start} - {alternative.end}</button>)}<button className="btn btn-sm btn-primary" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(false)}>Hủy</button></div>}</div>}
       <div className="ask-card"><div className="ask-title"><span><i className="bi bi-stars"/></span><div><strong>Ask Orbit</strong><small>About this conversation</small></div></div><textarea value={question} onChange={event=>setQuestion(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askOrbit()}}} placeholder="Ask anything about this conversation..." disabled={!granted}/><div className="ask-footer"><span>AI may make mistakes</span><button disabled={!granted || asking || !question.trim()} onClick={()=>askOrbit()}><i className={`bi ${asking?'bi-hourglass-split':'bi-arrow-up'}`}/></button></div></div>
       <div className="suggested-prompts"><span>Try asking</span><button disabled={asking || !granted} onClick={()=>askOrbit('What decisions were made today?')}>“What decisions were made today?”</button><button disabled={asking || !granted} onClick={()=>askOrbit('Who assigned me tasks?')}>“Who assigned me tasks?”</button></div>
     </aside></>

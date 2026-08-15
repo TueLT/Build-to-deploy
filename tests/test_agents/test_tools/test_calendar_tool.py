@@ -53,6 +53,7 @@ async def test_create_calendar_event_interrupts_then_creates(monkeypatch, fake_l
         "id": "evt-abc",
         "htmlLink": "https://calendar.google.com/event?eid=abc",
     }
+    fake_service.events.return_value.list.return_value.execute.return_value = {"items": []}
     monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
 
     llm = _script_tool_call(
@@ -80,6 +81,7 @@ async def test_create_calendar_event_interrupts_then_creates(monkeypatch, fake_l
 @pytest.mark.asyncio
 async def test_create_calendar_event_declined(monkeypatch, fake_llm_factory):
     fake_service = MagicMock()
+    fake_service.events.return_value.list.return_value.execute.return_value = {"items": []}
     monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
 
     llm = _script_tool_call(
@@ -96,6 +98,90 @@ async def test_create_calendar_event_declined(monkeypatch, fake_llm_factory):
     final = result2["messages"][-1]
     assert "not created" in final.content
     fake_service.events.return_value.insert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_calendar_event_conflict_offers_alternatives(monkeypatch, fake_llm_factory):
+    _allow_calendar(monkeypatch)
+    fake_service = MagicMock()
+    fake_service.events.return_value.insert.return_value.execute.return_value = {
+        "id": "evt-abc",
+        "htmlLink": "https://calendar.google.com/event?eid=abc",
+    }
+    fake_service.events.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": "evt-standup",
+                "summary": "Standup",
+                "start": {"dateTime": "2026-08-01T11:00:00"},
+                "end": {"dateTime": "2026-08-01T11:30:00"},
+            }
+        ]
+    }
+    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
+
+    llm = _script_tool_call(
+        fake_llm_factory,
+        "create_calendar_event",
+        {"summary": "Launch review", "start_iso": "2026-08-01T11:00:00", "end_iso": "2026-08-01T12:00:00"},
+    )
+    monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
+
+    config = _config()
+    result = await agent_graph.agent.ainvoke(_agent_input("schedule the review"), config)
+
+    draft = result["__interrupt__"][0].value["draft"]
+    assert [conflict["title"] for conflict in draft["conflicts"]] == ["Standup"]
+    assert draft["alternatives"][0] == {
+        "start": "2026-08-01T11:30:00",
+        "end": "2026-08-01T12:30:00",
+    }
+    assert len(draft["alternatives"]) == 2
+
+    alternative = draft["alternatives"][0]
+    result2 = await agent_graph.agent.ainvoke(
+        Command(resume={"approved": True, "edits": {"start": alternative["start"], "end": alternative["end"]}}),
+        config,
+    )
+    assert "Event created" in result2["messages"][-1].content
+    body = fake_service.events.return_value.insert.call_args.kwargs["body"]
+    assert body["start"]["dateTime"] == alternative["start"]
+
+
+@pytest.mark.asyncio
+async def test_create_calendar_event_conflict_can_be_confirmed_anyway(monkeypatch, fake_llm_factory):
+    _allow_calendar(monkeypatch)
+    fake_service = MagicMock()
+    fake_service.events.return_value.insert.return_value.execute.return_value = {
+        "id": "evt-abc",
+        "htmlLink": "https://calendar.google.com/event?eid=abc",
+    }
+    fake_service.events.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": "evt-standup",
+                "summary": "Standup",
+                "start": {"dateTime": "2026-08-01T11:00:00"},
+                "end": {"dateTime": "2026-08-01T11:30:00"},
+            }
+        ]
+    }
+    monkeypatch.setattr(calendar_service, "get_calendar_service", lambda: fake_service)
+
+    llm = _script_tool_call(
+        fake_llm_factory,
+        "create_calendar_event",
+        {"summary": "Launch review", "start_iso": "2026-08-01T11:00:00", "end_iso": "2026-08-01T12:00:00"},
+    )
+    monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda: llm)
+
+    config = _config()
+    await agent_graph.agent.ainvoke(_agent_input("schedule the review"), config)
+
+    result = await agent_graph.agent.ainvoke(Command(resume={"approved": True}), config)
+    assert "Event created" in result["messages"][-1].content
+    body = fake_service.events.return_value.insert.call_args.kwargs["body"]
+    assert body["start"]["dateTime"] == "2026-08-01T11:00:00"
 
 
 @pytest.mark.asyncio
