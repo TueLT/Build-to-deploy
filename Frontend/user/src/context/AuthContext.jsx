@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import * as authApi from '../api/auth'
+import { useToast } from './ToastContext'
 
 const TOKEN_KEY = 'orbit_token'
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
+  const { pushToast } = useToast()
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY))
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -13,9 +15,14 @@ export function AuthProvider({ children }) {
     if (!token) { setUser(null); setLoading(false); return }
     authApi.getMe(token)
       .then(setUser)
-      .catch(() => { localStorage.removeItem(TOKEN_KEY); setToken(null); setUser(null) })
+      .catch(() => {
+        localStorage.removeItem(TOKEN_KEY)
+        setToken(null)
+        setUser(null)
+        pushToast('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.')
+      })
       .finally(() => setLoading(false))
-  }, [token])
+  }, [token, pushToast])
 
   const login = async (email, password) => {
     const data = await authApi.login({ email, password })
