@@ -1,7 +1,7 @@
 import pytest
 
 
-async def _create_direct_conversation(client, creator_headers, other_headers):
+async def _create_direct_conversation(client, creator_headers, other_headers, *, include_workspace=False):
     other_me = await client.get("/api/v1/auth/me", headers=other_headers)
     other = other_me.json()
     workspace = (
@@ -19,7 +19,7 @@ async def _create_direct_conversation(client, creator_headers, other_headers):
         headers=creator_headers,
     )
     assert conv.status_code == 200
-    return conv.json()["id"]
+    return (conv.json()["id"], workspace["id"]) if include_workspace else conv.json()["id"]
 
 
 @pytest.mark.asyncio
@@ -136,3 +136,38 @@ async def test_ai_permission_put_requires_participant(client, auth_headers, othe
         f"/api/v1/conversations/{conversation_id}/ai-permission", json={"granted": True}, headers=third_headers
     )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_conversation_list_reflects_ai_permission_state(client, auth_headers, other_auth_headers):
+    conversation_id, workspace_id = await _create_direct_conversation(
+        client, auth_headers, other_auth_headers, include_workspace=True
+    )
+
+    listed = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace_id}", headers=auth_headers
+    )
+    summary = next(item for item in listed.json()["conversations"] if item["id"] == conversation_id)
+    assert summary["ai_permission_granted"] is False
+
+    await client.put(
+        f"/api/v1/conversations/{conversation_id}/ai-permission",
+        json={"granted": True},
+        headers=auth_headers,
+    )
+
+    listed_again = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace_id}", headers=auth_headers
+    )
+    summary_again = next(
+        item for item in listed_again.json()["conversations"] if item["id"] == conversation_id
+    )
+    assert summary_again["ai_permission_granted"] is True
+
+    other_listed = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace_id}", headers=other_auth_headers
+    )
+    other_summary = next(
+        item for item in other_listed.json()["conversations"] if item["id"] == conversation_id
+    )
+    assert other_summary["ai_permission_granted"] is False

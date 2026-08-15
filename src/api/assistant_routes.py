@@ -1,14 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.rate_limit import crud_rate_limit
 from src.auth.dependencies import get_current_user
 from src.db.models import User
 from src.db.session import get_db
 from src.models.assistant_schemas import AssistantMessageOut, AssistantThreadOut
 from src.services import assistant_thread_service
 
-router = APIRouter(prefix="/assistant", dependencies=[Depends(crud_rate_limit)])
+router = APIRouter(prefix="/assistant")
 
 
 @router.get("/threads", response_model=list[AssistantThreadOut])

@@ -1,10 +1,19 @@
+import { useState } from 'react'
 import Avatar from '../common/Avatar'
+import ConfirmDialog from '../common/ConfirmDialog'
 import { getInitials, getColor } from '../../utils/avatar'
+import { useToast } from '../../context/ToastContext'
 
 export default function ConversationHeader({ conversation, onBack, onAI, onHide, onLeave, aiGranted, onToggleAi, aiMode = 'individual', canManageAi = false }) {
+  const { pushToast } = useToast()
+  const [confirming, setConfirming] = useState(null)
   const handleToggleAi = () => {
     if (aiMode === 'group_managed' && !canManageAi) { onAI(); return }
-    onToggleAi(!aiGranted).catch(() => {})
+    onToggleAi(!aiGranted).catch(error => pushToast(error.detail || 'Không thể cập nhật quyền AI.'))
+  }
+  const confirmAction = (action) => {
+    setConfirming(null)
+    return action()
   }
   return (
     <header className="conversation-header">
@@ -21,7 +30,24 @@ export default function ConversationHeader({ conversation, onBack, onAI, onHide,
           <i className={`bi ${aiGranted ? 'bi-stars' : 'bi-slash-circle'}`} />{aiGranted ? 'Assistant enabled' : 'Assistant disabled'}
         </button>
       </div>
-      <div className="header-actions"><button className="icon-btn"><i className="bi bi-telephone" /></button><button className="icon-btn"><i className="bi bi-camera-video" /></button><button className="icon-btn ai-mobile-btn" onClick={onAI}><i className="bi bi-stars" /></button><div className="dropdown"><button className="icon-btn" data-bs-toggle="dropdown" aria-label="Conversation actions"><i className="bi bi-three-dots-vertical" /></button><div className="dropdown-menu dropdown-menu-end"><button className="dropdown-item" onClick={onHide}><i className="bi bi-eye-slash me-2"/>Hide for me</button>{conversation.type === 'group' && <button className="dropdown-item text-danger" onClick={onLeave}><i className="bi bi-box-arrow-right me-2"/>Leave group</button>}</div></div></div>
+      <div className="header-actions"><button className="icon-btn"><i className="bi bi-telephone" /></button><button className="icon-btn"><i className="bi bi-camera-video" /></button><button className="icon-btn ai-mobile-btn" onClick={onAI}><i className="bi bi-stars" /></button><div className="dropdown"><button className="icon-btn" data-bs-toggle="dropdown" aria-label="Conversation actions"><i className="bi bi-three-dots-vertical" /></button><div className="dropdown-menu dropdown-menu-end"><button className="dropdown-item" onClick={()=>setConfirming('hide')}><i className="bi bi-eye-slash me-2"/>Hide for me</button>{conversation.type === 'group' && <button className="dropdown-item text-danger" onClick={()=>setConfirming('leave')}><i className="bi bi-box-arrow-right me-2"/>Leave group</button>}</div></div></div>
+      <ConfirmDialog
+        open={confirming === 'hide'}
+        title="Hide conversation"
+        message="Hide this conversation from your list? It will return when a new message arrives."
+        confirmLabel="Hide"
+        danger={false}
+        onCancel={()=>setConfirming(null)}
+        onConfirm={()=>confirmAction(onHide)}
+      />
+      <ConfirmDialog
+        open={confirming === 'leave'}
+        title="Leave group"
+        message="Leave this group? You will immediately lose access."
+        confirmLabel="Leave"
+        onCancel={()=>setConfirming(null)}
+        onConfirm={()=>confirmAction(onLeave)}
+      />
     </header>
   )
 }

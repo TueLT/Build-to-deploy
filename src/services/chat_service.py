@@ -280,6 +280,23 @@ async def mark_read(db: AsyncSession, conversation_id: str, user_id: str) -> Non
     await db.commit()
 
 
+async def get_first_unread_message_id(db: AsyncSession, conversation_id: str, user_id: str) -> str | None:
+    """Return the oldest unread message from another participant."""
+    participant = await assert_participant(db, conversation_id, user_id)
+    return (
+        await db.execute(
+            select(Message.id)
+            .where(
+                Message.conversation_id == conversation_id,
+                Message.created_at > participant.last_read_at,
+                Message.sender_id != user_id,
+            )
+            .order_by(Message.created_at.asc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+
 async def _assert_workspace_participants(
     db: AsyncSession,
     workspace_id: str,
@@ -472,6 +489,12 @@ async def build_conversation_summary(
             )
         ).scalar_one()
 
+    if conversation.type == "group":
+        ai_permission_granted = conversation.ai_enabled
+    else:
+        permission = await get_ai_permission(db, conversation.id, current_user_id)
+        ai_permission_granted = permission.granted if permission is not None else False
+
     return ConversationSummary(
         id=conversation.id,
         workspace_id=conversation.workspace_id,
@@ -480,6 +503,7 @@ async def build_conversation_summary(
         participants=participants,
         last_message=last_message,
         unread_count=unread_count,
+        ai_permission_granted=ai_permission_granted,
         updated_at=_iso(conversation.updated_at),
         my_resource_role=my_participant.resource_role if my_participant else None,
         ai_enabled=conversation.ai_enabled,

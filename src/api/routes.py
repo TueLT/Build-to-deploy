@@ -17,7 +17,8 @@ from src.models.schemas import (
     InterruptPayload,
     ResumeRequest,
 )
-from src.services import chat_service, consent_service, usage_service
+from src.models.usage_schemas import UsageStatusOut
+from src.services import assistant_thread_service, chat_service, consent_service, usage_service
 from src.services.authorization_service import require_conversation_access
 from src.services.workspace_service import resolve_workspace_for_user
 
@@ -160,7 +161,17 @@ async def chat(
         result = await agent_graph.agent.ainvoke(inputs, config)
     except Exception:
         raise HTTPException(status_code=500, detail="AI service is temporarily unavailable")
-    return _build_chat_response(result, thread_id, context_scope)
+    response = _build_chat_response(result, thread_id, context_scope)
+    if request.conversation_id is None and response.status != "error":
+        preview = response.response if response.status == "completed" else request.message
+        await assistant_thread_service.touch_new_or_existing(
+            db,
+            thread_id=thread_id,
+            owner_id=current_user.id,
+            user_message=request.message,
+            ai_preview=preview,
+        )
+    return response
 
 
 @router.post("/chat/resume", response_model=ChatResponse)
@@ -194,10 +205,25 @@ async def resume_chat(
         )
     except Exception:
         raise HTTPException(status_code=500, detail="AI service is temporarily unavailable")
-    return _build_chat_response(result, request.thread_id)
+    response = _build_chat_response(result, request.thread_id)
+    if response.status != "error":
+        preview = response.response if response.status == "completed" else "Đang chờ xác nhận thêm..."
+        await assistant_thread_service.touch_if_exists(
+            db,
+            owner_id=current_user.id,
+            thread_id=request.thread_id,
+            ai_preview=preview,
+        )
+    return response
 
 
 @router.get("/status")
 async def agent_status():
     """Kiểm tra trạng thái agent."""
     return {"status": "ready", "agent": "LangGraph Agent v1.0"}
+
+
+@router.get("/usage/status", response_model=UsageStatusOut)
+async def usage_status(current_user: User = Depends(get_current_user)) -> UsageStatusOut:
+    del current_user
+    return UsageStatusOut(**(await usage_service.get_usage_summary()))

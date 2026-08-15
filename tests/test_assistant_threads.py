@@ -59,9 +59,25 @@ async def test_conversation_scoped_chat_does_not_create_assistant_thread(
     not show up in the Personal Assistant's own "Gần đây" list."""
     _mock_reply(monkeypatch, fake_llm_factory, "Tóm tắt hội thoại.")
     other_me = await client.get("/api/v1/auth/me", headers=other_auth_headers)
-    other_id = other_me.json()["id"]
+    other = other_me.json()
+    workspace = (
+        await client.post(
+            "/api/v1/workspaces", json={"name": "Assistant thread test"}, headers=auth_headers
+        )
+    ).json()
+    await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members",
+        json={"email": other["email"], "role": "member"},
+        headers=auth_headers,
+    )
     conv = await client.post(
-        "/api/v1/conversations", json={"type": "direct", "participant_ids": [other_id]}, headers=auth_headers
+        "/api/v1/conversations",
+        json={
+            "type": "direct",
+            "participant_ids": [other["id"]],
+            "workspace_id": workspace["id"],
+        },
+        headers=auth_headers,
     )
     conversation_id = conv.json()["id"]
     await client.put(

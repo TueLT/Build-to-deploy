@@ -169,6 +169,18 @@ async def get_daily_token_budget() -> int:
     return get_settings().daily_token_budget
 
 
+async def get_usage_summary() -> dict:
+    """Return the non-admin-safe subset used by the daily AI budget indicator."""
+    budget = await get_daily_token_budget()
+    usage = await get_usage_today()
+    used_pct = round(usage["total_tokens"] / budget * 100, 1) if budget else 0.0
+    return {
+        "tokens_used_today": usage["total_tokens"],
+        "daily_token_budget": budget,
+        "used_pct": used_pct,
+    }
+
+
 async def set_daily_token_budget(value: int, *, updated_by: str | None) -> int:
     async with db_session.async_session_maker() as db:
         config = await db.get(SystemConfig, _SYSTEM_CONFIG_ID)

@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
 from langchain_core.tools import tool
 from langgraph.prebuilt import InjectedState
@@ -80,18 +80,26 @@ async def create_calendar_event(
 
 @tool
 async def list_calendar_events(
-    time_min_iso: str,
-    time_max_iso: str,
+    scope: Literal["today", "this_week", "next_7_days", "next_30_days"] | None = None,
+    time_min_iso: str | None = None,
+    time_max_iso: str | None = None,
     max_results: int = 10,
     state: Annotated[AgentState, InjectedState] = None,  # type: ignore[assignment]
 ) -> str:
     """List existing calendar events in a time range. Read-only, no confirmation needed.
 
     Args:
-        time_min_iso: Start of the range as an ISO 8601 datetime string.
-        time_max_iso: End of the range as an ISO 8601 datetime string.
+        scope: A deterministic common relative range: today, this_week, next_7_days,
+            or next_30_days. Prefer this over calculating ISO boundaries yourself.
+        time_min_iso: Start of a specific range as an ISO 8601 datetime string.
+        time_max_iso: End of a specific range as an ISO 8601 datetime string.
         max_results: Maximum number of events to return.
     """
+    if scope:
+        time_min_iso, time_max_iso = calendar_service.resolve_scope(scope)
+    elif not time_min_iso or not time_max_iso:
+        return "Cần cung cấp khoảng thời gian bằng scope hoặc đầy đủ time_min_iso và time_max_iso."
+
     user_id, _workspace_id = _agent_identity(state)
     try:
         items = await calendar_service.list_events(user_id, time_min_iso, time_max_iso, max_results)

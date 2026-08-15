@@ -6,6 +6,7 @@ import MessageArea from '../components/chat/MessageArea'
 import AIPanel from '../components/chat/AIPanel'
 import NewConversationModal from '../components/chat/NewConversationModal'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { useConversations } from '../hooks/useConversations'
 import { useMessages } from '../hooks/useMessages'
 import { getAiPermission, hideConversation, leaveConversation, markRead, setAiPermission, setGroupAiPolicy } from '../api/chat'
@@ -13,6 +14,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 
 export default function ChatPage() {
   const { token, user } = useAuth()
+  const { pushToast } = useToast()
   const { workspaceId } = useWorkspace()
   const location = useLocation()
   const { sendJson, subscribe } = useOutletContext()
@@ -24,8 +26,9 @@ export default function ChatPage() {
   const [aiContributionAllowed, setAiContributionAllowed] = useState(false)
   const [aiMode, setAiMode] = useState('individual')
   const [canManageAi, setCanManageAi] = useState(false)
+  const [unreadHint, setUnreadHint] = useState(0)
   const { conversations, setConversations } = useConversations(token, workspaceId)
-  const { messages, setMessages } = useMessages(token, selectedId)
+  const { messages, setMessages, loading: messagesLoading, firstUnreadMessageId, unreadCount } = useMessages(token, selectedId, unreadHint)
 
   // AI permission is per (conversation, user) on the backend - shared here so the header badge
   // and the AI panel's Grant/Revoke buttons always agree, instead of each fetching/toggling it
@@ -44,21 +47,30 @@ export default function ChatPage() {
     return () => { cancelled = true }
   }, [selectedId, token])
 
-  const onToggleAi = (next) => {
-    const update = aiMode === 'group_managed'
-      ? setGroupAiPolicy(token, selectedId, next)
-      : setAiPermission(token, selectedId, { granted: next })
+  const toggleAiPermission = (id, next) => {
+    const conversation = conversations.find(item => item.id === id)
+    const update = conversation?.type === 'group'
+      ? setGroupAiPolicy(token, id, next)
+      : setAiPermission(token, id, { granted: next })
     return update.then(res => {
-      setAiGranted(res.granted)
-      setAiContributionAllowed(res.contribution_allowed)
-      setAiMode(res.mode || 'individual')
-      setCanManageAi(Boolean(res.can_manage))
-      if (res.mode === 'group_managed') {
-        setConversations(prev => prev.map(c => c.id === selectedId ? { ...c, ai_enabled: res.granted } : c))
+      setConversations(prev => prev.map(item => item.id === id ? {
+        ...item,
+        ai_permission_granted: res.granted,
+        ...(res.mode === 'group_managed' ? { ai_enabled: res.granted } : {}),
+      } : item))
+      if (id === selectedId) {
+        setAiGranted(res.granted)
+        setAiContributionAllowed(res.contribution_allowed)
+        setAiMode(res.mode || 'individual')
+        setCanManageAi(Boolean(res.can_manage))
       }
       return res
     })
   }
+
+  const onToggleAi = (next) => toggleAiPermission(selectedId, next)
+  const onToggleAiInList = (id, next) =>
+    toggleAiPermission(id, next).catch(error => pushToast(error.detail || 'Không thể cập nhật quyền AI.'))
 
   const onToggleContribution = (next) =>
     setAiPermission(token, selectedId, { contribution_allowed: next }).then(res => {
@@ -83,9 +95,9 @@ export default function ChatPage() {
 
     const fallbackId = conversations[0].id
     setSelectedId(fallbackId)
+    setUnreadHint(conversations[0].unread_count || 0)
     setConversations(prev => prev.map(c => c.id === fallbackId ? { ...c, unread_count: 0 } : c))
-    markRead(token, fallbackId).catch(() => {})
-  }, [conversations, selectedId, setConversations, token])
+  }, [conversations, selectedId, setConversations])
 
   useEffect(() => subscribe((data) => {
     if (data.type === 'group_ai_policy_changed') {
@@ -120,9 +132,16 @@ export default function ChatPage() {
   const onSelect = (id) => {
     setSelectedId(id)
     setMobileChat(true)
+    setUnreadHint(conversations.find(conversation => conversation.id === id)?.unread_count || 0)
     setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c))
-    markRead(token, id).catch(() => {})
   }
+
+  const markedReadRef = useRef(null)
+  useEffect(() => {
+    if (!selectedId || messagesLoading || markedReadRef.current === selectedId) return
+    markedReadRef.current = selectedId
+    markRead(token, selectedId).catch(() => {})
+  }, [selectedId, messagesLoading, token])
 
   const onSend = (content) => { if (selectedId) sendJson({ type: 'send_message', conversation_id: selectedId, content }) }
 
@@ -140,25 +159,25 @@ export default function ChatPage() {
   }
 
   const onHide = async () => {
-    if (!selectedId || !window.confirm('Hide this conversation from your list? It will return when a new message arrives.')) return
-    await hideConversation(token, selectedId)
-    removeCurrentConversation()
+    if (!selectedId) return
+    try { await hideConversation(token, selectedId); removeCurrentConversation() }
+    catch (error) { pushToast(error.detail || 'Không thể ẩn hội thoại.') }
   }
 
   const onLeave = async () => {
-    if (!selectedId || !window.confirm('Leave this group? You will immediately lose access.')) return
-    await leaveConversation(token, selectedId)
-    removeCurrentConversation()
+    if (!selectedId) return
+    try { await leaveConversation(token, selectedId); removeCurrentConversation() }
+    catch (error) { pushToast(error.detail || 'Không thể rời nhóm.') }
   }
 
   return (
     <div className={`chat-layout ${mobileChat ? 'show-chat' : ''}`}>
-      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={onSelect} onNewConversation={() => setNewConvoOpen(true)} />
+      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={onSelect} onNewConversation={() => setNewConvoOpen(true)} onToggleAi={onToggleAiInList} />
       <section className="conversation-pane">
         {selectedConversation ? (
           <>
             <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={() => setAiOpen(true)} onHide={onHide} onLeave={onLeave} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} />
-            <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} />
+            <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} loading={messagesLoading} firstUnreadMessageId={firstUnreadMessageId} unreadCount={unreadCount} />
           </>
         ) : (
           <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Select a conversation or start a new one</p></div>
