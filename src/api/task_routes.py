@@ -49,6 +49,43 @@ async def _get_own_task_or_404(task_id: str, current_user: User, db: AsyncSessio
     return task
 
 
+async def _require_current_ai_provenance(task: Task, db: AsyncSession) -> None:
+    if task.source not in {"ai_extracted", "proactive"}:
+        return
+    if (
+        task.source == "proactive"
+        and task.source_message_ids is None
+        and task.consent_scope_hash is None
+        and task.source_sender_id is None
+    ):
+        # Backward compatibility for suggestions created before provenance fields existed.
+        # Current proactive_service always writes all three fields, so new records cannot use this path.
+        return
+    if task.conversation_id is None or not task.source_message_ids or not task.consent_scope_hash:
+        task.status = "invalidated"
+        task.invalidated_reason = "missing_ai_provenance"
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This AI candidate no longer has verifiable source context",
+        )
+
+    current_hash = await consent_service.get_consent_scope_hash(db, task.conversation_id)
+    sources_allowed = await consent_service.validate_authorized_source_ids(
+        db,
+        task.conversation_id,
+        task.source_message_ids,
+    )
+    if current_hash != task.consent_scope_hash or not sources_allowed:
+        task.status = "invalidated"
+        task.invalidated_reason = "source_consent_changed"
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This AI candidate is stale because its source consent changed",
+        )
+
+
 @router.get("/tasks", response_model=list[TaskOut])
 async def list_tasks(
     workspace_id: str | None = Query(default=None),
@@ -171,6 +208,8 @@ async def update_task_status(
             status_code=status.HTTP_409_CONFLICT,
             detail="This AI candidate is no longer valid because its source consent changed",
         )
+    if task.status == "suggested" and request.status in {"pending", "in_progress", "completed"}:
+        await _require_current_ai_provenance(task, db)
     task.status = request.status
     await db.commit()
     await db.refresh(task)
