@@ -61,6 +61,11 @@ def _build_chat_response(
         if isinstance(m, (AIMessage, ToolMessage)) and m.content:
             final_text = m.content
             break
+    if not final_text:
+        final_text = (
+            "Orbit không tạo được câu trả lời cho yêu cầu này — hãy thử diễn đạt lại hoặc hỏi cụ "
+            "thể hơn."
+        )
     return ChatResponse(
         response=final_text,
         thread_id=thread_id,

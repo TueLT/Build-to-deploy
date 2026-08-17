@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
 
+from src.api.routes import _build_chat_response
+
 
 @pytest.fixture(autouse=True)
 def _no_live_llm(monkeypatch, fake_llm_factory):
@@ -198,6 +200,17 @@ async def test_chat_completed_response(client, auth_headers):
     assert data["status"] == "completed"
     assert data["response"] == "Mocked agent reply."
     assert data["thread_id"]
+
+
+def test_build_chat_response_replaces_empty_agent_output():
+    response = _build_chat_response(
+        {"messages": [AIMessage(content="")]},
+        "empty-output-thread",
+    )
+
+    assert response.status == "completed"
+    assert response.response
+    assert "thử diễn đạt lại" in response.response
 
 
 @pytest.mark.asyncio

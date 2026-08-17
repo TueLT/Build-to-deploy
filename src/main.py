@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -25,6 +26,11 @@ from src.services import calendar_service, thread_memory_service
 from src.services.ai_config_service import load_saved_ai_configuration
 from src.services.scheduler import scheduler
 from src.websocket.routes import router as ws_router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 
 @asynccontextmanager
