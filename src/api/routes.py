@@ -18,23 +18,17 @@ from src.models.schemas import (
     ResumeRequest,
 )
 from src.models.usage_schemas import UsageStatusOut
-from src.services import assistant_thread_service, chat_service, consent_service, usage_service
+from src.services import (
+    assistant_thread_service,
+    chat_service,
+    consent_service,
+    thread_memory_service,
+    usage_service,
+)
 from src.services.authorization_service import require_conversation_access
 from src.services.workspace_service import resolve_workspace_for_user
 
 router = APIRouter()
-
-# thread_id -> owner user id. In-memory only: enough to stop one user resuming another
-# user's interrupted (unconfirmed calendar/reminder) run; doesn't need to survive a restart
-# since thread_ids are random UUIDs nobody else can guess anyway.
-_thread_owners: dict[str, str] = {}
-
-
-def _check_thread_owner(thread_id: str, current_user: User) -> None:
-    owner = _thread_owners.get(thread_id)
-    if owner is not None and owner != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your conversation")
-
 
 def _format_messages(messages: list[ChatMessage]) -> str:
     return "\n".join(f"{m.sender or m.role}: {m.content}" for m in messages)
@@ -100,7 +94,6 @@ async def chat(
         # Conversation membership and AI consent are separate checks.
         await chat_service.assert_ai_permission(db, request.conversation_id, current_user.id)
     thread_id = request.thread_id or str(uuid4())
-    _check_thread_owner(thread_id, current_user)
 
     # Ràng buộc đề bài: "tối ưu chi phí" - chặn hẳn cuộc gọi LLM mới (không chỉ cảnh báo) một khi
     # đã chạm daily_token_budget. Chỉ áp dụng cho lượt chat MỚI - resume_chat() bên dưới cố tình
@@ -116,8 +109,12 @@ async def chat(
             status="error",
         )
 
-    _thread_owners.setdefault(thread_id, current_user.id)
-    config = {"configurable": {"thread_id": f"{current_user.id}:{thread_id}"}}
+    internal_thread_id, expired = await thread_memory_service.prepare_thread(
+        db, current_user, workspace_id, thread_id
+    )
+    if expired:
+        await agent_graph.checkpointer.adelete_thread(internal_thread_id)
+    config = {"configurable": {"thread_id": internal_thread_id}}
     context_scope = None
     conversation_view = None
     if request.conversation_id is not None:
@@ -181,8 +178,10 @@ async def resume_chat(
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
     """Resume an interrupted agent run with the user's confirm/reject decision."""
-    _check_thread_owner(request.thread_id, current_user)
-    config = {"configurable": {"thread_id": f"{current_user.id}:{request.thread_id}"}}
+    thread = await thread_memory_service.require_resumable_thread(
+        db, current_user, request.thread_id
+    )
+    config = {"configurable": {"thread_id": thread.id}}
     try:
         snapshot = await agent_graph.agent.aget_state(config)
         state_values = snapshot.values or {}

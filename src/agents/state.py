@@ -25,6 +25,7 @@ class AgentState(TypedDict, total=False):
     conversation_id: str | None
     consent_scope_hash: str | None
     source_message_ids: list[str]
+    thread_summary: str
 
     # Tool-calling planner loop (messages, ToolNode, tools_condition all require this).
     messages: Annotated[list[AnyMessage], add_messages]

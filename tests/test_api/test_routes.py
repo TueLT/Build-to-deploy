@@ -388,7 +388,9 @@ async def test_chat_resume_rejects_stale_consent_snapshot(
     client, auth_headers, other_auth_headers, monkeypatch
 ):
     from src.agents import graph as agent_graph
-    from src.api import routes as route_module
+    from src.db import session as db_session
+    from src.db.models import AgentThread
+    from src.services.thread_memory_service import checkpoint_thread_id
 
     owner = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
     other = (await client.get("/api/v1/auth/me", headers=other_auth_headers)).json()
@@ -411,7 +413,18 @@ async def test_chat_resume_rejects_stale_consent_snapshot(
     )
 
     thread_id = "stale-consent-thread"
-    route_module._thread_owners[thread_id] = owner["id"]
+    async with db_session.async_session_maker() as db:
+        from datetime import UTC, datetime, timedelta
+
+        db.add(
+            AgentThread(
+                id=checkpoint_thread_id(owner["id"], thread_id),
+                owner_id=owner["id"],
+                workspace_id=workspace["id"],
+                expires_at=datetime.now(UTC) + timedelta(days=1),
+            )
+        )
+        await db.commit()
     monkeypatch.setattr(
         agent_graph.agent,
         "aget_state",

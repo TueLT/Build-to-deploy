@@ -515,9 +515,35 @@ class UsageLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
 
 
+class AgentThread(Base):
+    __tablename__ = "agent_threads"
+    __table_args__ = (
+        Index("ix_agent_threads_owner_last_active", "owner_id", "last_active_at"),
+        Index("ix_agent_threads_expires_at", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class Memory(Base):
     __tablename__ = "memories"
-    __table_args__ = (Index("ix_memories_workspace_owner_created", "workspace_id", "owner_id", "created_at"),)
+    __table_args__ = (
+        CheckConstraint(
+            "memory_type IN ('preference', 'relationship', 'episodic', 'semantic')",
+            name="ck_memory_type",
+        ),
+        CheckConstraint(
+            "sensitivity IN ('normal', 'sensitive')",
+            name="ck_memory_sensitivity",
+        ),
+        Index("ix_memories_workspace_owner_created", "workspace_id", "owner_id", "created_at"),
+        Index("ix_memories_owner_type_expiry", "owner_id", "memory_type", "expires_at"),
+    )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
@@ -525,6 +551,16 @@ class Memory(Base):
     category: Mapped[str] = mapped_column(default="Preference")  # "Work" | "Preference" | "People" | ...
     title: Mapped[str]
     detail: Mapped[str] = mapped_column(default="")
+    memory_type: Mapped[str] = mapped_column(default="semantic")
+    source_conversation_id: Mapped[str | None] = mapped_column(
+        ForeignKey("conversations.id"), default=None, index=True
+    )
+    source_message_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    consent_scope_hash: Mapped[str | None] = mapped_column(default=None, index=True)
+    sensitivity: Mapped[str] = mapped_column(default="normal")
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None, index=True)
+    last_accessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     model_name: str = "gemini-2.5-flash"
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     daily_token_budget: int = Field(default=200_000, ge=0)
+    agent_max_thread_messages: int = Field(default=20, ge=6, le=100)
+    agent_thread_summary_chars: int = Field(default=6000, ge=1000, le=20000)
+    agent_thread_retention_days: int = Field(default=30, ge=1, le=365)
 
     # Database
     database_url: str = "sqlite:///./data/app.db"

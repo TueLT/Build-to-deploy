@@ -1,350 +1,346 @@
-# PRD — Orbit
+# PRD — Orbit: AI Agent trợ lý cá nhân trong Chat doanh nghiệp
 
-> Product Requirements Document · AI Agent Trợ lý cá nhân trong Chat
-> Team DRIVER ENGINEER (P-132) · Cập nhật 2026-08-10
+> Mã đề: CHAT-01 · Phiên bản: 2.0 · Ngày: 2026-08-13
+> Phạm vi delivery: MVP 7 ngày, đội 4 người
 
-Tài liệu này mô tả **yêu cầu sản phẩm và trạng thái thực tế đã build**. Kiến trúc kỹ thuật chi tiết
-xem [../ARCHITECTURE.md](../ARCHITECTURE.md); tiến độ theo đề bài xem [../ROADMAP.md](../ROADMAP.md);
-luồng màn hình xem [UI_FLOW.md](UI_FLOW.md).
+## 1. Cách đọc tài liệu
 
-**Chú thích trạng thái:** 🟢 Xong · 🟡 Một phần · 🔴 Chưa có · ⚪ Không áp dụng
+Tài liệu phân biệt rõ hai trạng thái:
 
----
+- **CURRENT:** phần đang có trong repository và có thể tái sử dụng.
+- **TARGET:** phần phải bổ sung để đạt demo ba role-agent trong một tuần.
 
-## 1. Mục tiêu sản phẩm
+Hiện tại Orbit đã có một planner dùng chung, tool calling, consent, memory, task/reminder/calendar,
+HITL, audit, user UI và admin UI. Kiến trúc ba agent theo vai trò trong tài liệu này là **đích phát
+triển**, chưa được xem là hoàn thành chỉ vì UI đã tách user/admin.
 
-Biến luồng chat hỗn độn thành **việc cần làm có deadline** và **lịch có nhắc**, mà không bắt người
-dùng rời khỏi app chat và không bao giờ tự ý hành động thay họ.
+## 2. Tóm tắt sản phẩm
 
-**Non-goals:** thay thế app quản lý dự án; làm chatbot tri thức tổng quát; mã hoá E2E tự implement.
+Orbit là lớp trợ lý AI gắn vào chat nội bộ. Hệ thống chỉ đọc các hội thoại đã được cấp quyền, tóm
+tắt nội dung, tìm lại ngữ cảnh, trích xuất cam kết/task/deadline, gợi ý reminder và sự kiện lịch.
+Mọi thao tác gây tác động ra ngoài đều phải qua Policy Engine và Human-in-the-loop (HITL).
 
-## 2. Personas
+Sản phẩm phục vụ đúng ba vai trò nghiệp vụ:
 
-| Persona | Mô tả | Job-to-be-done |
-| --- | --- | --- |
-| **Minh — nhân viên kinh doanh** | 6 nhóm chat công việc, ~300 tin/ngày | "Cho tôi biết nhóm này chốt gì, tôi phải làm gì, khi nào" |
-| **Lan — trưởng nhóm** | Giao việc qua chat, hay quên lịch họp | "Tự ghi lại lời hứa của tôi và nhắc trước giờ" |
-| **Admin hệ thống** | Vận hành nền tảng | "Ai đang dùng, hội thoại nào cần kiểm duyệt, AI đang tốn bao nhiêu token" |
+1. **Sếp:** cần bức tranh tổng hợp, rủi ro và ưu tiên của đơn vị.
+2. **Trưởng phòng:** cần quản trị task, deadline, cam kết và tải công việc của phòng.
+3. **Nhân viên:** cần xử lý chat cá nhân, task, reminder và lịch của mình.
 
-## 3. User Stories & Acceptance Criteria
+`platform_admin` chỉ vận hành hệ thống, không phải vai trò nghiệp vụ và không có quyền đọc raw chat
+mặc định.
 
-### US-1 — Đăng ký / Đăng nhập / Phân quyền 🟢
+## 3. Mục tiêu và phi mục tiêu
 
-**Là** người dùng, **tôi muốn** đăng nhập an toàn **để** dữ liệu chat và task của tôi là riêng tư.
+### 3.1 Mục tiêu MVP
 
-- [x] Đăng ký bằng email + mật khẩu, mật khẩu hash bằng **bcrypt** (không lưu plaintext).
-- [x] Đăng nhập trả **JWT access token**; frontend gửi qua `Authorization: Bearer`.
-- [x] Mọi route ứng dụng nằm sau `ProtectedRoute`; chưa đăng nhập → redirect `/login`.
-- [x] Hai role: `user` và `admin`. Admin đầu tiên bootstrap qua `INITIAL_ADMIN_EMAIL` (áp dụng cho
-      cả tài khoản tạo qua Google, không riêng `/register`).
-- [x] Route `/admin/*` chặn bằng `AdminRoute` (FE) **và** `require_admin` dependency (BE).
-- [x] **Đăng nhập bằng Google** (cộng thêm, không thay email/mật khẩu): `POST /auth/google` xác
-      minh ID token, find-or-create qua bảng `google_identities` riêng — không đổi cấu trúc bảng
-      `users`/JWT hiện có. Chỉ tự liên kết vào tài khoản mật khẩu có sẵn khi Google xác nhận
-      `email_verified`.
+- Tóm tắt hội thoại theo yêu cầu với source references.
+- Trích task/deadline/assignee có confidence và trạng thái cần làm rõ.
+- Tạo reminder/calendar sau xác nhận; đồng bộ Google Calendar theo tài khoản người dùng.
+- Chủ động phát hiện cam kết khi message mới tới và gửi suggestion, không tự thực thi.
+- Định tuyến tới Executive, Manager hoặc Employee Agent theo identity, intent và data scope.
+- Giữ memory theo user/workspace/consent scope, có revoke và TTL phù hợp.
+- Cung cấp Team Inbox cho trưởng phòng và Executive Brief cho sếp.
+- Có audit, quota/token alert, xử lý lỗi cơ bản và bộ eval định lượng.
 
-### US-2 — Nhắn tin 1-1 và nhóm realtime 🟢
+### 3.2 Phi mục tiêu trong một tuần
 
-**Là** người dùng, **tôi muốn** nhắn tin realtime **để** agent có dữ liệu thật để xử lý.
+- Không tự động đọc toàn bộ chat của tổ chức.
+- Không coi chức danh hiển thị là bằng chứng quyền truy cập.
+- Không cho agent tự gửi tin, mời người khác hoặc thay đổi lịch mà thiếu xác nhận.
+- Không fine-tune model, xây mobile native hoặc tự xây lớp mã hóa E2E.
+- Không làm đầy đủ quy trình nghiệp vụ HR/Sales như hai ảnh tham khảo đầu; chỉ học mô hình
+  supervisor + specialist + policy + HITL.
 
-- [x] Tạo hội thoại 1-1 (dedupe: không tạo trùng) và hội thoại nhóm.
-- [x] Tin nhắn đẩy realtime qua WebSocket tới đúng participant.
-- [x] Lịch sử tin nhắn có phân trang; đếm số tin chưa đọc; đánh dấu đã đọc.
-- [x] Một kết nối WebSocket dùng chung cho cả app (mở ở `AppLayout`, chia sẻ qua Outlet context).
+## 4. Persona, quyền và phạm vi dữ liệu
 
-### US-3 — Tóm tắt hội thoại 🟢
+### 4.1 Ma trận vai trò nghiệp vụ
 
-**Là** người dùng, **tôi muốn** bấm 1 nút để tóm tắt nhóm chat dài.
+| Vai trò | Agent mặc định | Scope mặc định | Đầu ra ưu tiên | Không được mặc định |
+|---|---|---|---|---|
+| Sếp | Executive Agent | Dữ liệu aggregate của đơn vị được entitlement cho phép | Executive summary, risk, decision, KPI, cross-team dependency | Đọc mọi raw chat, xem chat riêng, bypass manager |
+| Trưởng phòng | Manager Agent | Nhóm/phòng quản lý, team task, aggregate/member data được policy cho phép | Team inbox, overdue, workload, follow-up | Đọc chat riêng không liên quan, xem phòng khác |
+| Nhân viên | Employee Agent | Chat tham gia + AI consent, task/memory/calendar cá nhân | Summary, action list, reminder, calendar | Xem dữ liệu đồng nghiệp hoặc đại diện người khác |
 
-- [x] Nút **Summarize** trong `AIPanel` (khung AI cạnh khung chat) gọi `POST /api/v1/chat` thật.
-- [x] Trả về **đúng 1 định dạng tóm tắt** (bug lặp 3 định dạng đã sửa ở `summarize_tool.py`).
-- [x] Agent kết thúc ngay sau tool tóm tắt, không gọi LLM lần 2 để "kể lại" (tránh lỗi 400 tool-call).
+### 4.2 Mapping với RBAC hiện có
 
-### US-4 — Trích xuất task 🟢
+Trong tuần MVP, tránh thay toàn bộ schema quyền:
 
-**Là** người dùng, **tôi muốn** agent tìm việc cần làm trong hội thoại **để** tôi không bỏ sót.
+| Business role | Mapping đề xuất | Điều kiện bổ sung |
+|---|---|---|
+| Sếp | `workspace.owner` | Có entitlement `executive:aggregate:read` |
+| Trưởng phòng | `workspace.admin` hoặc department manager | Có `department_id` và quan hệ quản lý hợp lệ |
+| Nhân viên | `workspace.member` | Có conversation membership và AI consent |
+| Platform admin | `platform_admin` | Chỉ control plane; support grant riêng nếu cần chẩn đoán |
 
-- [x] Tool `extract_tasks` trả JSON chuẩn (title, due_at, priority).
-- [x] Task AI đề xuất vào mục **"AI suggestions"** trên `/tasks` với `status="suggested"`, chờ
-      **Accept / Dismiss** — không tự động thành task chính thức.
-- [x] Danh sách task sort theo `due_at` + `priority`.
-- [x] Có bộ eval đo Precision/Recall/F1 (`scripts/eval_extract_tasks.py`).
+Quyền thực tế luôn lấy từ DB/authorization service. Không dùng system prompt, tên chức danh hoặc
+nội dung người dùng tự khai để nâng quyền.
 
-### US-5 — Nhắc việc có xác nhận 🟢
+### 4.3 Bốn data scope chuẩn
 
-**Là** người dùng, **tôi muốn** được nhắc đúng giờ, nhưng **chỉ sau khi tôi đồng ý**.
+- `personal`: task, calendar, memory và chat được consent của chính user.
+- `team`: dữ liệu nhóm/phòng thuộc quan hệ quản lý đã xác thực.
+- `aggregate`: số liệu/tóm tắt đã loại hoặc mask dữ liệu cá nhân theo policy.
+- `sensitive`: raw chat riêng, HR/payroll, bí mật hoặc dữ liệu ngoài entitlement; mặc định deny.
 
-- [x] Tool `create_reminder` **bắt buộc** dừng ở `interrupt()` → UI hiện thẻ Xác nhận/Huỷ.
-- [x] Reminder lưu DB (bảng `reminders`) + APScheduler dùng `SQLAlchemyJobStore` → **sống sót qua
-      restart backend** (đã test thật: tạo → restart → vẫn fire đúng giờ).
-- [x] Khi fire, đẩy sự kiện WebSocket `reminder_fired` tới đúng chủ nhân.
-- [x] Quick action **"Suggest reminder"** trong `AIPanel` cho luồng 1 chạm.
-
-### US-6 — Lịch cá nhân + Google Calendar 2 chiều 🟢
-
-**Là** người dùng, **tôi muốn** lịch chốt trong chat tự vào Google Calendar của tôi.
-
-- [x] `/calendar` gọi Google Calendar API thật (list/create/update/delete), đúng timezone.
-- [x] 3 tool agent `create/update/delete_calendar_event` — **cả 3 đều human-in-the-loop**.
-- [x] Chiều ngược lại (Google → app): polling `syncToken` mỗi 20s (`CALENDAR_POLL_INTERVAL_SECONDS`),
-      broadcast `calendar_event_updated` / `calendar_event_deleted` qua WebSocket. Tự resync khi
-      Google trả 410 (token hết hạn).
-- [x] Chọn polling thay vì webhook `events.watch` vì chưa có domain public HTTPS (Google không nhận
-      callback `localhost`) — sẽ nâng cấp sau khi deploy.
-
-### US-7 — Agent chủ động (proactive) 🟢
-
-**Là** người dùng, **tôi muốn** agent tự phát hiện cam kết ngay khi tin nhắn tới.
-
-- [x] Sau mỗi tin nhắn mới (cả REST lẫn WebSocket): pre-filter regex (VI+EN) → kiểm tra sender bật
-      cả Assistant access và contribution processing → hỏi LLM xem chính sender có cam kết không.
-- [x] Assignment/request cho người khác không bị gán thành task của sender; chỉ sender commitment
-      mới tạo `Task` (`source="proactive"`, `status="suggested"`) cho người gửi.
-- [x] Đẩy WebSocket `task_suggested` → toast trỏ tới Tasks inbox.
-- [x] Chạy nền (`asyncio.create_task` / `BackgroundTasks`), **không chặn gửi tin nhắn**, không raise
-      ra ngoài. Pre-filter regex + kiểm tra quyền trước khi gọi LLM là tối ưu chi phí thực tế của hệ
-      thống.
-- [x] **Accept task chỉ thêm task**. Calendar/Reminder là side effect độc lập và phải dùng flow xác
-      nhận riêng; một nút mang nhãn Accept không còn ngầm xác nhận ba hành động.
-
-### US-8 — Memory 🟡
-
-- [x] **Calendar-fact memory cho group chat**: incremental `EventCandidate` create/update/cancel,
-      source-message lineage, manager confirmation, và backfill lịch sử theo cursor/batch.
-- [x] **Group AI governance**: conversation manager bật/tắt một policy chung; group context không bị
-      cắt rời theo consent từng tác giả. Direct chat giữ policy cá nhân.
-
-- [x] **Agent thread checkpoint**: `AsyncPostgresSaver`, bền vững qua restart.
-- [ ] **Conversation STM theo `conversation_id + consent_scope`**: chưa triển khai; không đồng nhất
-      LangGraph thread checkpoint với rolling summary/working memory của conversation.
-- [x] **Memory dài hạn**: bảng `memories` (category/title/detail) + CRUD + trang `/memory` có
-      search và tab lọc theo category sinh động từ dữ liệu thật.
-
-### US-9 — Trang AI Assistant cá nhân 🟢
-
-- [x] `/assistant` chat trực tiếp với agent, giữ `thread_id` xuyên suốt hội thoại.
-- [x] Khi agent trả `status: "interrupted"` → hiện nút **Xác nhận / Huỷ** ngay trong bong bóng chat.
-
-### US-10 — Admin dashboard + cảnh báo token 🟡
-
-- [x] Dashboard: thống kê user/hội thoại/tin nhắn; quản lý user (đổi role, khoá/mở); kiểm duyệt và
-      xoá hội thoại; xem/xoá Task, Reminder, Memory toàn hệ thống.
-- [x] Bảng `usage_logs` ghi token mỗi lần gọi LLM (best-effort, không phá luồng chat nếu lỗi).
-- [x] Stat card tổng token + số request hôm nay + % so với `DAILY_TOKEN_BUDGET`; banner đỏ khi ≥80%.
-- [ ] 🟡 Cảnh báo chỉ hiện khi admin **chủ động mở trang** — chưa push/email, chưa tự chặn gọi LLM
-      khi vượt ngân sách.
-
-### US-11 — Xử lý lỗi 🟢
-
-- [x] `ChatResponse` có `status: "error"` — agent không "nuốt" exception thành response rỗng.
-- [x] UI hiển thị đúng thông báo lỗi (phát hiện khi LLM provider trả rate-limit).
-
-## 4. Yêu cầu phi chức năng
-
-| Nhóm | Yêu cầu | Trạng thái |
-| --- | --- | --- |
-| **Bảo mật** | Mật khẩu bcrypt; JWT; không hardcode secret (đọc từ `.env`) | 🟢 |
-| **Bảo mật** | `/chat` và `/chat/resume` yêu cầu đăng nhập + kiểm tra quyền sở hữu `thread_id` | 🟢 |
-| **Quyền riêng tư** | Backend verify người gọi là participant của `conversation_id` | 🟢 |
-| **Quyền riêng tư** | Bảng quyền `ai_permissions` theo từng conversation, mặc định chưa cấp quyền, `POST /api/v1/chat` từ chối (403) khi chưa cấp | 🟢 |
-| **Quyền riêng tư** | Minh bạch: UI báo rõ nội dung tin nhắn được gửi sang Gemini/Groq | 🟢 |
-| **Quyền riêng tư** | Mã hoá E2E thật | ⚪ Ngoài phạm vi (ghi rõ trong ROADMAP) |
-| **Độ trễ/chi phí** | Chỉ tóm tắt khi người dùng yêu cầu; pre-filter regex trước LLM ở proactive | 🟢 |
-| **Độ trễ/chi phí** | Cache embedding / batch LLM call | ⚪ Không áp dụng — app không dùng vector store |
-| **Múi giờ** | Toàn hệ thống dùng `Asia/Ho_Chi_Minh` (scheduler, usage, FE `utils/datetime.js`, FullCalendar) | 🟢 |
-| **Realtime** | Chat, Reminder, Task, Calendar đều đẩy realtime qua **một** kênh WebSocket dùng chung | 🟢 |
-| **Chất lượng** | `pytest tests/ -v` + `ruff check .` sạch + `npm run build` sạch, chạy CI trên GitHub Actions | 🟢 |
-| **Vận hành** | Rate limiting trên API | 🔴 Cần trước khi mở public |
-| **Vận hành** | Deploy online + CD | 🔴 Hạng mục lớn nhất còn lại |
-
-## 5. Mô hình dữ liệu
-
-```mermaid
-erDiagram
-    users ||--o{ conversation_participants : "tham gia"
-    users ||--o{ messages : "gửi"
-    users ||--o{ tasks : "sở hữu"
-    users ||--o{ reminders : "sở hữu"
-    users ||--o{ memories : "sở hữu"
-    conversations ||--o{ conversation_participants : "có"
-    conversations ||--o{ messages : "chứa"
-    conversations ||--o{ tasks : "sinh ra"
-    conversations ||--o{ ai_permissions : "có"
-    users ||--o{ ai_permissions : "cấp quyền"
-    users ||--o| google_identities : "đăng nhập bằng"
-
-    users {
-        string id PK
-        string email UK
-        string password_hash
-        string display_name
-        string role
-        boolean is_active
-        string job_title
-        string timezone
-        json preferences
-        datetime created_at
-    }
-    conversations {
-        string id PK
-        string type
-        string name
-        string created_by FK
-        datetime created_at
-        datetime updated_at
-    }
-    conversation_participants {
-        string conversation_id PK
-        string user_id PK
-        datetime joined_at
-        datetime last_read_at
-    }
-    messages {
-        string id PK
-        string conversation_id FK
-        string sender_id FK
-        text content
-        datetime created_at
-    }
-    tasks {
-        string id PK
-        string owner_id FK
-        string conversation_id FK
-        string title
-        datetime due_at
-        string priority
-        string status
-        string source
-        datetime created_at
-    }
-    reminders {
-        string id PK
-        string owner_id FK
-        string title
-        string message
-        datetime due_at
-        datetime fire_at
-        string status
-        string source
-    }
-    memories {
-        string id PK
-        string owner_id FK
-        string category
-        string title
-        text detail
-        datetime created_at
-    }
-    usage_logs {
-        string id PK
-        string provider
-        string model
-        int prompt_tokens
-        int completion_tokens
-        int total_tokens
-        datetime created_at
-    }
-    calendar_sync_state {
-        string id PK
-        string sync_token
-        datetime updated_at
-    }
-    ai_permissions {
-        string conversation_id PK
-        string user_id PK
-        boolean granted
-        boolean contribution_allowed
-        datetime updated_at
-    }
-    google_identities {
-        string id PK
-        string user_id FK
-        string google_sub UK
-        string email
-        datetime created_at
-    }
-```
-
-`conversation_participants` dùng **khoá chính kép** `(conversation_id, user_id)` — cả hai đồng thời
-là khoá ngoại.
-
-**Enum giá trị:**
-
-- `users.role`: `user` | `admin`
-- `conversations.type`: `direct` | `group`
-- `tasks.status`: `suggested` | `pending` | `in_progress` | `completed` | `dismissed` | `invalidated`
-- `tasks.source`: `manual` | `ai_extracted` | `proactive` · `tasks.priority`: `High` | `Medium` | `Low`
-- `reminders.status`: `scheduled` | `fired` | `cancelled` · `reminders.source`: `manual` | `agent` | `proactive`
-
-Sự kiện lịch **không lưu trong DB** — nguồn sự thật là Google Calendar; `calendar_sync_state` chỉ giữ
-con trỏ đồng bộ (1 dòng, `id="default"`).
-
-## 6. API Surface
-
-Tất cả dưới prefix `/api/v1`, đều yêu cầu JWT trừ `/auth/register`, `/auth/login`, `/auth/google`.
-
-| Nhóm | Endpoint |
-| --- | --- |
-| **Auth** | `POST /auth/register` · `POST /auth/login` · `POST /auth/google` · `GET /auth/me` · `PATCH /auth/me` · `POST /auth/me/password` |
-| **Chat** | `GET /users` · `GET|POST /conversations` · `GET|POST /conversations/{id}/messages` · `POST /conversations/{id}/read` · `GET|PUT /conversations/{id}/ai-permission` |
-| **Agent** | `POST /chat` · `POST /chat/resume` · `GET /status` |
-| **Tasks** | `GET|POST /tasks` · `PATCH /tasks/{id}/status` · `DELETE /tasks/{id}` |
-| **Calendar** | `GET|POST /calendar/events` · `PATCH|DELETE /calendar/events/{id}` |
-| **Reminders** | `GET|POST /reminders` · `DELETE /reminders/{id}` |
-| **Memories** | `GET|POST /memories` · `PATCH|DELETE /memories/{id}` |
-| **Admin** | `GET /admin/stats` · `GET /admin/users` · `PATCH /admin/users/{id}/role|status` · `GET /admin/conversations` · `GET /admin/conversations/{id}/messages` · `DELETE /admin/conversations/{id}` · `GET|DELETE /admin/tasks` · `GET|DELETE /admin/reminders` · `GET|DELETE /admin/memories` |
-| **Realtime** | `WS /api/v1/ws` |
-
-**Sự kiện WebSocket:** `new_message` · `reminder_fired` · `task_suggested` · `task_created` ·
-`task_updated` · `task_deleted` · `calendar_event_updated` · `calendar_event_deleted`
-
-**Payload `interrupt()` (human-in-the-loop):** `type` = `calendar_event` | `calendar_event_update` |
-`calendar_event_delete` | `reminder`, kèm `draft` chứa nội dung sẽ được ghi.
-
-**Tool của agent (8 tool trong `ALL_TOOLS`):** `summarize_conversation` · `extract_tasks` ·
-`create_calendar_event` · `list_calendar_events` · `update_calendar_event` · `delete_calendar_event` ·
-`create_reminder` · `list_reminders`. Bốn tool có `interrupt()`: `create/update/delete_calendar_event`
-và `create_reminder`.
-
-## 7. Luồng Agent (LangGraph)
-
-```mermaid
-graph LR
-    Start(["POST /chat"]) --> P["planner_node"]
-    P -->|"không cần tool"| E(["Trả lời"])
-    P -->|"gọi tool"| T["ToolNode"]
-    T -->|"summarize_conversation<br/>extract_tasks"| E
-    T -->|"calendar / reminder tool"| I{{"interrupt() — chờ xác nhận"}}
-    I -->|"POST /chat/resume · approve"| X["Thực thi thật"]
-    I -->|"reject"| C(["Huỷ — không ghi gì"])
-    X --> P
-```
-
-**Quy tắc bắt buộc:** mọi tool có tác dụng phụ đều đi qua `interrupt()`. Hai tool "terminal"
-(`summarize_conversation`, `extract_tasks`) kết thúc ngay sau khi chạy — output của chúng chính là câu
-trả lời, không gọi LLM lần 2 (tránh lỗi model tự sinh giả cú pháp gọi tool).
-
-## 8. Ràng buộc kỹ thuật
-
-- **LLM:** đổi provider qua `LLM_PROVIDER` (`google` → `gemini-2.5-flash`, hoặc `groq`) — thiết kế
-  này sinh ra từ sự cố hết quota free-tier thật.
-- **Database:** PostgreSQL (bắt buộc, không còn hỗ trợ SQLite). Trên Windows **phải** chạy
-  `python scripts/run_dev.py` thay vì `uvicorn` CLI (`AsyncPostgresSaver` cần `SelectorEventLoop`;
-  uvicorn CLI trên Windows luôn chọn `ProactorEventLoop` trước khi app được import).
-- **Backend:** FastAPI + SQLAlchemy async · **Frontend:** React 18 + Vite + Bootstrap 5.
-- **Scheduler:** APScheduler với `SQLAlchemyJobStore`, timezone `Asia/Ho_Chi_Minh`.
-
-## 9. Rủi ro đã biết
-
-| Rủi ro | Mức | Giảm thiểu |
-| --- | --- | --- |
-| Chưa deploy online — yêu cầu bắt buộc của đề bài | **Cao** | Ưu tiên #1 trong ROADMAP; Dockerfile/compose đã sẵn |
-| Người dùng quên cấp quyền AI, tưởng lỗi | Thấp | `AIPanel.jsx` disable quick action + báo rõ "Permission required" khi chưa cấp quyền cho hội thoại đó |
-| Eval trích task chỉ 8 case | Trung bình | Coi là bằng chứng ban đầu, không báo cáo như benchmark |
-| Không có rate limiting | Trung bình | Bắt buộc làm trước khi mở public |
-| Nội dung tin nhắn gửi sang LLM bên thứ ba | Trung bình | Minh bạch trong UI; không lưu nội dung thô ngoài DB của app |
-
----
-
-*Trạng thái trong tài liệu này phản ánh code tại commit `d431b71` (2026-08-04). Khi hoàn thành một
-mục, cập nhật cả đây lẫn [../ROADMAP.md](../ROADMAP.md).*
+## 5. Jobs to be done và user stories
+
+### Nhân viên
+
+- Khi quay lại một nhóm nhiều tin, tôi muốn biết nhanh quyết định và việc của mình.
+- Khi một lời hứa/deadline xuất hiện, tôi muốn được gợi ý task nhưng không bị tạo nhắc sai.
+- Khi đã đồng ý, tôi muốn tạo reminder hoặc lịch mà không nhập lại thông tin.
+- Khi thông tin mơ hồ, tôi muốn agent hỏi đúng một câu ngắn để hoàn thiện.
+
+### Trưởng phòng
+
+- Khi bắt đầu ngày, tôi muốn thấy task trễ hạn/sắp đến hạn và cam kết chưa có owner trong phòng.
+- Khi chuẩn bị họp, tôi muốn summary theo nguồn và không lộ hội thoại ngoài quyền.
+- Khi có hành động liên quan nhân viên khác, tôi muốn có bước review/confirm rõ ràng.
+
+### Sếp
+
+- Khi hỏi tình hình đơn vị, tôi muốn nhận insight tổng hợp, rủi ro và quyết định cần chốt.
+- Khi cần đào sâu, tôi muốn biết dữ liệu nào hỗ trợ kết luận và phần nào bị policy giới hạn.
+- Khi yêu cầu vượt scope, tôi muốn hệ thống từ chối rõ lý do thay vì bịa hoặc rò rỉ dữ liệu.
+
+## 6. Kiến trúc hành vi bắt buộc
+
+Mọi request đi theo chuỗi:
+
+`Authenticate → Resolve role/scope → Classify intent → Policy pre-check → Retrieve least context →
+Role-agent plan → Policy tool-check → HITL nếu cần → Execute → Verify → Audit → Respond`
+
+Không agent nào được gọi thẳng DB/tool ngoài Orchestrator và Policy layer. Mỗi tool call mang
+`actor_id`, `workspace_id`, `role`, `purpose`, `resource_ids`, `consent_scope_hash` và `trace_id`.
+
+## 7. Yêu cầu chức năng
+
+### FR-01 — Identity, RBAC và scope resolution (P0)
+
+- Xác thực user và workspace trước khi chạy agent.
+- Resolve business role, department hierarchy, conversation membership và consent.
+- Từ chối hoặc mask tài nguyên ngoài scope trước khi tạo prompt.
+- Hiển thị role/scope đang dùng trên UI để người dùng hiểu kết quả.
+
+**Acceptance:** giả mạo “tôi là sếp” trong prompt không thay đổi quyền; truy vấn chéo phòng bị deny;
+mọi policy decision có trace nhưng không chứa raw message.
+
+### FR-02 — Conversation consent và ingestion (P0)
+
+- User bật/tắt AI cho từng conversation; có thời điểm và người cấp quyền.
+- Event Listener nhận message mới trong vùng đã giải mã của user.
+- Revoke consent làm dữ liệu đó không còn được retrieve; summary/cache liên quan phải invalidated.
+- Không chép raw message vào log, analytics hoặc vector metadata.
+
+**Acceptance:** conversation chưa consent không xuất hiện trong search/summary/proactive detector.
+
+### FR-03 — Orchestrator và role router (P0)
+
+- Chọn Executive/Manager/Employee Agent dựa trên identity + intent + requested scope.
+- Request đơn giản được đi đường nhanh; request đa bước tạo plan có giới hạn bước/tool.
+- Router không tự mở rộng scope; một request có thể hạ xuống Employee Agent nếu chỉ hỏi dữ liệu cá nhân.
+- Có fallback an toàn khi router/model lỗi.
+
+**Acceptance:** ≥95% route đúng trên eval set; role-agent được ghi vào trace.
+
+### FR-04 — Employee Agent (P0)
+
+- Tóm tắt chat, tìm message cũ, trích task/deadline/assignee và quản lý task cá nhân.
+- Đề xuất reminder/calendar; hỏi lại khi thiếu ngày, giờ, múi giờ hoặc đối tượng.
+- Chỉ dùng personal scope và conversation được consent.
+- Kết quả trích xuất gồm source message, confidence và trạng thái `suggested|needs_clarification`.
+
+### FR-05 — Manager Agent (P0)
+
+- Tổng hợp team task, deadline, owner, cam kết chưa follow-up và workload cơ bản.
+- Tạo Team Inbox ưu tiên theo overdue, due soon, blocked và unassigned.
+- Chỉ đọc team scope của đúng department; raw message chỉ được retrieve nếu conversation policy cho phép.
+- Mọi reminder/event tác động người khác phải HITL; cross-department yêu cầu thêm policy/approval.
+
+### FR-06 — Executive Agent (P0)
+
+- Tổng hợp dữ liệu aggregate, rủi ro, quyết định, xu hướng và phụ thuộc liên phòng.
+- Ưu tiên số liệu/tóm tắt đã policy-filter thay vì raw message.
+- Kết quả tách `facts`, `risks`, `decisions_needed`, `recommendations`, `sources`, `data_gaps`.
+- Nếu không đủ quyền/chứng cứ, nêu khoảng trống; không suy diễn thành fact.
+
+### FR-07 — Summarization và search (P0)
+
+- Hỗ trợ scope: unread, time range, thread/conversation và semantic query.
+- Summary phải giữ decision, owner, deadline, open question, disagreement quan trọng.
+- Mọi kết luận có source IDs hoặc chỉ rõ “không đủ nguồn”.
+- Cache theo scope hash + message cursor + prompt/model version; invalidation khi message/consent đổi.
+
+### FR-08 — Task extraction và Inbox (P0)
+
+- Schema: `title`, `description`, `assignee`, `due_at`, `timezone`, `priority`, `source_ids`, `confidence`,
+  `ambiguities` và `status`.
+- Confidence thấp hoặc thiếu trường quan trọng không tự tạo; hỏi làm rõ hoặc để suggestion.
+- Có personal inbox và team inbox; lọc overdue/due soon/blocked/unassigned.
+- Cho phép accept/edit/dismiss suggestion và dùng feedback làm eval data đã khử nội dung nhạy cảm.
+
+### FR-09 — Reminder và Calendar HITL (P0)
+
+- Preview đầy đủ title, thời gian, timezone, participants, target account và nguồn trước Confirm.
+- Create/update/delete event, reminder cho người khác, gửi/chia sẻ đều là side effect cần HITL.
+- Confirmation token ràng buộc với actor, payload hash, tool và expiry; sửa payload phải xác nhận lại.
+- Calendar OAuth per user, token mã hóa; webhook sync hai chiều là P1 nếu thời gian cho phép.
+
+### FR-10 — Proactive detector (P0)
+
+- Event path không chặn message send; enqueue detector bất đồng bộ.
+- Phát hiện cam kết/lịch hẹn, chấm confidence và gửi suggestion qua WebSocket.
+- Deduplicate theo source IDs + normalized task/date + user.
+- Không gọi model với mọi message: rule gate/batching/cache trước model.
+- User có thể snooze, dismiss, tắt theo conversation hoặc toàn bộ.
+
+### FR-11 — Memory (P0)
+
+- Phân biệt preference, entity/relationship, episodic summary và task/calendar state.
+- Mỗi memory có owner, workspace, source, purpose, consent scope, TTL và sensitivity.
+- Memory retrieve theo least privilege; user xem/sửa/xóa memory cá nhân.
+- Không lưu raw conversation như “memory” mặc định.
+
+**CURRENT đã triển khai:** short-term LangGraph checkpoint có compact message history; metadata thread
+có owner/workspace/TTL. Long-term memory có bốn type, provenance, consent snapshot, sensitivity,
+confidence và expiry; memory hết hạn hoặc mất consent bị loại khỏi agent retrieval. Retrieval hiện là
+keyword search, vector/semantic ranking vẫn là TARGET/P1.
+
+### FR-11A — Personal timeline (P0)
+
+- Hợp nhất task, reminder và Google Calendar của user trong một projection sắp xếp theo timezone user.
+- Có thể thêm message khi user yêu cầu; message luôn qua conversation authorization và AI consent.
+- Khoảng truy vấn tối đa 90 ngày, giới hạn item và không ghi đè dữ liệu nguồn.
+- Mỗi source trả `ok|not_connected|unavailable`; Calendar lỗi không làm mất task/reminder.
+- Agent gọi `get_personal_timeline` cho câu hỏi lịch trình đa nguồn.
+
+**CURRENT đã triển khai:** `GET /api/v1/timeline` và agent tool `get_personal_timeline`.
+
+### FR-12 — Admin control plane (P0)
+
+- Quản lý user/workspace, health, model config, quota/budget, prompt version và audit metadata.
+- Không hiển thị raw message trong dashboard/log.
+- Support access yêu cầu grant có scope, lý do và thời hạn; mọi lần dùng được audit.
+- Cảnh báo token/user/day, cost/workspace/day, lỗi tool và queue lag.
+
+### FR-13 — Error handling (P0)
+
+- Model timeout: retry giới hạn hoặc trả partial result có cảnh báo.
+- Tool lỗi: không báo thành công; giữ trạng thái confirmation có thể retry an toàn.
+- Calendar conflict/timezone ambiguity: hỏi lại hoặc hiển thị conflict.
+- WebSocket mất kết nối: notification lưu bền và fetch lại khi reconnect.
+
+## 8. Policy, guardrail và HITL
+
+Policy Engine trả đúng một quyết định:
+
+| Decision | Khi dùng | Hành vi |
+|---|---|---|
+| `ALLOW` | Read/action trong scope, không side effect nhạy cảm | Tiếp tục với context tối thiểu |
+| `MASK` | Có thể trả kết quả sau khi ẩn PII/nội dung nhạy cảm | Mask trước khi LLM/response |
+| `ASK_CLARIFY` | Thiếu thời gian, người nhận, scope hoặc confidence thấp | Hỏi một câu cụ thể |
+| `HITL` | Side effect hoặc hành động tác động người khác | Dừng, preview, chờ confirm |
+| `DENY` | Không có quyền/consent hoặc policy cấm | Từ chối và audit metadata |
+
+Guardrail bắt buộc gồm privacy, permission, extraction quality, cost/latency, prompt injection,
+tool allowlist, step/token limit, output schema và audit. Chi tiết nằm trong
+[Agent System Design](AGENT_SYSTEM_DESIGN.md).
+
+## 9. UI/UX
+
+### User application
+
+- Home theo role: My Day, Team Inbox hoặc Executive Brief.
+- Chat/Assistant có scope picker, source chips, approval card và trạng thái tool.
+- Tasks/Inbox, Calendar, Reminders, Memory/Consent và Profile/Integration.
+- Mobile-first; approval không bị ẩn trong text chat.
+
+### Admin application
+
+- Operations dashboard, users/workspaces, AI/prompt config, usage/budget, audit và health.
+- Không trộn admin navigation với trải nghiệm ba role nghiệp vụ.
+
+Chi tiết màn hình và sequence flow: [UI Flow](UI_FLOW.md).
+
+## 10. Dữ liệu và thay đổi schema đề xuất
+
+Tận dụng bảng user/workspace/conversation/message/task/reminder/calendar/memory/audit hiện tại, bổ
+sung tối thiểu:
+
+- `departments(id, workspace_id, name, manager_user_id)`
+- `department_members(department_id, user_id, business_role)`
+- `agent_runs(trace_id, actor_id, selected_agent, intent, status, model_version, prompt_version)`
+- `policy_decisions(trace_id, decision, policy_code, resource_type, resource_id_hash)`
+- `task_suggestions(source_fingerprint, payload, confidence, ambiguities, disposition)`
+- `approval_requests(actor_id, tool_name, payload_hash, preview, expires_at, status)`
+- `conversation_consents(user_id, conversation_id, purpose, granted_at, revoked_at)` nếu schema hiện
+  tại chưa lưu đủ purpose/version.
+
+Chỉ migration thực sự cần cho demo mới vào Day 1; không tái cấu trúc toàn bộ authorization trong tuần.
+
+## 11. API/event contract tối thiểu
+
+- `POST /agent/runs`: request + requested scope; trả `trace_id` và stream trạng thái.
+- `POST /agent/runs/{id}/confirm`: confirmation token + optional edits.
+- `POST /agent/runs/{id}/reject`
+- `GET /inbox/personal`, `GET /inbox/team`, `GET /brief/executive`
+- `PUT /conversations/{id}/ai-consent`
+- `GET/DELETE /memories/{id}`
+- `message.created` → proactive queue → `suggestion.created` → WebSocket.
+
+Contract hiện có được giữ nếu tương đương; đây là logical contract, không yêu cầu đổi tên endpoint chỉ
+để khớp tài liệu.
+
+## 12. Yêu cầu phi chức năng
+
+| Nhóm | Yêu cầu MVP |
+|---|---|
+| Security | Deny by default, RBAC + resource authorization, encrypted OAuth tokens, secret hygiene |
+| Privacy | Consent-scoped, no raw content in logs/audit/vector metadata, delete/revoke path |
+| Reliability | Idempotency cho side effects, bounded retry, durable notification |
+| Latency | P95 interactive <5s; proactive enqueue overhead <300ms |
+| Cost | Small model cho classify/summarize/extract; large model chỉ cho plan phức tạp; budget alert |
+| Auditability | Trace từ request → policy → tool → confirmation → result |
+| Accessibility | Keyboard, focus, contrast, label; mobile 360px không vỡ luồng chính |
+| Observability | Error rate, latency, token, cache hit, queue lag, policy/HITL counters |
+
+## 13. Metrics và release gate
+
+Release chỉ khi:
+
+- Task extraction precision ≥0.90, recall ≥0.80, F1 ≥0.85.
+- Deadline/timezone accuracy ≥0.90.
+- Role routing accuracy ≥0.95.
+- 100% side effects trong test matrix đi qua HITL.
+- 0 unauthorized disclosure trong red-team permission set.
+- P95 summarize/search <5 giây ở dataset MVP.
+- Backend tests, frontend user/admin lint/build đều pass.
+
+Phương pháp benchmark và dataset: [Metrics & Benchmark](../metric.md).
+
+## 14. Rủi ro và biện pháp
+
+| Rủi ro | Tác động | Biện pháp MVP |
+|---|---|---|
+| Ba agent chỉ khác prompt nhưng chung quyền | Rò rỉ dữ liệu | Policy/code authorization độc lập với prompt |
+| False reminder | Mất niềm tin | Confidence, source, suggestion state, confirm/edit/dismiss |
+| Proactive quá ồn | User tắt tính năng | Rule gate, threshold, dedupe, per-chat preference |
+| Context dài, tốn tiền | Chậm và vượt budget | Search-first, cache, compact summary, model routing |
+| Scope role mơ hồ | Kết quả sai quyền | Department mapping + entitlement, không dựa title |
+| Một tuần quá ngắn | Demo không ổn định | Giữ current core, vertical slice trước, P1/cut list rõ |
+
+## 15. Definition of Done
+
+Một flow chỉ “done” khi có authorization/policy, happy path, denial/error path, audit trace, automated
+test tương ứng và UI state. Một agent chỉ “done” khi prompt đã version, tool allowlist khóa, output
+schema validate và eval vượt ngưỡng. “Có màn hình” hoặc “model trả lời được” chưa được tính là hoàn thành.
+
+## 16. Liên kết
+
+- [Product Brief](BRIEF.md)
+- [Kiến trúc và sơ đồ các nhánh](architecture_diagram.md)
+- [System prompt, tool và guardrail](AGENT_SYSTEM_DESIGN.md)
+- [UI và workflow](UI_FLOW.md)
+- [Bản đồ kiểm thử toàn hệ thống](TESTING_OVERVIEW.md)
+- [Kế hoạch 7 ngày cho 4 người](ONE_WEEK_PLAN.md)
+- [Metrics và benchmark](../metric.md)

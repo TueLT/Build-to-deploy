@@ -3,6 +3,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
+from src.agents.nodes.compact_node import compact_thread_node
 from src.agents.nodes.planner_node import planner_node
 from src.agents.state import AgentState
 from src.agents.tools import ALL_TOOLS
@@ -37,10 +38,12 @@ def build_graph(checkpointer):
 
     graph.add_node("planner", planner_node)
     graph.add_node("tools", ToolNode(ALL_TOOLS))
+    graph.add_node("compact_thread", compact_thread_node)
 
     graph.set_entry_point("planner")
-    graph.add_conditional_edges("planner", route_after_planner, {"tools": "tools", END: END})
-    graph.add_conditional_edges("tools", route_after_tools, {"planner": "planner", END: END})
+    graph.add_conditional_edges("planner", route_after_planner, {"tools": "tools", END: "compact_thread"})
+    graph.add_conditional_edges("tools", route_after_tools, {"planner": "planner", END: "compact_thread"})
+    graph.add_edge("compact_thread", END)
 
     return graph.compile(checkpointer=checkpointer)
 

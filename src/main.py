@@ -17,10 +17,11 @@ from src.api.relationship_routes import router as relationship_router
 from src.api.reminder_routes import router as reminder_router
 from src.api.routes import router
 from src.api.task_routes import router as task_router
+from src.api.timeline_routes import router as timeline_router
 from src.api.workspace_routes import router as workspace_router
 from src.config import get_settings
 from src.db.session import init_db
-from src.services import calendar_service
+from src.services import calendar_service, thread_memory_service
 from src.services.ai_config_service import load_saved_ai_configuration
 from src.services.scheduler import scheduler
 from src.websocket.routes import router as ws_router
@@ -34,7 +35,15 @@ async def lifespan(app: FastAPI):
         await init_db()
     await load_saved_ai_configuration()
     await init_checkpointer()
+    await thread_memory_service.cleanup_expired_threads()
     scheduler.start()
+    scheduler.add_job(
+        thread_memory_service.cleanup_expired_threads,
+        "interval",
+        hours=1,
+        id="agent_thread_cleanup",
+        replace_existing=True,
+    )
     scheduler.add_job(
         calendar_service.poll_calendar_changes,
         "interval",
@@ -75,6 +84,7 @@ app.include_router(platform_router, prefix="/api/v1/platform", tags=["platform"]
 app.include_router(workspace_router, prefix="/api/v1/workspaces", tags=["workspaces"])
 app.include_router(relationship_router, prefix="/api/v1/workspaces", tags=["relationships"])
 app.include_router(task_router, prefix="/api/v1", tags=["tasks"])
+app.include_router(timeline_router, prefix="/api/v1", tags=["timeline"])
 app.include_router(calendar_router, prefix="/api/v1", tags=["calendar"])
 app.include_router(calendar_public_router, prefix="/api/v1", tags=["calendar"])
 app.include_router(reminder_router, prefix="/api/v1", tags=["reminders"])

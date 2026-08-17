@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import PageHeader from '../../components/common/PageHeader'
+import { AdminPageHeader } from '../../components/AdminCommon'
 import AdminTaskTable from '../../components/admin/AdminTaskTable'
 import AdminReminderTable from '../../components/admin/AdminReminderTable'
 import AdminMemoryTable from '../../components/admin/AdminMemoryTable'
@@ -77,10 +77,10 @@ export default function AdminUserDataPage() {
   }
 
   return (
-    <div className="page-container">
-      <PageHeader eyebrow="Admin" title="Support access" description="Time-limited, owner-approved access to workspace support data." />
-      {error && <div className="auth-error mb-3">{error}</div>}
-      <section className="content-card mb-3 p-3">
+    <div className="admin-page">
+      <AdminPageHeader title="Support access" description="Time-limited, owner-approved access to workspace support data." />
+      {error && <div className="admin-warning-banner"><i className="bi bi-exclamation-triangle" /><div><strong>Support action failed</strong><span>{error}</span></div></div>}
+      <section className="admin-card content-card mb-3 p-3">
         <form onSubmit={requestAccess} className="row g-2 align-items-end">
           <label className="col-md-3"><span className="form-label small">Workspace ID</span><input className="form-control" value={workspaceId} onChange={event=>setWorkspaceId(event.target.value.trim())} required/></label>
           <label className="col-md-3"><span className="form-label small">Scope</span><select className="form-select" value={requestedScope} onChange={event=>setRequestedScope(event.target.value)}><option value="personal_data:read">Read support data</option><option value="personal_data:manage">Manage support data</option></select></label>
@@ -89,7 +89,7 @@ export default function AdminUserDataPage() {
         </form>
         {workspaceId && <div className="mt-3 small text-muted">Access: {canManage ? 'Manage approved' : canRead ? 'Read approved' : grants.some(grant=>grant.status==='requested') ? 'Waiting for workspace owner approval' : 'No active grant'}</div>}
       </section>
-      <section className="content-card">
+      <section className="admin-card content-card">
         <div className="card-toolbar">
           <div className="btn-group">
             {TABS.map(t => (

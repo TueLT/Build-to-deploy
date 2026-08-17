@@ -1,91 +1,124 @@
-# 1-Page Brief — Orbit
+# Product Brief — Orbit / CHAT-01
 
-> AI Agent Trợ lý cá nhân trong Chat (tóm tắt hội thoại, nhắc việc, lên lịch)
+> AI Agent trợ lý cá nhân trong chat doanh nghiệp: tóm tắt hội thoại, trích việc, nhắc việc và lên lịch.
+>
+> Cập nhật: 2026-08-13 · Kế hoạch delivery: 7 ngày · Nhóm: 4 người
 
-| | |
-| --- | --- |
-| **Team** | DRIVER ENGINEER — P-132 (AI20K Build Phase Cohort 3) |
-| **Repo** | https://github.com/AI20K-Build-Phase-Cohort-3/P-132 |
-| **Đề bài gốc** | [Frontend/detai.md](../Frontend/detai.md) |
-| **Tài liệu liên quan** | [PRD.md](PRD.md) · [UI_FLOW.md](UI_FLOW.md) · [wireframes.html](wireframes.html) · [AI_LOG.md](AI_LOG.md) · [../ARCHITECTURE.md](../ARCHITECTURE.md) · [../ROADMAP.md](../ROADMAP.md) |
-| **Cập nhật** | 2026-08-04 |
+## 1. Bối cảnh đề bài
 
----
+Người dùng nội bộ Tập đoàn X nhận hàng trăm tin nhắn mỗi ngày qua chat cá nhân, nhóm phòng ban và
+các cộng đồng nội bộ. Quyết định, deadline, lời hứa và lịch hẹn bị chôn trong luồng chat. Việc đọc
+lại thủ công tốn thời gian; bỏ qua thì dễ quên việc hoặc trễ lịch.
 
-## 1. Vấn đề
+Orbit biến nội dung **đã được người dùng cấp quyền** thành ba đầu ra có thể hành động:
 
-Người dùng nền tảng chat của Tập đoàn X nhận hàng trăm tin nhắn mỗi ngày qua nhiều nhóm (gia đình,
-công việc, cộng đồng bất động sản). Việc cần làm, lịch hẹn và lời hứa bị **chôn vùi trong luồng tin
-nhắn**: đọc lại thì tốn thời gian, không đọc lại thì bỏ lỡ.
+1. Tóm tắt phần hội thoại cần thiết.
+2. Task/reminder có nguồn gốc và độ tin cậy.
+3. Sự kiện Google Calendar chỉ được tạo sau xác nhận hợp lệ.
 
-Ba nỗi đau cụ thể:
+## 2. Ba vai trò nghiệp vụ
 
-1. **Không nắm được nhóm đang nói gì** sau vài trăm tin nhắn chưa đọc.
-2. **Việc cần làm nằm rải rác trong chat**, không ai chuyển thành task/nhắc việc thủ công.
-3. **Lịch hẹn chốt trong chat không vào calendar** → quên, trễ, phải hỏi lại.
+| Vai trò | Phạm vi dữ liệu mặc định | Nhu cầu chính | Agent phục vụ |
+|---|---|---|---|
+| **Sếp** | Dữ liệu tổng hợp toàn đơn vị mà sếp có quyền; không mặc định đọc toàn bộ raw chat | Tình hình, rủi ro, quyết định, ưu tiên liên phòng | Executive Agent |
+| **Trưởng phòng** | Nhóm/phòng mình quản lý; team inbox; dữ liệu tổng hợp của nhân viên trực thuộc | Theo dõi việc, deadline, cam kết và tải công việc của phòng | Manager Agent |
+| **Nhân viên** | Chat được tham gia và cấp AI consent; task, memory, lịch cá nhân | Tóm tắt, tìm tin cũ, trích task, tạo reminder/lịch cá nhân | Employee Agent |
 
-## 2. Người dùng mục tiêu
-
-| Vai trò | Nhu cầu chính |
-| --- | --- |
-| **Người dùng thường** | Tóm tắt nhóm chat dài, biết mình đang nợ việc gì, được nhắc đúng lúc, lịch tự vào Google Calendar |
-| **Admin** | Quản lý user/hội thoại, kiểm duyệt nội dung, theo dõi hạn mức token/chi phí AI của hệ thống |
+`platform_admin` là quyền vận hành hệ thống và audit, **không phải agent nghiệp vụ thứ tư**. Admin
+không tự động được đọc nội dung nội bộ; muốn hỗ trợ phải có support grant đúng scope và thời hạn.
 
 ## 3. Giải pháp
 
-**Orbit** — AI agent nhúng ngay trong app chat, không phải một app rời. Agent dùng LangGraph theo
-mô hình *planner → tool → (human confirm) → trả lời*, đọc hội thoại được cấp quyền và:
+Hệ thống dùng một Orchestrator để chọn đúng role-agent, sau đó bắt buộc đi qua Policy Engine trước
+khi đọc dữ liệu hoặc gọi tool. Ba agent chia sẻ các capability tóm tắt, trích task, semantic search,
+memory, reminder và calendar nhưng khác nhau ở scope dữ liệu và dạng đầu ra.
 
-- **Tóm tắt** hội thoại dài theo yêu cầu (1 nút trong khung chat).
-- **Trích xuất task** từ tin nhắn → vào "inbox nhiệm vụ" chờ người dùng Accept/Dismiss.
-- **Tạo nhắc việc & sự kiện lịch** — luôn hiện thẻ xác nhận trước khi thực thi.
-- **Chủ động (proactive)**: mỗi tin nhắn mới được lọc regex rồi hỏi LLM xem có phải cam kết/lịch hẹn
-  không; nếu có → tự gợi ý task, đẩy realtime qua WebSocket.
-- **Nhớ ngữ cảnh**: memory hội thoại bền vững qua restart (LangGraph checkpointer trên Postgres) +
-  trang Memory cho ghi chú cá nhân dài hạn.
+```mermaid
+flowchart LR
+    U[User request] --> O[Orchestrator]
+    O --> P{Policy Engine}
+    P -->|ALLOW| A[Executive / Manager / Employee Agent]
+    P -->|ASK CLARIFY| Q[Clarifying question]
+    P -->|HITL| H[Human confirmation]
+    P -->|DENY or MASK| D[Safe response]
+    A --> M[Consent-scoped memory/search]
+    A --> T[Tools]
+    T --> H
+    H --> R[Execute + audit + realtime result]
+```
 
-## 4. Nguyên tắc thiết kế (không đánh đổi)
+## 4. Giá trị mang lại
 
-1. **Human-in-the-loop bắt buộc** — mọi tool có tác dụng phụ (tạo/sửa/xoá lịch, tạo nhắc việc) đều
-   dừng ở `interrupt()` chờ người dùng bấm Xác nhận. Không có đường tắt, kể cả khi test.
-2. **Agent chỉ đọc hội thoại được cấp quyền** — backend verify người gọi có thật sự là participant
-   của `conversation_id` trước khi cho agent xử lý.
-3. **Minh bạch dữ liệu** — nói rõ với người dùng rằng nội dung tin nhắn được gửi sang LLM provider
-   (Gemini/Groq) khi dùng tính năng AI.
-4. **Thà thiếu còn hơn sai** — ưu tiên giảm false reminder hơn là bắt được mọi task.
+- Nhân viên giảm thời gian rà chat và giảm bỏ sót deadline.
+- Trưởng phòng có team inbox ưu tiên mà không phải đọc mọi chat riêng tư.
+- Sếp nhận executive summary dựa trên dữ liệu tổng hợp được phép.
+- Mọi side effect quan trọng có xác nhận, provenance và audit.
+- Tổ chức giữ ranh giới dữ liệu giữa cá nhân, phòng ban và cấp điều hành.
 
-## 5. Phạm vi
+## 5. Nguyên tắc không đánh đổi
 
-**Trong phạm vi (đã build):** Auth JWT + 2 role · chat 1-1/nhóm realtime · agent tóm tắt / trích
-task / reminder / calendar CRUD (human-in-the-loop) · Google Calendar 2 chiều · proactive detection ·
-memory · dashboard admin + cảnh báo token · eval độ chính xác trích task.
+1. **Privacy first:** chỉ xử lý message nằm trong vùng đã giải mã và đã được consent; không gửi raw
+   content ngoài scope được phép; không ghi raw content vào audit/vector metadata.
+2. **Policy before prompt:** kiểm quyền bằng code/DB trước khi ghép context cho LLM. Prompt không
+   phải hàng rào bảo mật duy nhất.
+3. **Human-in-the-loop:** create/update/delete calendar, tạo reminder cho người khác, gửi/chia sẻ
+   kết quả và thao tác liên phòng luôn dừng chờ xác nhận.
+4. **Precision over recall:** task mơ hồ hoặc confidence thấp chỉ là suggestion hoặc câu hỏi làm rõ,
+   không tự tạo reminder.
+5. **Least context:** lấy đúng scope thời gian và số message cần thiết; dùng search trước khi nạp
+   lịch sử dài; cache summary theo `conversation + consent_scope_hash + message_cursor`.
+6. **Traceable:** lưu actor, policy decision, tool, target, source IDs, prompt/model version và kết
+   quả; không lưu nội dung nhạy cảm vào audit.
 
-**Ngoài phạm vi (quyết định có chủ đích):** không đổi stack sang Next.js/NestJS · không tự implement
-mã hoá E2E · không dùng vector DB/embedding (app chưa có nhu cầu semantic search thật, nên không có
-gì để "cache embedding" như tech stack gợi ý).
+## 6. Phạm vi MVP 7 ngày
 
-## 6. Chỉ số thành công
+### Must-have
 
-| Chỉ số | Mục tiêu | Hiện tại |
-| --- | --- | --- |
-| Độ chính xác trích task (F1) | ≥ 85% | 100% trên 8 case tay (VI+EN) — mẫu nhỏ, xem [ROADMAP](../ROADMAP.md) |
-| Hành động có tác dụng phụ được xác nhận | 100% | 100% (`interrupt()` bắt buộc) |
-| Test backend pass | 100% | Pass toàn bộ ở lần chạy gần nhất (87/87 tại WORKLOG 2026-08-03, +3 test calendar sync bổ sung sau đó), ruff sạch |
-| Reminder sống sót qua restart backend | Có | Có (`SQLAlchemyJobStore`) |
-| Deploy online | Có | **Chưa** — hạng mục lớn nhất còn lại |
+- Đăng nhập và RBAC ba vai trò Sếp/Trưởng phòng/Nhân viên; admin app tiếp tục là control plane.
+- Role router và ba system prompt có version.
+- Employee flow: summarize, search, extract task, reminder/calendar HITL.
+- Manager flow: team task dashboard, nhóm có quyền quản lý, overdue/follow-up summary.
+- Executive flow: aggregate summary từ dữ liệu đã được policy cho phép.
+- Proactive suggestion khi message mới có cam kết/lịch hẹn; không tự tạo side effect.
+- Memory consent-scoped, Google Calendar per-user, WebSocket notification.
+- Audit/policy decision, token budget, rate limiting và eval task extraction.
+- Deploy backend + hai frontend online.
 
-## 7. Rủi ro & cách xử lý
+### Có thể cắt nếu trễ
 
-| Rủi ro | Xử lý |
-| --- | --- |
-| Hết quota LLM free-tier (đã xảy ra thật với Gemini) | Cấu hình `LLM_PROVIDER` đổi provider qua `.env`; ghi `usage_logs` + cảnh báo khi ≥80% `DAILY_TOKEN_BUDGET` |
-| Agent tạo nhầm lịch/nhắc việc | Human-in-the-loop + eval trích task trước khi đổi prompt/model |
-| Rò rỉ nội dung tin nhắn | Kiểm tra quyền participant ở backend; không hardcode secret; thông báo minh bạch trong UI |
-| LLM tính sai ngày giờ tương đối | Inject ngày giờ hiện tại (Asia/Ho_Chi_Minh) vào system prompt |
+- Semantic search bằng pgvector: giữ keyword/time-window search hiện tại làm fallback.
+- Cross-department approval UI hoàn chỉnh: demo một workflow manager approval.
+- Executive chart nâng cao: ưu tiên summary và KPI card có nguồn dữ liệu.
 
-## 8. Trạng thái & bước tiếp theo
+### Không làm trong tuần
 
-Sản phẩm đã chạy end-to-end ở local (backend `:8000` + frontend `:5173`, Postgres). Ba việc lớn còn
-lại, theo thứ tự ưu tiên: **(1)** deploy online thật + CD, **(2)** bảng quyền `ai_permissions` theo
-từng conversation thay cho toggle local ở UI, **(3)** mở rộng bộ eval trích task. Chi tiết trong
-[ROADMAP.md](../ROADMAP.md).
+- Tự xây thuật toán E2E encryption.
+- Agent tự gửi tin hoặc tạo lịch cho người khác không xác nhận.
+- Fine-tune model, voice/video, mobile native, multi-region hay scale nhiều worker.
+
+## 7. Kết quả demo bắt buộc
+
+1. Nhân viên hỏi “Tóm tắt tin chưa đọc và tôi cần làm gì?” → summary + task suggestion có nguồn.
+2. Nhân viên xác nhận reminder/calendar → side effect chỉ xảy ra sau Confirm.
+3. Trưởng phòng mở Team Inbox → xem overdue/upcoming của đúng phòng, không thấy chat riêng trái phép.
+4. Sếp hỏi tình hình → nhận aggregate insight; yêu cầu raw chat ngoài scope bị deny/mask.
+5. Message có cam kết mới → proactive suggestion đẩy qua WebSocket.
+6. Admin xem usage, health và audit nhưng không thấy raw conversation content.
+
+## 8. Tiêu chí thành công
+
+| Nhóm | Metric MVP | Ngưỡng release |
+|---|---|---:|
+| Task extraction | Precision / Recall / F1 | ≥ 0.90 / ≥ 0.80 / ≥ 0.85 |
+| Deadline extraction | Date-time accuracy | ≥ 0.90 |
+| An toàn | Side effect cần HITL được xác nhận | 100% |
+| Privacy | Unauthorized raw-message disclosure trong red-team set | 0 |
+| Routing | Chọn đúng role-agent | ≥ 95% |
+| Hiệu năng | P95 summarize/search không gồm cold start | < 5 giây |
+| Proactive | Message-send overhead P95 | < 300 ms |
+| Chi phí | Token/request và token/user/day | Có baseline + budget alert |
+| Chất lượng phần mềm | Test, lint, user/admin build | 100% pass |
+
+Chi tiết: [PRD](PRD.md), [kiến trúc](architecture_diagram.md), [agent specification](AGENT_SYSTEM_DESIGN.md),
+[UI flow](UI_FLOW.md), [bản đồ kiểm thử](TESTING_OVERVIEW.md), [metrics](../metric.md),
+[kế hoạch 7 ngày](ONE_WEEK_PLAN.md).
