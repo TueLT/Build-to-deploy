@@ -202,9 +202,33 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
         "assistant_threads",
     }.issubset(tables)
     assert "people_preferences" in tables
-    assert revision == "20260813_12"
+    assert {
+        "agent_workspaces",
+        "agent_workspace_memberships",
+        "agent_workspace_conversations",
+    }.issubset(tables)
+    assert revision == "20260817_13"
     assert "agent_threads" in tables
     assert {"google_identities", "ai_permissions"}.issubset(tables)
+
+
+def test_agent_workspace_migration_downgrades_cleanly(tmp_path):
+    database_path = tmp_path / "agent-workspace-downgrade.db"
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{database_path.as_posix()}")
+
+    command.upgrade(config, "head")
+    command.downgrade(config, "20260813_12")
+
+    connection = sqlite3.connect(database_path)
+    tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    connection.close()
+
+    assert "agent_workspaces" not in tables
+    assert "agent_workspace_memberships" not in tables
+    assert "agent_workspace_conversations" not in tables
+    assert revision == "20260813_12"
 
 
 @pytest.mark.asyncio

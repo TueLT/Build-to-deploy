@@ -1,433 +1,532 @@
-# Kiến trúc và sơ đồ các nhánh — Orbit CHAT-01
+# Kiến trúc hệ thống Multi-Agent theo Workspace — Orbit CHAT-01
 
-> Ba vai trò nghiệp vụ · Ba role-agent · Một Orchestrator · Policy trước tool · HITL trước side effect
+> Tài liệu kiến trúc canonical cho mô hình Product Delivery + Quality Assurance + Executive
+>
+> Cập nhật: 2026-08-18
+>
+> Nguyên tắc: workspace xác định agent mặc định; code quyết định quyền và routing; LLM xử lý nghiệp vụ trong scope đã được cấp.
 
-## 1. Hiện trạng và kiến trúc đích
+## 1. Quyết định kiến trúc
 
-### CURRENT — nền tảng đang có trên `origin/main`
+Một công ty được biểu diễn bằng một `Organization Workspace`. Bên trong công ty có hai `Agent Workspace` nghiệp vụ và một Executive aggregate scope:
 
-Hệ thống hiện có một planner dùng chung trong `src/agents`, gọi các tool tóm tắt, task, reminder,
-calendar, memory, people và search. Graph cơ bản là `planner → tools → planner/end`; user UI và admin
-UI đã tách riêng, còn short-term state dùng LangGraph checkpoint. Đây là nền tảng tốt để mở rộng
-nhưng **chưa phải ba agent độc lập theo vai trò**. Compact node, thread TTL, personal timeline và
-governed long-term memory ở phần kế tiếp là thiết kế đích; tại thời điểm tài liệu được nhập vào
-`main`, phần code tương ứng vẫn đang được phát triển trên nhánh tích hợp.
-
-```mermaid
-flowchart LR
-    User[User UI] --> API[FastAPI]
-    Admin[Admin UI] --> API
-    API --> Auth[Auth + authorization + consent]
-    API --> Planner[Shared Planner]
-    Planner --> Tools[ToolNode / tool registry]
-    Tools --> Planner
-    Tools --> PG[(Postgres domain + long-term memory)]
-    Tools --> Redis[(Redis)]
-    Tools --> GCal[Google Calendar]
-    Planner --> HITL[Existing tool interrupt / confirm]
-    API --> Audit[Audit + usage]
+```text
+Organization Workspace: Orbit Demo Company
+├── Agent Workspace: Product Delivery
+│   └── Product Delivery Agent profile
+├── Agent Workspace: Quality Assurance
+│   └── Quality Assurance Agent profile
+└── Executive aggregate scope
+    └── Executive Agent profile
 ```
 
-### TARGET foundation — Timeline và memory cần tích hợp
+Ba agent không phải ba service hoặc ba bản sao LangGraph độc lập. Chúng là ba profile chạy trên một orchestration core chung:
+
+```text
+Agent profile
+= domain prompt/version
++ allowed intents
++ allowed scope
++ tool allowlist
++ reasoning/output rules
++ policy rules
++ runtime budget
++ evaluation suite
+```
+
+Mỗi request tạo một `AgentContext` riêng theo actor. Không tạo một Workspace Agent instance vĩnh viễn cho mỗi user.
+
+```text
+Quality Agent profile
+├── User A + AgentContext A
+├── User B + AgentContext B
+└── Quality Lead + AgentContext Lead
+```
+
+Cùng một agent profile nhưng dữ liệu và capability hiệu lực khác nhau theo membership, role, resource mapping và consent của actor.
+
+## 2. Sơ đồ kiến trúc tổng thể
 
 ```mermaid
 flowchart TB
-    MSG[(Consent-authorized messages)] --> TL[Personal Timeline Projection]
-    TASK[(Personal tasks)] --> TL
-    REM[(Reminders)] --> TL
-    CAL[Per-user Google Calendar] --> TL
-    TL --> API[GET /api/v1/timeline]
-    TL --> TOOL[get_personal_timeline tool]
-
-    REQ[Agent request] --> CP[LangGraph checkpoint]
-    CP --> ST[Recent messages + pending HITL]
-    ST --> COMPACT[Deterministic compaction]
-    COMPACT --> CP
-    THREAD[(agent_threads: owner/workspace/TTL)] --> CP
-
-    MEM[(Long-term memories)] --> RETRIEVE[Owner/workspace/type/expiry filter]
-    RETRIEVE --> CONSENT{Source consent still valid?}
-    CONSENT -->|yes or manual memory| AGENT[search_my_memories]
-    CONSENT -->|no| DROP[Exclude from retrieval]
-```
-
-- Timeline sẽ là projection read-only, mặc định gộp task/reminder/calendar; message chỉ được thêm khi
-  yêu cầu rõ và vẫn qua membership + consent. Calendar lỗi trả partial result cùng source status.
-- Short-term checkpoint sẽ sống theo `thread_id`, persist bằng PostgreSQL ở production và được compact khi
-  quá `AGENT_MAX_THREAD_MESSAGES`; thread metadata hết hạn theo `AGENT_THREAD_RETENTION_DAYS`.
-- Long-term memory sẽ hỗ trợ `preference|relationship|episodic|semantic`, `source_message_ids`,
-  `consent_scope_hash`, `sensitivity`, `confidence`, `expires_at` và `last_accessed_at`.
-- Retrieval giai đoạn đầu dùng keyword search có governance; semantic/vector ranking là TARGET/P1.
-
-### TARGET — vertical slice trong 7 ngày
-
-Không nhân ba toàn bộ hạ tầng. Ba agent là ba policy/prompt/tool profile chạy trên một orchestration
-core chung.
-
-```mermaid
-flowchart TB
-    subgraph L1[1. Người dùng và giao diện]
-      CEO[Sếp]
-      MGR[Trưởng phòng]
-      EMP[Nhân viên]
-      OPS[Platform Admin - control plane]
-      UI[User App: Assistant / Inbox / Calendar / Memory]
-      AUI[Admin App: Usage / Audit / Health / Prompt versions]
-      CEO --> UI
-      MGR --> UI
-      EMP --> UI
-      OPS --> AUI
+    subgraph UI[User and Admin Interfaces]
+      PUI[Personal Assistant]
+      DUI[Delivery Workspace UI]
+      QUI[Quality Workspace UI]
+      EUI[Executive UI]
+      AUI[Workspace Admin UI]
     end
 
-    subgraph L2[2. API và điều phối]
-      AUTH[Authentication + Role/Scope Resolver]
-      ORCH[LangGraph Orchestrator]
-      ROUTE[Intent + Role Router]
-      POLICY[Policy Engine]
-      HITL[Approval Service / HITL]
-      AUDIT[Audit + Usage + Trace]
-      UI --> AUTH --> ORCH --> ROUTE
-      AUI --> AUTH
-      ROUTE --> POLICY
+    subgraph CONTROL[Control and Orchestration Plane]
+      AUTH[Authentication]
+      WCTX[Workspace Context Resolver]
+      IR[Optional Intent Classifier]
+      ROUTER[Deterministic Workspace-aware Router]
+      SCOPE[Scope and Policy Resolver]
+      CTX[Immutable AgentContext Builder]
+      REG[Profile and Tool Registry]
+      GUARD[Per-tool Resource Guard]
+      OUT[Output and Source Validator]
+      HITL[Action Proposal and HITL Executor]
+      AUDIT[Sanitized Audit, Usage and Trace]
     end
 
-    subgraph L3[3. Role-agent profiles]
+    subgraph AGENTS[Agent Profiles]
+      PA[Personal Agent]
+      DA[Product Delivery Agent]
+      QA[Quality Assurance Agent]
       EA[Executive Agent]
-      MA[Manager Agent]
-      WA[Employee Agent]
-      ROUTE --> EA
-      ROUTE --> MA
-      ROUTE --> WA
     end
 
-    subgraph L4[4. Shared capabilities]
-      SUM[Summarize]
-      EXT[Extract task/date]
-      SEARCH[Search / retrieval]
-      MEM[Memory]
-      CAL[Calendar]
-      REM[Reminder / task]
-      PRO[Proactive detector]
-      EA --> SUM
-      EA --> SEARCH
-      MA --> SUM
-      MA --> SEARCH
-      MA --> EXT
-      WA --> SUM
-      WA --> EXT
-      WA --> SEARCH
-      WA --> MEM
-      WA --> CAL
-      WA --> REM
+    subgraph DATA[Governed Data Plane]
+      ORG[(Organization Workspace)]
+      DWS[(Delivery Resources)]
+      QWS[(Quality Resources)]
+      BRIEF[(Validated WorkspaceBriefs)]
+      EXT[Calendar, Reminder and Notification APIs]
     end
 
-    subgraph L5[5. Dữ liệu và external tools]
-      MSG[(Authorized internal chat)]
-      DB[(Postgres)]
-      CACHE[(Redis / BullMQ)]
-      VECTOR[(Qdrant or pgvector - optional)]
-      GCAL[Google Calendar API]
-      WS[WebSocket notifications]
-    end
-
-    POLICY -. pre-check and per-tool check .-> EA
-    POLICY -.-> MA
-    POLICY -.-> WA
-    CAL --> HITL --> GCAL
-    REM --> HITL --> DB
-    SUM --> MSG
-    EXT --> MSG
-    SEARCH --> MSG
-    SEARCH --> VECTOR
-    MEM --> DB
-    PRO --> CACHE --> WS
-    ORCH --> AUDIT
-    POLICY --> AUDIT
+    PUI --> AUTH
+    DUI --> AUTH
+    QUI --> AUTH
+    EUI --> AUTH
+    AUI --> AUTH
+    AUTH --> WCTX
+    WCTX --> IR
+    IR --> ROUTER
+    ROUTER --> SCOPE
+    SCOPE -->|DENY| AUDIT
+    SCOPE -->|ALLOW or MASK| CTX
+    REG --> ROUTER
+    REG --> GUARD
+    CTX --> PA
+    CTX --> DA
+    CTX --> QA
+    CTX --> EA
+    PA --> GUARD
+    DA --> GUARD
+    QA --> GUARD
+    EA --> GUARD
+    GUARD --> ORG
+    GUARD --> DWS
+    GUARD --> QWS
+    DA --> OUT
+    QA --> OUT
+    OUT --> BRIEF
+    BRIEF --> EA
+    PA --> HITL
+    DA --> HITL
+    QA --> HITL
+    EA --> HITL
+    HITL --> EXT
+    ROUTER --> AUDIT
+    GUARD --> AUDIT
+    OUT --> AUDIT
     HITL --> AUDIT
 ```
 
-## 2. Trục điều phối chung
+## 3. Router được áp dụng ở đâu
 
-Mọi nhánh đều dùng cùng một trục; role-agent không tự gọi tool ngoài trục này.
+### 3.1 Khi user đã ở trong Agent Workspace
 
-```mermaid
-flowchart LR
-    A[Request or message event] --> B[Authenticate]
-    B --> C[Resolve workspace, business role, department]
-    C --> D[Classify intent and requested scope]
-    D --> E{Policy pre-check}
-    E -->|DENY| X[Safe refusal + audit]
-    E -->|MASK| F[Mask / reduce scope]
-    E -->|ASK_CLARIFY| Q[Ask one precise question]
-    E -->|ALLOW| G[Retrieve least context]
-    F --> G
-    G --> H[Selected role-agent plans]
-    H --> I{Tool policy check}
-    I -->|read allowed| J[Execute read tool]
-    I -->|side effect| K[Preview + HITL]
-    I -->|deny| X
-    K -->|confirmed payload hash| L[Execute idempotently]
-    K -->|edit| M[Re-plan and re-confirm]
-    K -->|reject/expire| N[No action]
-    J --> O[Validate output schema]
-    L --> O
-    O --> P[Audit metadata + usage]
-    P --> R[Response / WebSocket]
+Workspace context là nguồn route chính. LLM không cần đoán agent.
+
+Ví dụ request từ Quality Workspace:
+
+```json
+{
+  "message": "Release đã đủ điều kiện chưa?",
+  "requested_scope": "workspace",
+  "target_agent_workspace_id": "qa-workspace-01"
+}
 ```
 
-## 3. Ba nhánh agent
+Server đọc profile đáng tin cậy từ database:
 
-### Nhánh A — Employee Agent
-
-```mermaid
-flowchart LR
-    U[Nhân viên] --> R[Employee Agent]
-    R --> P{Permission + consent}
-    P -->|no| D[Deny / ask user to grant consent]
-    P -->|yes| S[Search unread or selected messages]
-    S --> C[Summarize + extract commitments]
-    C --> V{Confidence and completeness}
-    V -->|low / ambiguous| Q[Ask date, time, assignee or intent]
-    V -->|sufficient| G[Show source-backed suggestions]
-    G --> H{User action}
-    H -->|dismiss| E[Save disposition only]
-    H -->|edit| G
-    H -->|confirm task| T[Create personal task]
-    H -->|confirm reminder/calendar| X[HITL payload binding]
-    X --> Y[Execute tool + audit]
+```text
+qa-workspace-01
+→ organization = orbit-demo
+→ agent_profile = quality_assurance
+→ router dispatch Quality Agent runtime
 ```
 
-Đầu vào thường gặp: “Tóm tắt tin chưa đọc”, “Tôi có việc gì?”, “Tạo lịch chiều mai”. Đầu ra chuẩn:
-summary, decisions, tasks, open questions, sources và action cards. Agent chỉ dùng personal scope.
-
-### Nhánh B — Manager Agent
-
-```mermaid
-flowchart LR
-    U[Trưởng phòng] --> R[Manager Agent]
-    R --> P{Manager relationship valid?}
-    P -->|no| D[Deny]
-    P -->|yes| T[Load team tasks and permitted summaries]
-    T --> A[Prioritize overdue, due soon, blocked, unassigned]
-    A --> I[Team Inbox / meeting brief]
-    I --> X{Requested action}
-    X -->|read own team| O[Return with sources]
-    X -->|remind another person| H[HITL]
-    X -->|cross department| C{Cross-scope policy}
-    C -->|approved route| H
-    C -->|not allowed| D
-    H --> E[Execute + notify + audit]
-```
-
-Manager Agent không được lấy chat riêng của nhân viên chỉ vì user là trưởng phòng. Nó ưu tiên task
-records và summary đã cấp quyền; raw message cần conversation membership/entitlement riêng.
-
-### Nhánh C — Executive Agent
-
-```mermaid
-flowchart LR
-    U[Sếp] --> R[Executive Agent]
-    R --> P{Executive aggregate entitlement}
-    P -->|no| D[Deny or downgrade to personal scope]
-    P -->|yes| A[Fetch policy-filtered team aggregates]
-    A --> M[Call Manager summaries when allowed]
-    M --> S[Synthesize facts, risks and decisions]
-    S --> V{Evidence sufficient?}
-    V -->|no| G[State data gaps / request scope]
-    V -->|yes| B[Executive Brief]
-    B --> X{Side effect requested?}
-    X -->|no| O[Return cited insight]
-    X -->|yes| H[HITL + appropriate owner approval]
-```
-
-Executive Agent là agent tổng hợp, không phải “superuser đọc hết”. Nó dùng aggregate scope và có thể
-gọi capability tổng hợp của Manager Agent qua Orchestrator; không bypass Policy Engine.
-
-## 4. Nhánh proactive
-
-Đường proactive phải bất đồng bộ để không làm chậm gửi tin.
+Client không được gửi `agent_profile`, business role hoặc tool allowlist.
 
 ```mermaid
 sequenceDiagram
-    participant C as Chat client
-    participant E as Message API
-    participant Q as Queue
-    participant D as Commitment detector
-    participant P as Policy/Consent
-    participant U as User via WebSocket
-    participant H as HITL
-    participant T as Reminder/Calendar tool
+    participant U as User in Workspace UI
+    participant API as FastAPI
+    participant DB as Workspace DB
+    participant R as Deterministic Router
+    participant P as Scope Resolver
+    participant A as Workspace Agent
 
-    C->>E: Send message
-    E-->>C: Accepted immediately
-    E->>Q: message.created with authorized reference
-    Q->>D: Analyze candidate asynchronously
-    D->>P: Check consent, scope, preference
-    alt not allowed or low confidence
-        P-->>D: Drop / no notification
-    else allowed and useful
-        D->>U: Suggest task/reminder with source
-        U->>H: Confirm or edit
-        H->>T: Execute bound payload
-        T-->>U: Result
+    U->>API: message + target_agent_workspace_id
+    API->>DB: load organization, workspace profile, membership
+    DB-->>API: trusted workspace context
+    API->>R: scope + target + classified intent
+    R->>P: selected profile and request
+    P->>DB: current membership, resource mapping, consent
+    alt denied
+        P-->>API: DENY/MASK reason
+        API-->>U: safe response
+    else allowed
+        P-->>A: immutable AgentContext
+        A-->>API: validated result
+        API-->>U: source-backed response
     end
 ```
 
-Rule gate trước model: bỏ qua reaction, emoji-only, system event và message không có tín hiệu hành
-động; batch thread ngắn; dedupe theo source fingerprint.
+Trong luồng này router là một **Workspace-aware Agent Dispatcher**. Nó có trách nhiệm:
 
-## 5. Cây quyết định Policy Engine
+- Nạp đúng profile và prompt version.
+- Chỉ cấp đúng tool allowlist.
+- Kiểm tra requested scope và intent có hợp profile không.
+- Kiểm tra master/profile feature flag.
+- Chặn workspace khác organization hoặc profile mismatch.
+- Ghi route decision vào trace/audit.
+
+### 3.2 Khi chưa có workspace rõ ràng
+
+LLM hoặc rule-based classifier chỉ được dùng để đề xuất intent tại các điểm vào chung:
+
+- Personal Assistant hỏi về một phòng ban nhưng chưa chọn workspace.
+- Organization-level search box.
+- Yêu cầu có thể là Delivery, Quality hoặc Executive aggregate.
+
+```text
+Natural-language request
+→ classifier trả strict intent enum + confidence
+→ code kiểm tra target workspace và entitlement
+→ deterministic router quyết định cuối
+```
+
+Classifier không được quyết định quyền. Nếu confidence thấp hoặc có nhiều workspace phù hợp, hệ thống hỏi lại user hoặc yêu cầu user chọn workspace.
+
+### 3.3 Các route mặc định
+
+| Điểm vào | Route mặc định |
+|---|---|
+| Personal Workspace | Personal Agent |
+| Product Delivery Workspace | Product Delivery Agent |
+| Quality Assurance Workspace | Quality Assurance Agent |
+| Executive UI với aggregate entitlement | Executive Agent |
+| Chat chung chưa có target | Classify intent → code validate → route hoặc clarify |
+
+Nếu user đang ở Quality Workspace nhưng hỏi raw Delivery data, router không tự chuyển quyền. Hệ thống chỉ có thể đề nghị đổi workspace nếu user có Delivery entitlement, đề nghị dùng Executive aggregate nếu phù hợp, hoặc từ chối.
+
+## 4. Workspace Agent tạo ra giá trị gì
+
+Workspace Agent không chỉ là một nhóm tool. Nó là lớp intelligence và governance chung của phòng ban:
+
+```text
+Workspace Agent
+= domain semantics
++ retrieval strategy
++ scoped tools
++ business reasoning rules
++ fact/inference separation
++ source grounding
++ freshness and data-gap handling
++ standardized WorkspaceBrief
++ controlled action proposals
++ evaluation criteria
+```
+
+### 4.1 Product Delivery Agent
+
+Chuyển task, milestone, conversation và dependency rời rạc thành:
+
+- Tiến độ milestone/release.
+- Blocker, overdue và due-soon items.
+- Owner/deadline còn thiếu hoặc mơ hồ.
+- Cross-workspace dependency.
+- Decision cần manager hoặc Executive.
+- Delivery Brief có source và freshness.
+
+### 4.2 Quality Assurance Agent
+
+Chuyển bug, test case và release check thành:
+
+- Test progress và failed/blocked tests.
+- Critical defects và quality risks.
+- Release readiness: `READY | AT_RISK | NOT_READY`.
+- Điều kiện còn thiếu để release.
+- Dependency tới Delivery release.
+- Quality Brief có source và freshness.
+
+### 4.3 Executive Agent
+
+Không đọc toàn bộ raw data. Executive Agent tổng hợp:
+
+- Validated Delivery Brief.
+- Validated Quality Brief.
+- Cross-workspace risks/dependencies.
+- Decisions needed và recommendations.
+- Stale/missing brief dưới dạng data gaps.
+
+Executive entitlement không phải super-admin entitlement.
+
+## 5. Trách nhiệm của Workspace Agent ngoài tool
+
+| Trách nhiệm | Mô tả |
+|---|---|
+| Domain interpretation | Hiểu trạng thái, luật và thuật ngữ của phòng ban |
+| Retrieval planning | Chọn dữ liệu tối thiểu cần cho intent; không tải toàn bộ workspace |
+| Business reasoning | Tách fact, inference, risk, recommendation và decision needed |
+| Source grounding | Mỗi fact quan trọng trỏ về source IDs được policy cho phép |
+| Freshness | Đánh dấu stale, partial và data gaps thay vì bịa dữ liệu |
+| Output contract | Trả `ToolResult`, `WorkspaceBrief` hoặc `ActionProposal` đúng version |
+| Handoff | Giao tiếp với agent khác bằng brief/reference có cấu trúc |
+| HITL proposal | Chỉ đề xuất side effect; không tự thực thi trước confirmation |
+| Observability | Giữ trace/profile/intent/policy/tool/source/latency metadata an toàn |
+| Evaluation | Có golden cases và release gates riêng cho profile |
+
+Workspace Agent không chịu trách nhiệm xác thực JWT, tự nâng quyền, tự truy vấn database ngoài scoped service hoặc tự phê duyệt side effect. Các trách nhiệm này thuộc shared core bằng code.
+
+## 6. User, Personal Agent và Workspace Agent
+
+User có active Agent Workspace membership được gọi Workspace Agent trong quyền của chính user đó.
+
+```text
+User identity
+∩ Organization membership
+∩ Agent Workspace membership
+∩ business role
+∩ requested resource scope
+∩ resource mapping
+∩ consent
+∩ purpose/classification
+= quyền hiệu lực của request
+```
+
+Hai user cùng gọi một Workspace Agent có thể nhận kết quả khác nhau vì `AgentContext` khác nhau.
+
+### 6.1 Personal Agent không gọi trực tiếp Workspace Agent
+
+Không dùng agent-to-agent call tự do:
+
+```text
+Personal Agent ──X──> Workspace Agent raw invocation
+```
+
+Nếu sau MVP cần truy cập workspace từ Personal Assistant, luồng phải đi qua Orchestrator:
+
+```text
+Personal request
+→ structured invocation request
+→ workspace selection
+→ policy and scope resolver
+→ new AgentContext bound to the same actor
+→ Workspace Agent
+→ filtered ToolResult/WorkspaceBrief
+→ Personal Agent presents the result
+```
+
+Personal Agent không truyền quyền, prompt, raw state hoặc cache của mình sang Workspace Agent.
+
+### 6.2 Ma trận giao tiếp
+
+| Caller | Có gọi trực tiếp không? | Cơ chế đúng |
+|---|:---:|---|
+| User trong Agent Workspace | Có, qua dispatcher/policy | Workspace context → AgentContext → profile |
+| Personal Agent | Không | Orchestrator-mediated request sau MVP |
+| Delivery Agent → Quality Agent | Không | Structured dependency hoặc WorkspaceBrief |
+| Quality Agent → Delivery Agent | Không | Structured dependency hoặc WorkspaceBrief |
+| Executive Agent | Không đọc raw agent state | Chỉ đọc validated WorkspaceBrief được cấp quyền |
+| Workspace admin | Không nếu thiếu business entitlement | Chỉ cấu hình workspace/membership/resource mapping |
+| Platform admin | Không mặc định | System operation hoặc time-bound support grant |
+
+## 7. Policy, response và HITL
+
+Policy có bốn kết quả chuẩn:
+
+| Decision | Khi dùng | Kết quả |
+|---|---|---|
+| `ALLOW` | Đúng identity, scope, membership, resource và consent | Chạy read tool/agent và trả kết quả |
+| `MASK` | Có thể trả aggregate sau khi loại field nhạy cảm | Trả payload đã giảm scope/redact |
+| `DENY` | Sai workspace, thiếu entitlement, revoke hoặc guessed resource | Không gọi retrieval/model/tool bị cấm |
+| `REQUIRE_APPROVAL` | Có side effect hoặc action policy yêu cầu duyệt | Tạo proposal, chưa thực thi |
+
+### 7.1 Read-only không cần HITL mặc định
+
+Các thao tác sau chỉ cần policy `ALLOW` và output/source validation:
+
+- Tóm tắt tiến độ.
+- Liệt kê blocker hoặc critical defect.
+- Kiểm tra release readiness.
+- Đọc WorkspaceBrief được cấp quyền.
+- Phân tích dependency.
+
+### 7.2 Side effect bắt buộc HITL
+
+- Tạo/sửa/xóa task.
+- Assign owner hoặc đổi deadline.
+- Đổi bug severity/status.
+- Gửi reminder/notification.
+- Tạo, sửa hoặc hủy meeting.
+- Chia sẻ brief sang workspace khác nếu policy yêu cầu.
+
+```mermaid
+flowchart LR
+    REQ[Action request] --> POLICY{Policy}
+    POLICY -->|DENY| STOP[No action + audit]
+    POLICY -->|REQUIRE_APPROVAL| PROP[ActionProposal]
+    PROP --> SHOW[Show actor, target, payload and impact]
+    SHOW --> CONF{User decision}
+    CONF -->|reject or expire| STOP
+    CONF -->|edit| NEW[New payload hash and approval]
+    CONF -->|confirm| RECHECK[Recheck identity, scope and consent]
+    RECHECK --> EXEC[Idempotent executor]
+    EXEC --> RESULT[Tool result + audit]
+```
+
+HITL không phải bước bắt buộc để “trả mọi câu trả lời”; nó bảo vệ các hành động làm thay đổi trạng thái hoặc ảnh hưởng người khác.
+
+## 8. Data boundary và resource guard
+
+MVP dùng một PostgreSQL chung, phân vùng logic bằng:
+
+```text
+organization_workspace_id
++ agent_workspace_id
++ actor membership
++ resource mapping
++ consent scope hash
++ purpose/classification
+```
+
+Không cần database vật lý riêng cho mỗi phòng ban ở MVP. Mọi query/retrieval phải bind tenant và Agent Workspace ngay trong truy vấn, không lấy toàn bộ rồi lọc sau.
 
 ```mermaid
 flowchart TD
-    R[Resource/tool request] --> A{Authenticated?}
-    A -->|no| DENY[DENY]
-    A -->|yes| B{Workspace and resource relationship valid?}
-    B -->|no| DENY
-    B -->|yes| C{Conversation consent / entitlement valid?}
-    C -->|no| DENY
-    C -->|yes| D{Sensitive fields present?}
-    D -->|yes, mask sufficient| MASK[MASK then continue]
-    D -->|yes, mask insufficient| DENY
-    D -->|no| E{Required fields complete and confidence enough?}
-    MASK --> E
-    E -->|no| ASK[ASK_CLARIFY]
-    E -->|yes| F{External or other-person side effect?}
-    F -->|yes| HITL[HITL]
-    F -->|no| ALLOW[ALLOW]
+    R[Tool resource request] --> C{Context policy ALLOW?}
+    C -->|no| D[DENY]
+    C -->|yes| S[Resolve current DB scope again]
+    S --> M{Membership active?}
+    M -->|no| D
+    M -->|yes| H{Consent hash unchanged?}
+    H -->|no| D
+    H -->|yes| I{Resource ID in current allowlist?}
+    I -->|no| D
+    I -->|yes| E[Execute least-privilege read]
 ```
 
-## 6. Scope dữ liệu trực quan
+Resource guard được kiểm tra tại mỗi specialist tool boundary để membership/consent revoke có hiệu lực ở lần gọi kế tiếp.
 
-```mermaid
-flowchart TB
-    subgraph Personal[Personal scope]
-      PC[Consent-enabled conversations]
-      PT[My tasks/reminders]
-      PM[My memory/calendar]
-    end
-    subgraph Team[Team scope]
-      TT[Department task records]
-      TS[Permitted group summaries]
-      TW[Workload / overdue aggregates]
-    end
-    subgraph Aggregate[Executive aggregate scope]
-      AK[Team KPIs]
-      AR[Cross-team risks]
-      AD[Decisions and data gaps]
-    end
-    EMP[Employee Agent] --> Personal
-    MGR[Manager Agent] --> Team
-    MGR -. own personal requests .-> Personal
-    EXEC[Executive Agent] --> Aggregate
-    EXEC -. own personal requests .-> Personal
-    RAW[Private / sensitive raw chat] --> LOCK[Denied unless explicit resource-level entitlement]
-```
+## 9. Agent handoff và WorkspaceBrief
 
-Scope không phải vòng tròn kế thừa “sếp thấy mọi thứ”. Aggregate scope là một projection an toàn,
-không đồng nghĩa union của toàn bộ raw messages.
-
-## 7. LangGraph đích
-
-```mermaid
-stateDiagram-v2
-    [*] --> load_identity
-    load_identity --> classify_intent
-    classify_intent --> policy_precheck
-    policy_precheck --> denied: DENY
-    policy_precheck --> clarify: ASK_CLARIFY
-    policy_precheck --> retrieve_context: ALLOW/MASK
-    retrieve_context --> route_agent
-    route_agent --> executive_agent
-    route_agent --> manager_agent
-    route_agent --> employee_agent
-    executive_agent --> policy_toolcheck
-    manager_agent --> policy_toolcheck
-    employee_agent --> policy_toolcheck
-    policy_toolcheck --> execute_read: ALLOW
-    policy_toolcheck --> human_confirm: HITL
-    policy_toolcheck --> denied: DENY
-    execute_read --> validate_result
-    human_confirm --> execute_side_effect: confirmed
-    human_confirm --> [*]: rejected/expired
-    execute_side_effect --> validate_result
-    validate_result --> audit_and_respond
-    clarify --> [*]
-    denied --> [*]
-    audit_and_respond --> [*]
-```
-
-`AgentState` đích cần thêm: `business_role`, `department_ids`, `requested_scope`, `selected_agent`,
-`intent`, `policy_decisions`, `consent_scope_hash`, `retrieved_source_ids`, `approval_request`,
-`prompt_version`, `model_route`, `cost`, `trace_id` và `errors`.
-
-## 8. Tool access matrix
-
-| Tool/capability | Employee | Manager | Executive | Policy/HITL |
-|---|:---:|:---:|:---:|---|
-| `summarize_messages` | Personal | Team-permitted | Aggregate | Consent/scope check |
-| `search_messages` | Personal | Team-permitted | Không mặc định raw | Resource authorization |
-| `extract_tasks` | Personal | Team-permitted | Aggregate only | Confidence + schema |
-| `get_team_inbox` | — | Own department | Aggregate view | Manager relation |
-| `get_executive_brief` | — | — | Entitled unit | Aggregate policy |
-| `create/update task` | Own | Own/team allowed | Usually delegate | Other person → HITL |
-| `calendar create/update/delete` | Own | Own/allowed | Own/allowed | Luôn HITL |
-| `create reminder` | Own | Own/team allowed | Usually delegate | Other person → HITL |
-| `memory read/write/delete` | Own | Own + approved team aggregate | Own + aggregate | Owner/purpose/TTL |
-
-## 9. Model routing, latency và cost
+Agent không chat tự do với nhau và không truyền system prompt, token hoặc toàn bộ graph state.
 
 ```mermaid
 flowchart LR
-    I[Intent] --> G{Complex multi-step or cross-team?}
-    G -->|no| S[Small model: classify, summarize, extract]
-    G -->|yes| L[Large model: bounded planning]
-    S --> C[Schema validation]
-    L --> C
-    C -->|invalid| R[One repair attempt]
-    C -->|valid| O[Policy/tool/output]
+    D[Delivery Agent] --> DB[Validated Delivery Brief]
+    Q[Quality Agent] --> QB[Validated Quality Brief]
+    DB --> O[Policy-filtered Orchestrator]
+    QB --> O
+    O --> E[Executive Agent]
+    E --> EB[Executive Brief]
 ```
 
-- Small model là mặc định; large model chỉ được router chọn cho reasoning tổng hợp phức tạp.
-- Giới hạn số bước, tool calls, context tokens và wall-clock theo run.
-- Search-first, summary cache và prompt version trong cache key.
-- Không cache kết quả side effect hoặc dữ liệu sau khi consent bị revoke.
+`WorkspaceBrief` bắt buộc có:
 
-## 10. Triển khai
+- Schema version.
+- Organization và Agent Workspace IDs.
+- Producer profile.
+- Period, generated time và expiry.
+- Facts/risks/dependencies/decisions/data gaps.
+- Source references thuộc đúng producing workspace.
+
+Brief stale hoặc thiếu không cho Executive tự động đọc raw chat để bù; Executive phải báo data gap.
+
+## 10. Foundation đã hoàn thành
+
+Tên giai đoạn trong kế hoạch: **Giai đoạn 0 — Foundation/Contract Baseline**.
+
+| Foundation | Trạng thái working tree | Ý nghĩa |
+|---|---|---|
+| PR-00 Quality rename | Hoàn thành | `quality_assurance` thống nhất code/migration/test |
+| Shared contract v1.0 | Hoàn thành | Context, source, tool result, proposal và briefs dùng chung |
+| Feature flags | Hoàn thành baseline | Master + từng profile mặc định tắt |
+| Agent Workspace models/migration | Hoàn thành baseline | Có workspace, membership và conversation mapping |
+| Agent Workspace management API | Hoàn thành baseline | Owner/admin cấu hình, business entitlement tách riêng |
+| Scope Resolver | Hoàn thành baseline | Organization/profile/role/scope deny-by-default |
+| Consent-aware resource mapping | Hoàn thành baseline | Chỉ mapped group conversation có active AI consent vào scope |
+| Resource Guard | Hoàn thành baseline | Recheck membership/consent/resource tại tool boundary |
+| Profile/tool registry | Hoàn thành skeleton | Tool allowlist riêng cho Personal/Delivery/Quality/Executive |
+| Deterministic router | Hoàn thành skeleton | Workspace-aware dispatch, không tin client profile |
+| Golden dataset | Hoàn thành v1 | 150 case cho routing/policy/brief/HITL/stale/revoke |
+
+Kết quả kiểm thử gần nhất:
+
+- Full backend: `281/281` pass.
+- Security regression: `62/62` pass.
+- Golden dataset: `150/150` case hợp lệ.
+- Ruff toàn bộ `src/tests/scripts`: pass.
+- Migration upgrade và downgrade trên database tạm: pass.
+- User/Admin frontend production builds: pass.
+
+Các thay đổi foundation hiện ở working tree cục bộ, chưa commit/merge lên remote.
+
+## 11. Đánh giá độ chặt chẽ và readiness
+
+### 11.1 Đã đủ để bắt đầu triển khai ba agent chưa?
+
+**Có.** Foundation hiện đủ chặt để ba workstream bắt đầu song song:
+
+- Delivery xây domain schema, scoped read tools và Delivery Brief producer.
+- Quality xây quality metadata/readiness rules, scoped read tools và Quality Brief producer.
+- Executive xây aggregate reasoning trên Delivery/Quality Brief fixtures.
+
+Các workstream đã có contract, workspace boundary, membership model, router registry, policy decision và dataset chung nên không cần tự thiết kế lại shared interface.
+
+### 11.2 Đã đủ để demo/production chưa?
+
+**Chưa.** Những phần sau vẫn là gate bắt buộc:
+
+| Phần còn thiếu | Vì sao cần |
+|---|---|
+| Delivery/Quality scoped tools thật | Registry hiện mới là allowlist; chưa có domain implementation |
+| Delivery/Quality brief producers | Executive chưa có brief thật để tiêu thụ |
+| WorkspaceBrief persistence/service | Cần version, expiry, revoke invalidation và query aggregate |
+| Executive aggregate implementation | Hiện mới có contract và route skeleton |
+| Intent classifier/global entry | Chỉ cần cho điểm vào không có workspace rõ ràng |
+| Router integration vào `/chat` | Chưa bật vì specialist runtime chưa hoàn chỉnh |
+| HITL executor/store/idempotency | Hiện mới có ActionProposal contract và existing personal confirmation flow |
+| Output/source validation pipeline | Contract có validator nhưng chưa nối mọi agent run/tool result |
+| Agent run audit/metrics | Cần production observability và incident evidence |
+| Agent Workspace UI/seed/demo | Cần cấu hình và trình diễn mà không thao tác DB trực tiếp |
+| Live-agent evaluation | Dataset v1 hiện là structural contract/policy baseline |
+
+### 11.3 Kết luận nghiệp vụ doanh nghiệp
+
+Thiết kế hiện tại đúng logic doanh nghiệp ở các điểm cốt lõi:
+
+- Workspace là biên nghiệp vụ; user sử dụng agent chung nhưng giữ quyền riêng theo actor.
+- Admin có control-plane capability, không tự động có quyền đọc business data.
+- Member/lead/executive_viewer là entitlement tách biệt.
+- Executive dùng aggregate brief, không phải superuser raw data.
+- Policy và quyền được enforce bằng code, không giao cho LLM.
+- Read-only được phép trả nhanh; side effect đi qua HITL.
+- Agent giao tiếp bằng structured brief/reference, không chia sẻ state tự do.
+- Revoke membership/consent có hiệu lực tại lần kiểm tra tiếp theo.
+
+Vì vậy foundation được đánh giá là **đúng hướng, đủ chặt để bắt đầu ba vertical slice**, nhưng chỉ được gọi là production-ready sau khi các gate ở mục 11.2 hoàn thành và vượt qua live-agent/security E2E.
+
+## 12. Thứ tự triển khai tiếp theo
 
 ```mermaid
 flowchart LR
-    WEB[User/Admin web on Vercel] --> API[FastAPI container]
-    API --> PG[(Postgres)]
-    API --> RD[(Redis)]
-    API --> WK[Worker: proactive/scheduler]
-    WK --> RD
-    WK --> PG
-    API --> LLM[LLM providers]
-    API --> GC[Google Calendar]
-    API --> WS[WebSocket gateway]
-    OBS[Metrics/log/audit without raw content] <-- API
-    OBS <-- WK
+    F[Review and merge Foundation Baseline] --> D[Delivery vertical slice]
+    F --> Q[Quality vertical slice]
+    F --> E[Executive with brief fixtures]
+    D --> DB[Real Delivery Brief]
+    Q --> QB[Real Quality Brief]
+    DB --> ER[Executive real aggregation]
+    QB --> ER
+    ER --> H[HITL and source validation E2E]
+    H --> CHAT[Feature-flagged chat integration]
+    CHAT --> LIVE[Live eval, staging and demo]
 ```
 
-Trong MVP, FastAPI hiện tại được giữ. BullMQ/NestJS không cần thêm chỉ vì đề bài gợi ý; dùng queue
-hiện có hoặc một worker tương thích Redis để tránh tăng công nghệ trong tuần.
-
-## 11. Ranh giới bảo mật bắt buộc
-
-1. Authorization lọc resource trước khi nội dung vào model.
-2. Tool registry chọn allowlist theo agent và policy; model không tự đặt tên endpoint tùy ý.
-3. Raw message không vào audit/log/analytics; source ID có thể hash khi cần.
-4. Prompt injection trong chat được xem là dữ liệu, không phải lệnh hệ thống.
-5. Confirmation token gắn payload hash; chỉnh title/time/participants làm token cũ vô hiệu.
-6. OAuth token mã hóa và thuộc từng user; platform admin không dùng token của user.
-7. Consent revoke xóa/invalidate index/cache/memory liên quan theo retention policy.
-
-## 12. Thứ tự triển khai hợp lý
-
-`role/scope contract → policy decisions → role router → three prompt profiles → Employee vertical
-slice → Manager Inbox → Executive aggregate brief → proactive → eval/hardening`.
-
-Không merge/viết ba UI lớn trước khi chốt scope và policy, vì phần khó nhất không phải giao diện mà là
-ngăn agent lấy sai dữ liệu. Kế hoạch triển khai và bản đồ coverage chỉ nên được nhập vào `main` sau
-khi trạng thái test của các thành phần timeline, compaction và governed memory khớp với code thực tế.
+Chi tiết phân công, dependency và release gates nằm tại `docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md`. Tiến độ triển khai và giá trị bàn giao nằm tại `docs/MULTI_AGENT_PROGRESS.md`.
