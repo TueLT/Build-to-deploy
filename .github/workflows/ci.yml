@@ -16,9 +16,21 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend lint, migrations, and tests
+    name: Backend (${{ matrix.multi_agent_enabled }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - multi_agent_enabled: "false"
+            product_delivery_agent_enabled: "false"
+            quality_assurance_agent_enabled: "false"
+            executive_agent_enabled: "false"
+          - multi_agent_enabled: "true"
+            product_delivery_agent_enabled: "true"
+            quality_assurance_agent_enabled: "true"
+            executive_agent_enabled: "true"
 
     services:
       postgres:
@@ -55,12 +67,20 @@ jobs:
         env:
           APP_ENV: test
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orbit_test
+          MULTI_AGENT_ENABLED: ${{ matrix.multi_agent_enabled }}
+          PRODUCT_DELIVERY_AGENT_ENABLED: ${{ matrix.product_delivery_agent_enabled }}
+          QUALITY_ASSURANCE_AGENT_ENABLED: ${{ matrix.quality_assurance_agent_enabled }}
+          EXECUTIVE_AGENT_ENABLED: ${{ matrix.executive_agent_enabled }}
 
       - name: Run backend tests
         run: pytest tests/ -v --tb=short
         env:
           APP_ENV: test
           OPENAI_API_KEY: test-key
+          MULTI_AGENT_ENABLED: ${{ matrix.multi_agent_enabled }}
+          PRODUCT_DELIVERY_AGENT_ENABLED: ${{ matrix.product_delivery_agent_enabled }}
+          QUALITY_ASSURANCE_AGENT_ENABLED: ${{ matrix.quality_assurance_agent_enabled }}
+          EXECUTIVE_AGENT_ENABLED: ${{ matrix.executive_agent_enabled }}
 
   frontend:
     name: Build user and admin frontends

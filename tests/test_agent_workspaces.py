@@ -235,7 +235,13 @@ async def test_context_builder_fails_closed_when_profile_flag_is_disabled(client
                 agent_profile=AgentProfile.PRODUCT_DELIVERY,
                 intent=AgentIntent.DELIVERY_BRIEF,
                 prompt_version="product-delivery-v1",
-                settings=Settings(_env_file=None),
+                settings=Settings(
+                    _env_file=None,
+                    multi_agent_enabled=False,
+                    product_delivery_agent_enabled=False,
+                    quality_assurance_agent_enabled=False,
+                    executive_agent_enabled=False,
+                ),
             )
 
     assert error.value.resolution.reason == PolicyReason.FEATURE_DISABLED

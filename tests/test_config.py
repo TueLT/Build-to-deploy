@@ -23,7 +23,14 @@ def test_valid_production_settings_are_accepted():
     assert settings.app_env == "production"
 
 
-def test_multi_agent_feature_flags_default_to_disabled():
+def test_multi_agent_feature_flags_default_to_disabled(monkeypatch):
+    for name in (
+        "MULTI_AGENT_ENABLED",
+        "PRODUCT_DELIVERY_AGENT_ENABLED",
+        "QUALITY_ASSURANCE_AGENT_ENABLED",
+        "EXECUTIVE_AGENT_ENABLED",
+    ):
+        monkeypatch.delenv(name, raising=False)
     settings = Settings(_env_file=None)
 
     assert settings.multi_agent_enabled is False
