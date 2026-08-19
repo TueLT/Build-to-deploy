@@ -179,6 +179,10 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
     connection = sqlite3.connect(database_path)
     tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     revision = connection.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+    membership_indexes = {
+        row[1]: row[2]
+        for row in connection.execute("PRAGMA index_list('agent_workspace_memberships')")
+    }
     connection.close()
 
     assert {
@@ -207,7 +211,8 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
         "agent_workspace_memberships",
         "agent_workspace_conversations",
     }.issubset(tables)
-    assert revision == "20260817_13"
+    assert revision == "20260819_14"
+    assert membership_indexes["uq_agent_workspace_active_lead"] == 1
     assert "agent_threads" in tables
     assert {"google_identities", "ai_permissions"}.issubset(tables)
 

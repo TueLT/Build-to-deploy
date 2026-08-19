@@ -55,12 +55,13 @@ Trạng thái dưới đây là trạng thái **working tree cục bộ**; chỉ
 |---|---|---|
 | PR-00 Quality Assurance rename | Hoàn thành trong working tree | Review và merge baseline |
 | Agent contracts, AgentState, feature flags | Contract v1.0 đã khóa trong working tree | Review consumer compatibility và merge |
-| Agent Workspace models/migration/API | Baseline hoàn thành trong working tree | Seed/demo data và UI cấu hình ở phase sau |
+| Agent Workspace models/migration/API | Baseline hoàn thành trên `develop` | Seed/demo data ở phase sau |
 | Context Builder, Scope Resolver, Registry/Router | Baseline hoàn thành trong working tree | Nối runtime agent thật sau khi specialist profile tồn tại |
 | Product Delivery Agent | Chưa triển khai | Owner B thực hiện vertical slice |
 | Quality Assurance Agent | Chưa triển khai | Owner C thực hiện vertical slice |
 | Executive Agent | Chưa triển khai | Owner D thực hiện trên WorkspaceBrief mock trước |
-| UI theo Agent Workspace | Chưa triển khai | Mỗi agent owner làm UI của slice mình; A giữ shared shell |
+| Admin UI quản trị Agent Workspace | Hoàn thành baseline | Platform admin tạo phòng, chọn/đổi lead và suspend/activate |
+| User UI theo Agent Workspace | Chưa triển khai | Mỗi agent owner làm UI nghiệp vụ của slice mình; A giữ shared shell |
 
 PR-00 đã đổi đồng bộ `customer_operations` thành `quality_assurance` trong:
 
@@ -151,7 +152,9 @@ Không thành viên nào tự tạo phiên bản contract riêng trong agent mì
 
 ### 5.1 Admin và business entitlement
 
-- Workspace owner/admin được cấu hình agent, membership và feature flags.
+- Chỉ `platform_admin` được tạo và cấu hình Agent Workspace; Organization owner/admin không tự có quyền control-plane này.
+- Mỗi Agent Workspace active có đúng một active `lead`; đổi lead sẽ hạ lead cũ thành `member`.
+- Khi admin chọn lead chưa thuộc Organization Workspace, hệ thống thêm người đó làm organization `member` trước khi cấp business role.
 - Admin không tự động có quyền đọc dữ liệu nghiệp vụ.
 - Người dùng agent phải có active membership trong đúng Agent Workspace.
 - Executive cần entitlement aggregate riêng.

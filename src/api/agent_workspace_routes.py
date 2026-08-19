@@ -8,22 +8,27 @@ from src.models.agent_workspace_schemas import (
     AgentWorkspaceConversationCreate,
     AgentWorkspaceConversationOut,
     AgentWorkspaceCreate,
+    AgentWorkspaceLeadUpdate,
     AgentWorkspaceMemberCreate,
     AgentWorkspaceMemberOut,
     AgentWorkspaceOut,
+    AgentWorkspaceUpdate,
 )
 from src.services.agent_workspace_service import (
     add_agent_workspace_member_by_email,
+    assign_agent_workspace_lead_by_email,
     create_agent_workspace,
+    get_agent_workspace_lead,
     link_agent_workspace_conversation,
     list_agent_workspace_conversations,
     list_agent_workspace_members,
     list_agent_workspaces,
     revoke_agent_workspace_member,
     unlink_agent_workspace_conversation,
+    update_agent_workspace,
 )
 from src.services.audit_service import record_audit_event
-from src.services.authorization_service import require_workspace_role
+from src.services.authorization_service import require_platform_admin
 
 router = APIRouter()
 
@@ -33,7 +38,22 @@ async def _require_agent_workspace_admin(
     current_user: User,
     workspace_id: str,
 ) -> None:
-    await require_workspace_role(db, current_user, workspace_id, {"owner", "admin"})
+    require_platform_admin(current_user)
+
+
+async def _agent_workspace_out(db: AsyncSession, agent_workspace) -> AgentWorkspaceOut:
+    lead = await get_agent_workspace_lead(db, agent_workspace.id)
+    data = AgentWorkspaceOut.model_validate(agent_workspace)
+    if lead is None:
+        return data
+    _, user = lead
+    return data.model_copy(
+        update={
+            "lead_user_id": user.id,
+            "lead_email": user.email,
+            "lead_display_name": user.display_name,
+        }
+    )
 
 
 @router.post(
@@ -55,6 +75,13 @@ async def create_workspace_agent(
         request.name,
         request.agent_profile,
     )
+    _, lead_user = await assign_agent_workspace_lead_by_email(
+        db,
+        workspace_id,
+        agent_workspace.id,
+        str(request.lead_email),
+        current_user.id,
+    )
     await record_audit_event(
         db,
         actor=current_user,
@@ -62,11 +89,15 @@ async def create_workspace_agent(
         target_type="agent_workspace",
         target_id=agent_workspace.id,
         workspace_id=workspace_id,
-        metadata={"agent_profile": agent_workspace.agent_profile, "key": agent_workspace.key},
+        metadata={
+            "agent_profile": agent_workspace.agent_profile,
+            "key": agent_workspace.key,
+            "lead_user_id": lead_user.id,
+        },
     )
     await db.commit()
     await db.refresh(agent_workspace)
-    return AgentWorkspaceOut.model_validate(agent_workspace)
+    return await _agent_workspace_out(db, agent_workspace)
 
 
 @router.get("/{workspace_id}/agent-workspaces", response_model=list[AgentWorkspaceOut])
@@ -77,7 +108,83 @@ async def get_workspace_agents(
 ) -> list[AgentWorkspaceOut]:
     await _require_agent_workspace_admin(db, current_user, workspace_id)
     workspaces = await list_agent_workspaces(db, workspace_id)
-    return [AgentWorkspaceOut.model_validate(workspace) for workspace in workspaces]
+    return [await _agent_workspace_out(db, workspace) for workspace in workspaces]
+
+
+@router.patch(
+    "/{workspace_id}/agent-workspaces/{agent_workspace_id}/lead",
+    response_model=AgentWorkspaceMemberOut,
+)
+async def change_workspace_agent_lead(
+    workspace_id: str,
+    agent_workspace_id: str,
+    request: AgentWorkspaceLeadUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AgentWorkspaceMemberOut:
+    await _require_agent_workspace_admin(db, current_user, workspace_id)
+    membership, user = await assign_agent_workspace_lead_by_email(
+        db,
+        workspace_id,
+        agent_workspace_id,
+        str(request.email),
+        current_user.id,
+    )
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="agent_workspace.lead_assigned",
+        target_type="agent_workspace_membership",
+        target_id=membership.id,
+        workspace_id=workspace_id,
+        metadata={"agent_workspace_id": agent_workspace_id, "lead_user_id": user.id},
+    )
+    await db.commit()
+    await db.refresh(membership)
+    return AgentWorkspaceMemberOut(
+        id=membership.id,
+        agent_workspace_id=membership.agent_workspace_id,
+        user_id=user.id,
+        email=user.email,
+        display_name=user.display_name,
+        business_role=membership.business_role,
+        status=membership.status,
+        created_at=membership.created_at,
+        updated_at=membership.updated_at,
+    )
+
+
+@router.patch(
+    "/{workspace_id}/agent-workspaces/{agent_workspace_id}",
+    response_model=AgentWorkspaceOut,
+)
+async def change_workspace_agent(
+    workspace_id: str,
+    agent_workspace_id: str,
+    request: AgentWorkspaceUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AgentWorkspaceOut:
+    await _require_agent_workspace_admin(db, current_user, workspace_id)
+    agent_workspace = await update_agent_workspace(
+        db,
+        workspace_id,
+        agent_workspace_id,
+        name=request.name,
+        workspace_status=request.status,
+    )
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="agent_workspace.updated",
+        target_type="agent_workspace",
+        target_id=agent_workspace.id,
+        workspace_id=workspace_id,
+        metadata=request.model_dump(exclude_none=True),
+    )
+    await db.commit()
+    await db.refresh(agent_workspace)
+    return await _agent_workspace_out(db, agent_workspace)
 
 
 @router.post(

@@ -25,7 +25,8 @@ Phần nền bắt buộc cho kiến trúc multi-agent theo workspace đã hoàn
 | Executive Agent | Chưa triển khai | Có thể bắt đầu bằng WorkspaceBrief fixtures |
 | Runtime `/chat` integration | Chưa triển khai | Chỉ nối sau khi profile, tool và output validator sẵn sàng |
 | HITL executor hoàn chỉnh | Chưa triển khai | Hiện mới khóa `ActionProposal` contract |
-| Agent Workspace UI | Chưa triển khai | Backend API đã sẵn sàng để UI sử dụng |
+| Agent Workspace Admin UI | Hoàn thành baseline | Platform admin tạo phòng, chọn/đổi lead và suspend/activate |
+| Agent Workspace User UI | Chưa triển khai | Chờ UI nghiệp vụ của từng vertical slice |
 
 ## 3. Những phần đã hoàn thành và giá trị mang lại
 
@@ -84,6 +85,7 @@ Migration hỗ trợ cả upgrade và downgrade.
 
 - Một Organization Workspace có thể chứa Product Delivery Workspace và Quality Assurance Workspace.
 - Thành viên được cấp business role riêng: `member`, `lead`, `executive_viewer`.
+- Partial unique index bảo đảm mỗi Agent Workspace chỉ có một active `lead`.
 - Group conversation được gắn rõ vào đúng Agent Workspace.
 
 **Giá trị**
@@ -97,15 +99,17 @@ Migration hỗ trợ cả upgrade và downgrade.
 Đã có API admin-only để:
 
 - Tạo và liệt kê Agent Workspace.
+- Bắt buộc chọn lead khi tạo; đổi lead là thao tác riêng và atomic.
+- Suspend hoặc activate Agent Workspace.
 - Gán hoặc thu hồi Agent Workspace membership.
 - Gắn hoặc gỡ group conversation khỏi Agent Workspace.
 - Ghi sanitized audit event cho thao tác cấu hình.
 
 **Áp dụng**
 
-- Workspace owner/admin cấu hình agent và membership.
-- Admin chỉ có capability quản trị; không tự động có business entitlement để đọc dữ liệu nghiệp vụ.
-- Backend đã sẵn sàng để xây trang quản trị Agent Workspace.
+- Chỉ platform admin cấu hình Agent Workspace và membership; organization owner/admin không được tự tạo phòng nghiệp vụ.
+- Admin UI đã có trang quản trị Agent Workspace, không cần thao tác trực tiếp database.
+- Platform admin vẫn không tự động có business entitlement để đọc dữ liệu nghiệp vụ.
 
 **Giá trị**
 

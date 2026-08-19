@@ -159,6 +159,13 @@ class AgentWorkspaceMembership(Base):
             "user_id",
             "status",
         ),
+        Index(
+            "uq_agent_workspace_active_lead",
+            "agent_workspace_id",
+            unique=True,
+            postgresql_where=text("business_role = 'lead' AND status = 'active'"),
+            sqlite_where=text("business_role = 'lead' AND status = 'active'"),
+        ),
     )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)

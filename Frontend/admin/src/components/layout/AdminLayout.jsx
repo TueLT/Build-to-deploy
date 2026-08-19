@@ -11,6 +11,7 @@ export default function AdminLayout() {
   const navigation = [
     ['/admin', 'bi-grid-1x2', 'Dashboard'],
     ['/admin/users', 'bi-people', 'Users'],
+    ['/admin/workspaces', 'bi-diagram-3', 'Agent workspaces'],
     ['/admin/user-data', 'bi-database', 'Support access'],
     ['/admin/ai', 'bi-cpu', 'AI management'],
     ['/admin/ai-usage', 'bi-bar-chart', 'AI usage'],

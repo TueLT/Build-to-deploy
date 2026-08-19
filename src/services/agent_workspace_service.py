@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,6 +60,23 @@ async def list_agent_workspaces(
         .scalars()
         .all()
     )
+
+
+async def get_agent_workspace_lead(
+    db: AsyncSession,
+    agent_workspace_id: str,
+) -> tuple[AgentWorkspaceMembership, User] | None:
+    return (
+        await db.execute(
+            select(AgentWorkspaceMembership, User)
+            .join(User, User.id == AgentWorkspaceMembership.user_id)
+            .where(
+                AgentWorkspaceMembership.agent_workspace_id == agent_workspace_id,
+                AgentWorkspaceMembership.business_role == "lead",
+                AgentWorkspaceMembership.status == "active",
+            )
+        )
+    ).one_or_none()
 
 
 async def create_agent_workspace(
@@ -130,6 +147,19 @@ async def add_agent_workspace_member(
             detail="User must be an active organization workspace member",
         )
 
+    if business_role == "lead":
+        await db.execute(
+            update(AgentWorkspaceMembership)
+            .where(
+                AgentWorkspaceMembership.agent_workspace_id == agent_workspace_id,
+                AgentWorkspaceMembership.business_role == "lead",
+                AgentWorkspaceMembership.status == "active",
+                AgentWorkspaceMembership.user_id != user_id,
+            )
+            .values(business_role="member", updated_at=datetime.now(UTC))
+        )
+        await db.flush()
+
     existing = (
         await db.execute(
             select(AgentWorkspaceMembership).where(
@@ -139,6 +169,15 @@ async def add_agent_workspace_member(
         )
     ).scalar_one_or_none()
     if existing is not None:
+        if (
+            existing.business_role == "lead"
+            and existing.status == "active"
+            and business_role != "lead"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Assign a replacement lead before changing the current lead's role",
+            )
         existing.business_role = business_role
         existing.status = "active"
         existing.updated_at = datetime.now(UTC)
@@ -156,6 +195,67 @@ async def add_agent_workspace_member(
     except IntegrityError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Agent workspace membership exists") from exc
     return membership
+
+
+async def assign_agent_workspace_lead_by_email(
+    db: AsyncSession,
+    organization_workspace_id: str,
+    agent_workspace_id: str,
+    email: str,
+    assigned_by_user_id: str,
+) -> tuple[AgentWorkspaceMembership, User]:
+    await require_agent_workspace(db, organization_workspace_id, agent_workspace_id)
+    user = (
+        await db.execute(select(User).where(User.email == email.strip().lower(), User.is_active.is_(True)))
+    ).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active user not found")
+
+    organization_membership = (
+        await db.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == organization_workspace_id,
+                WorkspaceMembership.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if organization_membership is None:
+        organization_membership = WorkspaceMembership(
+            workspace_id=organization_workspace_id,
+            user_id=user.id,
+            role="member",
+            status="active",
+            invited_by_user_id=assigned_by_user_id,
+        )
+        db.add(organization_membership)
+        await db.flush()
+    elif organization_membership.status != "active":
+        organization_membership.status = "active"
+        organization_membership.updated_at = datetime.now(UTC)
+        if organization_membership.role not in {"owner", "admin"}:
+            organization_membership.role = "member"
+        await db.flush()
+
+    membership = await add_agent_workspace_member(db, agent_workspace_id, user.id, "lead")
+    return membership, user
+
+
+async def update_agent_workspace(
+    db: AsyncSession,
+    organization_workspace_id: str,
+    agent_workspace_id: str,
+    *,
+    name: str | None,
+    workspace_status: str | None,
+) -> AgentWorkspace:
+    workspace = await require_agent_workspace(db, organization_workspace_id, agent_workspace_id)
+    if name is not None:
+        workspace.name = name
+    if workspace_status is not None:
+        workspace.status = workspace_status
+    workspace.updated_at = datetime.now(UTC)
+    await db.flush()
+    return workspace
 
 
 async def add_agent_workspace_member_by_email(
@@ -202,6 +302,11 @@ async def revoke_agent_workspace_member(
     membership = await db.get(AgentWorkspaceMembership, membership_id)
     if membership is None or membership.agent_workspace_id != agent_workspace_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent workspace membership not found")
+    if membership.business_role == "lead" and membership.status == "active":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Assign a replacement lead before revoking the current lead",
+        )
     membership.status = "revoked"
     membership.updated_at = datetime.now(UTC)
     await db.flush()

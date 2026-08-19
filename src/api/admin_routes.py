@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from src.auth.dependencies import require_admin
 from src.config import get_settings
 from src.db.models import (
+    AgentWorkspace,
     AIPermission,
     AuditLog,
     Conversation,
@@ -18,6 +19,8 @@ from src.db.models import (
     SystemConfig,
     Task,
     User,
+    Workspace,
+    WorkspaceMembership,
 )
 from src.db.session import get_db
 from src.models.admin_schemas import (
@@ -36,6 +39,7 @@ from src.models.admin_schemas import (
     UpdateRoleRequest,
     UpdateStatusRequest,
 )
+from src.models.agent_workspace_schemas import AdminWorkspaceSummaryOut
 from src.services import ai_config_service, reminder_service, usage_service
 from src.services.audit_service import record_audit_event
 from src.services.authorization_service import require_support_scope
@@ -345,6 +349,53 @@ async def list_users(
         stmt = stmt.where((User.email.ilike(pattern)) | (User.display_name.ilike(pattern)))
     users = (await db.execute(stmt.offset(offset).limit(limit))).scalars().all()
     return [AdminUserOut.model_validate(u, from_attributes=True) for u in users]
+
+
+@router.get("/workspaces", response_model=list[AdminWorkspaceSummaryOut])
+async def list_organization_workspaces(db: AsyncSession = Depends(get_db)) -> list[AdminWorkspaceSummaryOut]:
+    workspaces = (
+        await db.execute(
+            select(Workspace)
+            .where(Workspace.type == "organization")
+            .order_by(Workspace.created_at.desc())
+        )
+    ).scalars().all()
+    results: list[AdminWorkspaceSummaryOut] = []
+    for workspace in workspaces:
+        owner = (
+            await db.execute(
+                select(User)
+                .join(WorkspaceMembership, WorkspaceMembership.user_id == User.id)
+                .where(
+                    WorkspaceMembership.workspace_id == workspace.id,
+                    WorkspaceMembership.role == "owner",
+                    WorkspaceMembership.status == "active",
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        agent_workspace_count = (
+            await db.execute(
+                select(func.count())
+                .select_from(AgentWorkspace)
+                .where(
+                    AgentWorkspace.organization_workspace_id == workspace.id,
+                    AgentWorkspace.status != "archived",
+                )
+            )
+        ).scalar_one()
+        results.append(
+            AdminWorkspaceSummaryOut(
+                id=workspace.id,
+                name=workspace.name,
+                status=workspace.status,
+                owner_email=owner.email if owner else None,
+                owner_display_name=owner.display_name if owner else None,
+                agent_workspace_count=agent_workspace_count,
+                created_at=workspace.created_at,
+            )
+        )
+    return results
 
 
 @router.patch("/users/{user_id}/role", response_model=AdminUserOut)

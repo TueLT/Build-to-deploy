@@ -23,6 +23,22 @@ export const listAuditLog = (
 export const listUsers = (token, q) =>
   apiFetch(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`, { token })
 
+export const listOrganizationWorkspaces = token => apiFetch('/admin/workspaces', { token })
+
+export const listAgentWorkspaces = (token, workspaceId) =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces`, { token })
+
+export const createAgentWorkspace = (token, workspaceId, body) =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces`, { method: 'POST', token, body })
+
+export const updateAgentWorkspace = (token, workspaceId, agentWorkspaceId, body) =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}`, { method: 'PATCH', token, body })
+
+export const assignAgentWorkspaceLead = (token, workspaceId, agentWorkspaceId, email) =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/lead`, {
+    method: 'PATCH', token, body: { email },
+  })
+
 export const updateUserRole = (token, userId, role) =>
   apiFetch(`/admin/users/${userId}/role`, { method: 'PATCH', token, body: { role } })
 

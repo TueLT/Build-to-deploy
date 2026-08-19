@@ -10,6 +10,7 @@ class AgentWorkspaceCreate(BaseModel):
     key: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
     agent_profile: Literal[AgentProfile.PRODUCT_DELIVERY, AgentProfile.QUALITY_ASSURANCE]
+    lead_email: EmailStr
 
     @field_validator("key", "name")
     @classmethod
@@ -31,11 +32,43 @@ class AgentWorkspaceOut(BaseModel):
     status: Literal["active", "suspended", "archived"]
     created_at: datetime
     updated_at: datetime
+    lead_user_id: str | None = None
+    lead_email: str | None = None
+    lead_display_name: str | None = None
+
+
+class AgentWorkspaceLeadUpdate(BaseModel):
+    email: EmailStr
+
+
+class AgentWorkspaceUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    status: Literal["active", "suspended", "archived"] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_optional_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Value cannot be blank")
+        return normalized
+
+
+class AdminWorkspaceSummaryOut(BaseModel):
+    id: str
+    name: str
+    status: Literal["active", "suspended", "deleting"]
+    owner_email: str | None = None
+    owner_display_name: str | None = None
+    agent_workspace_count: int
+    created_at: datetime
 
 
 class AgentWorkspaceMemberCreate(BaseModel):
     email: EmailStr
-    business_role: Literal["member", "lead", "executive_viewer"]
+    business_role: Literal["member", "executive_viewer"]
 
 
 class AgentWorkspaceMemberOut(BaseModel):

@@ -449,7 +449,8 @@ Tên giai đoạn trong kế hoạch: **Giai đoạn 0 — Foundation/Contract B
 | Shared contract v1.0 | Hoàn thành | Context, source, tool result, proposal và briefs dùng chung |
 | Feature flags | Hoàn thành baseline | Master + từng profile mặc định tắt |
 | Agent Workspace models/migration | Hoàn thành baseline | Có workspace, membership và conversation mapping |
-| Agent Workspace management API | Hoàn thành baseline | Owner/admin cấu hình, business entitlement tách riêng |
+| Agent Workspace management API | Hoàn thành baseline | Platform admin cấu hình; đúng một active lead; business entitlement tách riêng |
+| Agent Workspace Admin UI | Hoàn thành baseline | Tạo phòng, gán/đổi lead, suspend/activate |
 | Scope Resolver | Hoàn thành baseline | Organization/profile/role/scope deny-by-default |
 | Consent-aware resource mapping | Hoàn thành baseline | Chỉ mapped group conversation có active AI consent vào scope |
 | Resource Guard | Hoàn thành baseline | Recheck membership/consent/resource tại tool boundary |
@@ -495,7 +496,7 @@ Các workstream đã có contract, workspace boundary, membership model, router 
 | HITL executor/store/idempotency | Hiện mới có ActionProposal contract và existing personal confirmation flow |
 | Output/source validation pipeline | Contract có validator nhưng chưa nối mọi agent run/tool result |
 | Agent run audit/metrics | Cần production observability và incident evidence |
-| Agent Workspace UI/seed/demo | Cần cấu hình và trình diễn mà không thao tác DB trực tiếp |
+| Agent Workspace user UI/seed/demo | Admin UI đã có; vẫn cần UI nghiệp vụ và seed demo cho từng agent |
 | Live-agent evaluation | Dataset v1 hiện là structural contract/policy baseline |
 
 ### 11.3 Kết luận nghiệp vụ doanh nghiệp
