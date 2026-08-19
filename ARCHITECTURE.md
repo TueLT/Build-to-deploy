@@ -72,12 +72,13 @@ graph TB
 ### 1. Frontend (React + Vite)
 - **Purpose:** SPA cho toàn bộ trải nghiệm người dùng — auth, chat realtime, AI assistant, quản lý
   cá nhân (task/lịch/nhắc việc/memory/hồ sơ), admin.
-- **Trang chính** (`Frontend/src/pages/`): `LoginPage`/`RegisterPage`, `ChatPage`, `TaskPage`,
+- **Ứng dụng người dùng** (`Frontend/user/src/pages/`): `LoginPage`/`RegisterPage`, `ChatPage`, `TaskPage`,
   `CalendarPage`, `ReminderPage`, `MemoryPage`, `ProfilePage`, `PersonalAssistantPage` (`/assistant`
   — chat trực tiếp với agent, có nút Xác nhận/Huỷ khi agent cần human-in-the-loop), và 4 trang admin
   (`admin/AdminDashboardPage`, `AdminUsersPage`, `AdminConversationsPage`, `AdminUserDataPage` —
-  quản lý Task/Reminder/Memory toàn hệ thống). Tất cả gọi API thật qua `Frontend/src/api/`, không
-  còn trang nào dùng `Frontend/src/data/mockData.js`.
+  quản lý Task/Reminder/Memory trong workspace. **Ứng dụng quản trị** nằm độc lập tại
+  `Frontend/admin/src/`, có entry point, router, session key và bundle riêng. Cả hai gọi chung
+  FastAPI backend; frontend guard chỉ phục vụ UX, quyền thật luôn được backend kiểm tra.
 - **Panel AI trong chat** (`AIPanel.jsx`): Summarize, Extract tasks, Find schedule, Deadlines,
   Suggest reminder (có nút Xác nhận/Huỷ ngay trong panel), và ô tự do "Ask Orbit".
 - **State Management:** React Context (`AuthContext` cho JWT/user hiện tại) + hook riêng theo tính
@@ -165,10 +166,8 @@ graph LR
   suggested/pending/in_progress/completed/dismissed, source manual/proactive), `Reminder` (status
   scheduled/fired/cancelled), `Memory` (ghi chú cá nhân người dùng tự thêm — category/title/detail,
   **khác** với agent checkpoint memory ở trên), `UsageLog` (token mỗi lần gọi LLM),
-  `GoogleCalendarCredential` (1 dòng/user — `refresh_token_enc`/`access_token_enc` mã hoá Fernet,
-  `sync_token` cho polling đồng bộ, `google_email` để hiện UI; tồn tại = user đó đã Connect Google
-  Calendar riêng của họ — trước đây là `CalendarSyncState` dùng chung 1 dòng "default" cho cả app
-  hồi Calendar còn là 1 tài khoản chia sẻ, không mã hoá gì cả). Ngoài ra
+  `GoogleCalendarCredential` (mỗi user một bản ghi OAuth mã hóa kèm `syncToken`; `CalendarSyncState`
+  cũ chỉ còn để tương thích dữ liệu đã triển khai). Ngoài ra
   APScheduler tự quản bảng `apscheduler_jobs`, và khi dùng Postgres, LangGraph tự quản các bảng
   `checkpoints`/`checkpoint_blobs`/`checkpoint_writes`/`checkpoint_migrations`.
 
@@ -182,6 +181,22 @@ graph LR
   chỉ cân nhắc nếu sau này cần semantic search xuyên nhiều hội thoại cũ.
 
 ## Data Flow
+
+### Group AI policy and calendar-fact memory (2026-08-10)
+
+Group conversations use `Conversation.ai_enabled + ai_policy_version`, controlled only by a current
+conversation `manager`. When enabled, `AuthorizedMessageView` keeps all current participant turns in
+the selected request window instead of deleting turns per author. Direct conversations continue to
+use the independent `AIPermission.granted` and `contribution_allowed` fields.
+
+Calendar facts have a separate durable retrieval path. `event_extraction_service.py` evaluates a
+small neighbourhood around each signal-bearing new message and reconciles it with existing
+`EventCandidate` rows. Candidates model `create`, `update`, and `cancel`, retain message provenance,
+and require manager confirmation before Google Calendar is mutated. `EventExtractionCursor` supports
+bounded chronological backfill of old messages. This avoids both unbounded prompt context and losing
+an event merely because its source message is months old.
+
+This calendar-fact index is deliberately not described as general conversation STM/LTM.
 
 1. User gửi tin nhắn/thao tác từ Frontend qua REST hoặc WebSocket.
 2. Route xác thực (JWT) và validate input (Pydantic schema trong `src/models/`).
@@ -221,14 +236,14 @@ ngoài `ci.yml` (lint + test trên GitHub Actions). Đây là hạng mục lớn
 - `/api/v1/chat` verify current_user là participant của `conversation_id` trước khi agent xử lý —
   chặn user A mượn nội dung hội thoại của user B qua request tự chế.
 - Rate limiting: **chưa có** trên API endpoints — cân nhắc nếu deploy thật và mở public.
-- Quyền AI đọc hội thoại: bảng `ai_permissions` (`conversation_id`, `user_id`, `granted`) thật ở
-  backend — mỗi participant tự cấp/thu hồi quyền cho AI đọc hội thoại đó, độc lập với các thành
-  viên khác (không cần đồng thuận cả nhóm). `POST /api/v1/chat` (`src/api/routes.py`) gọi
-  `chat_service.assert_ai_permission` ngay sau `assert_participant`, trước khi build context cho
-  agent — 403 nếu chưa cấp quyền hoặc quyền đã bị thu hồi. `GET/PUT /conversations/{id}/ai-permission`
-  (`src/api/chat_routes.py`) cho FE đọc/ghi; `AIPanel.jsx` gọi API thật thay vì state cục bộ, mặc
-  định hiển thị "Permission required" cho tới khi fetch xong. Panel vẫn giữ dòng minh bạch báo
-  người dùng nội dung sẽ được gửi sang Gemini/Groq.
+- Quyền AI có hai lớp độc lập trong `ai_permissions`: `granted` cho phép chính user gọi Assistant
+  trong conversation, còn `contribution_allowed` cho phép xử lý message do user đó gửi. Mọi route
+  AI theo conversation dùng `consent_service.build_authorized_message_view`: backend lấy đúng cửa
+  sổ message rồi loại content của author chưa consent **trước** khi tới planner/tool/LLM. Response
+  trả coverage và included/excluded participants để UI minh bạch. Candidate chưa xác nhận giữ
+  source message IDs + consent snapshot; revoke làm candidate phụ thuộc nguồn thành `invalidated`.
+  HITL resume cũng revalidate snapshot để draft stale không thể thực thi. Chi tiết và invariants:
+  `docs/P0_AI_CONSENT_AND_ACTION_SAFETY.md`.
 - Không có mã hoá đầu-cuối (E2E) thật — quyết định có chủ đích, xem `ROADMAP.md`. Đã rà soát:
   không có nơi nào trong `src/` log/lưu nội dung tin nhắn thô ra ngoài DB của app —
   `usage_service.py` chỉ log số token (không log nội dung prompt), không có `print`/`logger` nào
