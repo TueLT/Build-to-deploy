@@ -104,7 +104,7 @@ cp .env.example .env
 #   http://localhost:5173. Điền Client ID vào GOOGLE_OAUTH_CLIENT_ID ở đây, và giá trị y hệt vào
 #   VITE_GOOGLE_CLIENT_ID trong Frontend/user/.env (bước 3) — không điền thì nút Google bị vô hiệu
 #   động, các tính năng khác không ảnh hưởng.
-# Muốn bật nút "Connect Google Calendar" (mỗi user tự nối Calendar riêng của họ, xem docs/PER_USER_CALENDAR.md):
+# Muốn bật nút "Connect Google Calendar" (mỗi user tự nối Calendar riêng của họ):
 #   1. Bật "Google Calendar API" tại https://console.cloud.google.com — APIs & Services → Library.
 #   2. OAuth consent screen: thêm scope https://www.googleapis.com/auth/calendar, thêm email từng
 #      người sẽ test vào "Test users" (scope nhạy cảm nên app ở chế độ Testing, tối đa 100 test
@@ -246,21 +246,21 @@ Docker Compose hiện chỉ chạy backend tại cổng `8000`; frontend chạy 
 | Test | pytest, pytest-asyncio, httpx |
 | Lint | ruff |
 
-## Tài liệu thiết kế (deliverable "Chốt bài toán + thiết kế")
+## Tài liệu thiết kế Multi-Agent
 
-- [docs/BRIEF.md](docs/BRIEF.md) — 1-page brief: vấn đề, người dùng, giải pháp, phạm vi, chỉ số thành công, rủi ro.
-- [docs/PRD.md](docs/PRD.md) — PRD: user stories + acceptance criteria, yêu cầu phi chức năng, ERD, API surface, luồng agent.
-- [docs/UI_FLOW.md](docs/UI_FLOW.md) — sitemap, luồng người dùng (tóm tắt/trích task, human-in-the-loop, proactive), mô tả từng màn hình.
-- [docs/wireframes.html](docs/wireframes.html) — wireframe các màn hình chính (mở bằng trình duyệt).
-- [docs/AI_LOG.md](docs/AI_LOG.md) — setup & bằng chứng hệ thống ghi log sử dụng AI trong repo.
+- [docs/README.md](docs/README.md) — mục lục và quy tắc single source of truth cho cả team.
+- [docs/BRIEF.md](docs/BRIEF.md) — ý tưởng, giá trị và phạm vi sản phẩm.
+- [docs/PRD.md](docs/PRD.md) — nghiệp vụ, yêu cầu và acceptance criteria.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — kiến trúc, data boundary, router, agent runtime và security.
+- [docs/ENTERPRISE_WORKSPACE_FOUNDATION.md](docs/ENTERPRISE_WORKSPACE_FOUNDATION.md) — Company Root, Workspace, role và membership.
+- [docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md](docs/MULTI_AGENT_IMPLEMENTATION_PLAN.md) — phân công, dependency và release gate.
 
 ## Tài liệu khác
 
 - [CLAUDE.md](CLAUDE.md) — hướng dẫn chi tiết cho AI coding assistant làm việc trong repo này (quy ước code, lệnh chạy đầy đủ).
 - [Frontend/README.md](Frontend/README.md) — hướng dẫn riêng cho frontend (cấu trúc, xử lý lỗi thường gặp khi chạy npm trên Windows).
 - [Frontend/detai.md](Frontend/detai.md) — đề bài / yêu cầu gốc của dự án.
-- [ARCHITECTURE.md](ARCHITECTURE.md) — kiến trúc hệ thống hiện tại và các quyết định công nghệ.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — con trỏ tương thích đến kiến trúc canonical trong `docs/`.
 - [ROADMAP.md](ROADMAP.md) — bảng đối chiếu từng yêu cầu đề bài với trạng thái thật hiện tại + việc còn lại theo độ ưu tiên.
 - [docs/deploy.md](docs/deploy.md) — hướng dẫn deploy production (Render + Supabase + Vercel + CD qua GitHub Actions), từng bước dashboard theo đúng thứ tự + checklist verify end-to-end.
 - [WORKLOG.md](WORKLOG.md) — nhật ký công việc theo ngày của cả nhóm.
-- [docs/guide/](docs/guide/) — tài liệu khóa học AI20K (setup, LangGraph, FastAPI, testing, deploy).

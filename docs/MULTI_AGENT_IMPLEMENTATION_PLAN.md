@@ -8,7 +8,7 @@
 >
 > Nguyên tắc: workspace trước, agent sau; policy bằng code; mọi side effect qua HITL
 
-> Kiến trúc, data boundary, router, trách nhiệm Workspace Agent và luồng policy/HITL được định nghĩa canonical tại `docs/architecture_diagram.md`. Tài liệu này chỉ quản lý phạm vi, dependency, phân công và release gates.
+> Kiến trúc, data boundary, router, trách nhiệm Workspace Agent và luồng policy/HITL được định nghĩa canonical tại `docs/ARCHITECTURE.md`. Tài liệu này chỉ quản lý phạm vi, dependency, phân công và release gates.
 
 > Company Root single-company, quyền Platform Admin, lead, Executive Workspace, membership và lifecycle được định nghĩa tại `docs/ENTERPRISE_WORKSPACE_FOUNDATION.md`. Tài liệu nền móng này được ưu tiên khi phần cũ còn giả định multi-tenant.
 
@@ -42,7 +42,7 @@ Planner cá nhân hiện tại tiếp tục chạy như `Personal Agent compatib
 
 ### 2.1 Giai đoạn 0 — Foundation/Contract Baseline
 
-Tiến độ triển khai, bằng chứng kiểm thử và giá trị áp dụng được theo dõi tại `docs/MULTI_AGENT_PROGRESS.md`.
+Trạng thái current/target được theo dõi tại `docs/ARCHITECTURE.md`; backlog, ownership và release gate được theo dõi trực tiếp trong tài liệu này để tránh hai bảng tiến độ mâu thuẫn.
 
 Đây là tên chính thức của phần nền bắt buộc trước các agent nghiệp vụ. Giai đoạn gồm tuần tự:
 
@@ -51,7 +51,7 @@ Tiến độ triển khai, bằng chứng kiểm thử và giá trị áp dụng
 3. `PR-02 Workspace Scope`: migration, API quản trị Agent Workspace, membership, resource mapping, consent-aware scope và denial tests.
 4. `Router Skeleton`: registry profile/tool allowlist và deterministic router; chưa nối agent nghiệp vụ thật.
 
-Trạng thái dưới đây là trạng thái **working tree cục bộ**; chỉ chuyển thành baseline chung sau review và merge.
+Foundation/contract baseline dưới đây đã có trên nhánh `develop`; từng Agent vẫn phải hoàn thành runtime, tool, brief pipeline, UI và test trước khi được đánh dấu Done.
 
 | Hạng mục | Trạng thái | Việc còn lại |
 |---|---|---|
