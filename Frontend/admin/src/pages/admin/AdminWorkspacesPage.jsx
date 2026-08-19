@@ -5,34 +5,32 @@ import {
   addManagedWorkspaceMember,
   assignManagedWorkspaceLead,
   createManagedWorkspace,
+  getCompany,
   listManagedWorkspaceMembers,
   listManagedWorkspaces,
-  listOrganizationWorkspaces,
   listUsers,
-  provisionOrganizationWorkspace,
   revokeManagedWorkspaceMember,
   updateManagedWorkspace,
 } from '../../api/admin'
 
-const blankOrganization = { name: '', owner_email: '' }
 const blankWorkspace = {
   name: '', key: '', agent_profile: 'product_delivery', lead_email: '',
 }
 const blankMember = { email: '', business_role: 'member' }
 
-const profileLabel = profile => (
-  profile === 'quality_assurance' ? 'Quality Assurance Agent' : 'Product Delivery Agent'
-)
+const profileLabel = profile => ({
+  product_delivery: 'Product Delivery Agent',
+  quality_assurance: 'Quality Assurance Agent',
+  executive: 'Executive Agent',
+}[profile] || profile)
 
 export default function AdminWorkspacesPage() {
   const { token } = useAuth()
-  const [organizations, setOrganizations] = useState([])
+  const [company, setCompany] = useState(null)
   const [users, setUsers] = useState([])
-  const [organizationId, setOrganizationId] = useState('')
   const [workspaces, setWorkspaces] = useState([])
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('')
   const [workspaceMembers, setWorkspaceMembers] = useState([])
-  const [organizationForm, setOrganizationForm] = useState(blankOrganization)
   const [workspaceForm, setWorkspaceForm] = useState(blankWorkspace)
   const [memberForm, setMemberForm] = useState(blankMember)
   const [loading, setLoading] = useState(true)
@@ -44,25 +42,9 @@ export default function AdminWorkspacesPage() {
     [users],
   )
 
-  const refreshOrganizations = async () => {
-    const [organizationItems, userItems] = await Promise.all([
-      listOrganizationWorkspaces(token),
-      listUsers(token),
-    ])
-    setOrganizations(organizationItems)
-    setUsers(userItems)
-    setOrganizationId(current => (
-      organizationItems.some(item => item.id === current) ? current : organizationItems[0]?.id || ''
-    ))
-  }
-
-  const refreshWorkspaces = async () => {
-    if (!organizationId) {
-      setWorkspaces([])
-      setSelectedWorkspaceId('')
-      return
-    }
-    const items = await listManagedWorkspaces(token, organizationId)
+  const refreshWorkspaces = async companyId => {
+    if (!companyId) return
+    const items = await listManagedWorkspaces(token, companyId)
     setWorkspaces(items)
     setSelectedWorkspaceId(current => (
       items.some(item => item.id === current) ? current : items[0]?.id || ''
@@ -70,46 +52,37 @@ export default function AdminWorkspacesPage() {
   }
 
   const refreshMembers = async () => {
-    if (!organizationId || !selectedWorkspaceId) {
+    if (!company?.id || !selectedWorkspaceId) {
       setWorkspaceMembers([])
       return
     }
     setWorkspaceMembers(
-      await listManagedWorkspaceMembers(token, organizationId, selectedWorkspaceId),
+      await listManagedWorkspaceMembers(token, company.id, selectedWorkspaceId),
     )
   }
 
   useEffect(() => {
     setLoading(true)
-    refreshOrganizations()
+    Promise.all([getCompany(token), listUsers(token)])
+      .then(async ([companyItem, userItems]) => {
+        setCompany(companyItem)
+        setUsers(userItems)
+        await refreshWorkspaces(companyItem.id)
+      })
       .catch(err => setError(err.detail || 'Could not load workspace administration.'))
       .finally(() => setLoading(false))
   }, [token])
 
   useEffect(() => {
-    refreshWorkspaces().catch(err => setError(err.detail || 'Could not load workspaces.'))
-  }, [token, organizationId])
-
-  useEffect(() => {
     refreshMembers().catch(err => setError(err.detail || 'Could not load workspace members.'))
-  }, [token, organizationId, selectedWorkspaceId])
-
-  const provisionOrganization = async event => {
-    event.preventDefault(); setSaving(true); setError('')
-    try {
-      await provisionOrganizationWorkspace(token, organizationForm)
-      setOrganizationForm(blankOrganization)
-      await refreshOrganizations()
-    } catch (err) { setError(err.detail || 'Could not provision organization.') }
-    finally { setSaving(false) }
-  }
+  }, [token, company?.id, selectedWorkspaceId])
 
   const createWorkspace = async event => {
     event.preventDefault(); setSaving(true); setError('')
     try {
-      await createManagedWorkspace(token, organizationId, workspaceForm)
+      await createManagedWorkspace(token, company.id, workspaceForm)
       setWorkspaceForm(blankWorkspace)
-      await Promise.all([refreshWorkspaces(), refreshOrganizations()])
+      await refreshWorkspaces(company.id)
     } catch (err) { setError(err.detail || 'Could not create workspace.') }
     finally { setSaving(false) }
   }
@@ -117,18 +90,18 @@ export default function AdminWorkspacesPage() {
   const changeLead = async (workspace, email) => {
     setError('')
     try {
-      await assignManagedWorkspaceLead(token, organizationId, workspace.id, email)
-      await Promise.all([refreshWorkspaces(), refreshMembers()])
+      await assignManagedWorkspaceLead(token, company.id, workspace.id, email)
+      await Promise.all([refreshWorkspaces(company.id), refreshMembers()])
     } catch (err) { setError(err.detail || 'Could not assign workspace lead.') }
   }
 
   const toggleStatus = async workspace => {
     setError('')
     try {
-      await updateManagedWorkspace(token, organizationId, workspace.id, {
+      await updateManagedWorkspace(token, company.id, workspace.id, {
         status: workspace.status === 'active' ? 'suspended' : 'active',
       })
-      await refreshWorkspaces()
+      await refreshWorkspaces(company.id)
     } catch (err) { setError(err.detail || 'Could not update workspace status.') }
   }
 
@@ -136,7 +109,7 @@ export default function AdminWorkspacesPage() {
     event.preventDefault(); setSaving(true); setError('')
     try {
       await addManagedWorkspaceMember(
-        token, organizationId, selectedWorkspaceId, memberForm,
+        token, company.id, selectedWorkspaceId, memberForm,
       )
       setMemberForm(blankMember)
       await refreshMembers()
@@ -148,7 +121,7 @@ export default function AdminWorkspacesPage() {
     setError('')
     try {
       await revokeManagedWorkspaceMember(
-        token, organizationId, selectedWorkspaceId, member.id,
+        token, company.id, selectedWorkspaceId, member.id,
       )
       await refreshMembers()
     } catch (err) { setError(err.detail || 'Could not revoke workspace member.') }
@@ -157,43 +130,29 @@ export default function AdminWorkspacesPage() {
   return <div className="admin-page">
     <AdminPageHeader
       title="Workspace administration"
-      description="Create company workspaces, attach the supporting agent, appoint a lead and assign members."
+      description={`Create and govern workspaces inside ${company?.name || 'the company'}.`}
     />
     {error && <div className="admin-warning-banner"><i className="bi bi-exclamation-triangle" /><div><strong>Workspace action failed</strong><span>{error}</span></div></div>}
 
     <section className="admin-card admin-workspace-create">
-      <div className="admin-section-heading"><span><i className="bi bi-buildings" /></span><div><strong>1. Provision an organization</strong><small>The organization is the company security boundary. Its owner is the initial business sponsor.</small></div></div>
-      <form onSubmit={provisionOrganization} className="admin-workspace-form admin-organization-form">
-        <label>Organization name<input required value={organizationForm.name} onChange={event => setOrganizationForm(value => ({ ...value, name: event.target.value }))} placeholder="Orbit Demo Company" /></label>
-        <label>Initial owner<select required value={organizationForm.owner_email} onChange={event => setOrganizationForm(value => ({ ...value, owner_email: event.target.value }))}><option value="">Select owner</option>{businessUsers.map(user => <option key={user.id} value={user.email}>{user.display_name} — {user.email}</option>)}</select></label>
-        <button className="admin-primary-button" disabled={saving}><i className="bi bi-plus-lg" />{saving ? 'Saving…' : 'Provision organization'}</button>
-      </form>
-    </section>
-
-    <section className="admin-card admin-workspace-create">
-      <div className="admin-section-heading"><span><i className="bi bi-diagram-3" /></span><div><strong>2. Create a workspace and attach its agent</strong><small>Admin appoints the workspace lead. The selected user is enrolled in the organization if needed.</small></div></div>
-      <div className="admin-workspace-form">
-        <label>Organization<select value={organizationId} onChange={event => setOrganizationId(event.target.value)}><option value="">Select organization</option>{organizations.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      </div>
-      {organizationId && <form onSubmit={createWorkspace} className="admin-workspace-form">
+      <div className="admin-section-heading"><span><i className="bi bi-diagram-3" /></span><div><strong>Create a workspace and attach its agent</strong><small>Choose a department agent or create an Executive Workspace for a director. Admin appoints the workspace lead.</small></div></div>
+      {company && <form onSubmit={createWorkspace} className="admin-workspace-form">
         <label>Workspace name<input required value={workspaceForm.name} onChange={event => setWorkspaceForm(value => ({ ...value, name: event.target.value }))} placeholder="Product Delivery" /></label>
         <label>Workspace key<input required value={workspaceForm.key} onChange={event => setWorkspaceForm(value => ({ ...value, key: event.target.value }))} placeholder="product-delivery" /></label>
-        <label>Supporting agent<select value={workspaceForm.agent_profile} onChange={event => setWorkspaceForm(value => ({ ...value, agent_profile: event.target.value }))}><option value="product_delivery">Product Delivery Agent</option><option value="quality_assurance">Quality Assurance Agent</option></select></label>
-        <label>Workspace lead<select required value={workspaceForm.lead_email} onChange={event => setWorkspaceForm(value => ({ ...value, lead_email: event.target.value }))}><option value="">Select lead</option>{businessUsers.map(user => <option key={user.id} value={user.email}>{user.display_name} — {user.email}</option>)}</select></label>
+        <label>Supporting agent<select value={workspaceForm.agent_profile} onChange={event => setWorkspaceForm(value => ({ ...value, agent_profile: event.target.value }))}><option value="product_delivery">Product Delivery Agent</option><option value="quality_assurance">Quality Assurance Agent</option><option value="executive">Executive Agent</option></select></label>
+        <label>{workspaceForm.agent_profile === 'executive' ? 'Director' : 'Workspace lead'}<select required value={workspaceForm.lead_email} onChange={event => setWorkspaceForm(value => ({ ...value, lead_email: event.target.value }))}><option value="">Select person</option>{businessUsers.map(user => <option key={user.id} value={user.email}>{user.display_name} — {user.email}</option>)}</select></label>
         <button className="admin-primary-button" disabled={saving}><i className="bi bi-plus-lg" />{saving ? 'Creating…' : 'Create workspace'}</button>
       </form>}
     </section>
 
     <section className="admin-card admin-table-card">
-      <div className="admin-table-toolbar"><div><strong>Workspaces in selected organization</strong><small>{workspaces.length} configured workspaces</small></div></div>
-      <div className="admin-table-scroll"><table className="admin-table admin-workspace-table"><thead><tr><th>Workspace</th><th>Supporting agent</th><th>Lead</th><th>Status</th><th>Action</th></tr></thead><tbody>{workspaces.map(item => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.key}</small></td><td>{profileLabel(item.agent_profile)}</td><td><select value={item.lead_email || ''} onChange={event => changeLead(item, event.target.value)}>{businessUsers.map(user => <option key={user.id} value={user.email}>{user.display_name}</option>)}</select><small>{item.lead_email}</small></td><td><StatusBadge value={item.status} /></td><td><button className="admin-secondary-button" onClick={() => toggleStatus(item)}>{item.status === 'active' ? 'Suspend' : 'Activate'}</button></td></tr>)}</tbody></table>{loading && <div className="admin-empty"><span className="spinner-border spinner-border-sm" /><strong>Loading workspaces…</strong></div>}{!loading && organizationId && !workspaces.length && <EmptyState text="No workspaces created for this organization" />}</div>
+      <div className="admin-table-toolbar"><div><strong>Company workspaces</strong><small>{workspaces.length} configured workspaces</small></div></div>
+      <div className="admin-table-scroll"><table className="admin-table admin-workspace-table"><thead><tr><th>Workspace</th><th>Supporting agent</th><th>Lead / Director</th><th>Status</th><th>Action</th></tr></thead><tbody>{workspaces.map(item => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.key}</small></td><td>{profileLabel(item.agent_profile)}</td><td><select value={item.lead_email || ''} onChange={event => changeLead(item, event.target.value)}>{businessUsers.map(user => <option key={user.id} value={user.email}>{user.display_name}</option>)}</select><small>{item.lead_email}</small></td><td><StatusBadge value={item.status} /></td><td><button className="admin-secondary-button" onClick={() => toggleStatus(item)}>{item.status === 'active' ? 'Suspend' : 'Activate'}</button></td></tr>)}</tbody></table>{loading && <div className="admin-empty"><span className="spinner-border spinner-border-sm" /><strong>Loading workspaces…</strong></div>}{!loading && !workspaces.length && <EmptyState text="No company workspaces created" />}</div>
     </section>
 
     {workspaces.length > 0 && <section className="admin-card admin-workspace-create">
-      <div className="admin-section-heading"><span><i className="bi bi-people" /></span><div><strong>3. Assign workspace members</strong><small>Members receive access only to the selected workspace and its supporting agent.</small></div></div>
-      <div className="admin-workspace-form">
-        <label>Workspace<select value={selectedWorkspaceId} onChange={event => setSelectedWorkspaceId(event.target.value)}>{workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      </div>
+      <div className="admin-section-heading"><span><i className="bi bi-people" /></span><div><strong>Assign workspace members</strong><small>Department members use their local agent. Executive Workspace members receive aggregate access through the Executive Agent.</small></div></div>
+      <div className="admin-workspace-form"><label>Workspace<select value={selectedWorkspaceId} onChange={event => setSelectedWorkspaceId(event.target.value)}>{workspaces.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
       <form onSubmit={addMember} className="admin-workspace-form">
         <label>User<select required value={memberForm.email} onChange={event => setMemberForm(value => ({ ...value, email: event.target.value }))}><option value="">Select user</option>{businessUsers.map(user => <option key={user.id} value={user.email}>{user.display_name} — {user.email}</option>)}</select></label>
         <label>Workspace role<select value={memberForm.business_role} onChange={event => setMemberForm(value => ({ ...value, business_role: event.target.value }))}><option value="member">Member</option><option value="executive_viewer">Executive viewer</option></select></label>

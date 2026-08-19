@@ -17,12 +17,26 @@ from src.agents.policies.scope_resolver import resolve_agent_scope
 from src.config import Settings
 from src.db.models import AgentWorkspaceMembership, User, WorkspaceMembership
 from src.services.agent_workspace_service import add_agent_workspace_member, create_agent_workspace
+from src.services.company_service import get_or_create_company_workspace
+from src.services.workspace_service import add_workspace_member
 
 
 async def _seed_agent_workspaces(client, auth_headers):
-    organization = (
-        await client.post("/api/v1/workspaces", json={"name": "Orbit Demo Company"}, headers=auth_headers)
-    ).json()
+    owner = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
+    async with db_session.async_session_maker() as db:
+        company = await get_or_create_company_workspace(db)
+        existing = (
+            await db.execute(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == company.id,
+                    WorkspaceMembership.user_id == owner["id"],
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            await add_workspace_member(db, company.id, owner["id"], "owner", owner["id"])
+        await db.commit()
+        organization = {"id": company.id}
     for email, name in [
         ("delivery@example.com", "Delivery Lead"),
         ("quality@example.com", "Quality Lead"),
@@ -69,17 +83,24 @@ async def _seed_agent_workspaces(client, auth_headers):
             "Quality Assurance",
             AgentProfile.QUALITY_ASSURANCE,
         )
+        executive = await create_agent_workspace(
+            db,
+            organization["id"],
+            "executive",
+            "Executive",
+            AgentProfile.EXECUTIVE,
+        )
         delivery_membership = await add_agent_workspace_member(
             db, delivery.id, users["delivery@example.com"].id, "lead"
         )
         await add_agent_workspace_member(db, quality.id, users["quality@example.com"].id, "lead")
-        await add_agent_workspace_member(db, delivery.id, users["executive@example.com"].id, "executive_viewer")
-        await add_agent_workspace_member(db, quality.id, users["executive@example.com"].id, "executive_viewer")
+        await add_agent_workspace_member(db, executive.id, users["executive@example.com"].id, "lead")
         await db.commit()
         return {
             "organization_id": organization["id"],
             "delivery_id": delivery.id,
             "quality_id": quality.id,
+            "executive_id": executive.id,
             "delivery_user_id": users["delivery@example.com"].id,
             "quality_user_id": users["quality@example.com"].id,
             "executive_user_id": users["executive@example.com"].id,
@@ -295,14 +316,14 @@ async def test_workspace_configuration_api_is_platform_admin_only(
     assert {item["agent_profile"] for item in response.json()} == {
         "product_delivery",
         "quality_assurance",
+        "executive",
     }
     summaries = await client.get("/api/v1/admin/workspaces", headers=admin_auth_headers)
     assert summaries.status_code == 200
     organization_summary = next(
         item for item in summaries.json() if item["id"] == seed["organization_id"]
     )
-    assert organization_summary["agent_workspace_count"] == 2
-    assert organization_summary["owner_email"] == "alice@example.com"
+    assert organization_summary["agent_workspace_count"] == 3
 
     created = await client.post(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",

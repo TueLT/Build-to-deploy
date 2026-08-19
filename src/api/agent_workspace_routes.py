@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user
@@ -30,6 +30,7 @@ from src.services.agent_workspace_service import (
 )
 from src.services.audit_service import record_audit_event
 from src.services.authorization_service import require_platform_admin
+from src.services.company_service import get_or_create_company_workspace
 from src.services.workspace_service import ensure_workspace_member_by_email
 
 router = APIRouter()
@@ -41,6 +42,10 @@ async def _require_agent_workspace_admin(
     workspace_id: str,
 ) -> None:
     require_platform_admin(current_user)
+    company = await get_or_create_company_workspace(db)
+    if workspace_id != company.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company workspace not found")
+    await db.commit()
 
 
 async def _agent_workspace_out(db: AsyncSession, agent_workspace) -> AgentWorkspaceOut:

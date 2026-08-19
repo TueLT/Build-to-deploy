@@ -23,10 +23,7 @@ export const listAuditLog = (
 export const listUsers = (token, q) =>
   apiFetch(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`, { token })
 
-export const listOrganizationWorkspaces = token => apiFetch('/admin/workspaces', { token })
-
-export const provisionOrganizationWorkspace = (token, body) =>
-  apiFetch('/admin/workspaces', { method: 'POST', token, body })
+export const getCompany = token => apiFetch('/admin/company', { token })
 
 export const listManagedWorkspaces = (token, organizationId) =>
   apiFetch(`/workspaces/${organizationId}/agent-workspaces`, { token })

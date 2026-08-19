@@ -114,7 +114,7 @@ class AgentWorkspace(Base):
             name="uq_agent_workspace_organization_key",
         ),
         CheckConstraint(
-            "agent_profile IN ('product_delivery', 'quality_assurance')",
+            "agent_profile IN ('product_delivery', 'quality_assurance', 'executive')",
             name="ck_agent_workspace_profile",
         ),
         CheckConstraint(

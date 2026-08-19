@@ -66,41 +66,35 @@ async def test_admin_can_list_users(client, admin_auth_headers, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_platform_admin_provisions_organization_without_joining_it(
+async def test_single_company_is_fixed_and_platform_admin_does_not_join_it(
     client, admin_auth_headers, auth_headers
 ):
-    response = await client.post(
+    response = await client.get("/api/v1/admin/company", headers=admin_auth_headers)
+    assert response.status_code == 200
+    company = response.json()
+    assert company["slug"] == "company-root"
+
+    same_company = await client.get("/api/v1/admin/company", headers=admin_auth_headers)
+    assert same_company.json()["id"] == company["id"]
+
+    cannot_create_another_company = await client.post(
         "/api/v1/admin/workspaces",
         json={"name": "Provisioned Company", "owner_email": "alice@example.com"},
         headers=admin_auth_headers,
     )
-    assert response.status_code == 201
-    workspace = response.json()
-    assert workspace["owner_email"] == "alice@example.com"
-    assert workspace["agent_workspace_count"] == 0
-
-    owner_workspaces = await client.get("/api/v1/workspaces", headers=auth_headers)
-    organization = next(item for item in owner_workspaces.json() if item["id"] == workspace["id"])
-    assert organization["current_user_role"] == "owner"
+    assert cannot_create_another_company.status_code == 409
 
     async with db_session.async_session_maker() as db:
         admin = (await db.execute(select(User).where(User.email == "admin@example.com"))).scalar_one()
         admin_membership = (
             await db.execute(
                 select(WorkspaceMembership).where(
-                    WorkspaceMembership.workspace_id == workspace["id"],
+                    WorkspaceMembership.workspace_id == company["id"],
                     WorkspaceMembership.user_id == admin.id,
                 )
             )
         ).scalar_one_or_none()
     assert admin_membership is None
-
-    cannot_assign_platform_admin_as_owner = await client.post(
-        "/api/v1/admin/workspaces",
-        json={"name": "Invalid Dual Role", "owner_email": "admin@example.com"},
-        headers=admin_auth_headers,
-    )
-    assert cannot_assign_platform_admin_as_owner.status_code == 409
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,11 @@ from src.agents.contracts import AgentProfile
 class AgentWorkspaceCreate(BaseModel):
     key: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=120)
-    agent_profile: Literal[AgentProfile.PRODUCT_DELIVERY, AgentProfile.QUALITY_ASSURANCE]
+    agent_profile: Literal[
+        AgentProfile.PRODUCT_DELIVERY,
+        AgentProfile.QUALITY_ASSURANCE,
+        AgentProfile.EXECUTIVE,
+    ]
     lead_email: EmailStr
 
     @field_validator("key", "name")
@@ -28,7 +32,7 @@ class AgentWorkspaceOut(BaseModel):
     organization_workspace_id: str
     key: str
     name: str
-    agent_profile: Literal["product_delivery", "quality_assurance"]
+    agent_profile: Literal["product_delivery", "quality_assurance", "executive"]
     status: Literal["active", "suspended", "archived"]
     created_at: datetime
     updated_at: datetime

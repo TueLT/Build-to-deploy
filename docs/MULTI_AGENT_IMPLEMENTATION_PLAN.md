@@ -10,11 +10,11 @@
 
 > Kiến trúc, data boundary, router, trách nhiệm Workspace Agent và luồng policy/HITL được định nghĩa canonical tại `docs/architecture_diagram.md`. Tài liệu này chỉ quản lý phạm vi, dependency, phân công và release gates.
 
-> Provisioning, vai trò Platform/Organization Admin, lead, membership approval và lifecycle workspace được định nghĩa tại `docs/ENTERPRISE_WORKSPACE_FOUNDATION.md`. Tài liệu nền móng này được ưu tiên khi tài liệu cũ dùng từ “admin” chưa rõ scope.
+> Company Root single-company, quyền Platform Admin, lead, Executive Workspace, membership và lifecycle được định nghĩa tại `docs/ENTERPRISE_WORKSPACE_FOUNDATION.md`. Tài liệu nền móng này được ưu tiên khi phần cũ còn giả định multi-tenant.
 
 ## 1. Tóm tắt quyết định
 
-Nhóm xây một `Organization Workspace` đại diện cho công ty, bên trong có hai `Agent Workspace` nghiệp vụ:
+Ứng dụng đại diện cho một công ty với `Company Root` nội bộ cố định, bên trong có các Workspace nghiệp vụ và một Executive Workspace:
 
 ```text
 Orbit Demo Company
@@ -62,7 +62,7 @@ Trạng thái dưới đây là trạng thái **working tree cục bộ**; chỉ
 | Product Delivery Agent | Chưa triển khai | Owner B thực hiện vertical slice |
 | Quality Assurance Agent | Chưa triển khai | Owner C thực hiện vertical slice |
 | Executive Agent | Chưa triển khai | Owner D thực hiện trên WorkspaceBrief mock trước |
-| Platform Admin UI | Hoàn thành baseline | Provision Organization; tạo Workspace, gắn agent, chọn lead/member và suspend/activate |
+| Platform Admin UI | Hoàn thành baseline | Tạo Workspace trong company cố định; gắn agent, chọn lead/member và suspend/activate |
 | User Workspace UI | Hoàn thành baseline read-only | Chỉ hiển thị Workspace được Admin phân công |
 | User UI nghiệp vụ theo Agent Workspace | Chưa triển khai | Mỗi agent owner làm UI của slice mình; A giữ shared shell |
 
@@ -80,8 +80,8 @@ PR-00 và contract/scope/router baseline đã pass test cục bộ; vẫn phải
 | Khái niệm | Ý nghĩa | Ví dụ |
 |---|---|---|
 | Personal Workspace | Dữ liệu cá nhân của một người | Lịch, reminder, memory cá nhân |
-| Organization Workspace | Biên tenant/bảo mật của công ty | Orbit Demo Company |
-| Workspace (`AgentWorkspace` trong schema) | Vùng nghiệp vụ do Admin tạo, có một supporting agent | Product Delivery, Quality Assurance |
+| Company Root | Biên dữ liệu nội bộ duy nhất của công ty; user không tạo/chọn | `company-root` |
+| Workspace (`AgentWorkspace` trong schema) | Vùng nghiệp vụ do Admin tạo, có một supporting agent | Product Delivery, Quality Assurance, Executive |
 | Agent Profile | Cấu hình prompt, tool, scope và output | `product_delivery`, `quality_assurance`, `executive` |
 | WorkspaceBrief | Kết quả có cấu trúc của specialist agent | Delivery Brief, Quality Brief |
 
@@ -155,10 +155,10 @@ Không thành viên nào tự tạo phiên bản contract riêng trong agent mì
 
 ### 5.1 Admin và business entitlement
 
-- `platform_admin` provision Organization, tạo Workspace, gắn agent profile, bổ nhiệm lead và phân member; không tự nhận business membership.
-- Organization owner/lead không tạo hoặc cấu hình Workspace trong baseline quản trị tập trung.
+- `platform_admin` tạo Workspace trong Company Root cố định, gắn agent profile, bổ nhiệm lead và phân member; không tự nhận business membership.
+- Ứng dụng không có workflow tạo/chuyển công ty; owner/lead không tạo hoặc cấu hình Workspace.
 - Mỗi Agent Workspace active có đúng một active `lead`; đổi lead sẽ hạ lead cũ thành `member`.
-- Chọn lead/member trong Admin control plane là quyết định explicit-enroll Organization Membership nếu cần.
+- Chọn lead/member trong Admin control plane là quyết định explicit-enroll Company Membership nếu cần.
 - Admin không tự động có quyền đọc dữ liệu nghiệp vụ.
 - Người dùng agent phải có active membership trong đúng Agent Workspace.
 - Executive cần entitlement aggregate riêng.
@@ -240,7 +240,7 @@ flowchart LR
 - Query phải chứa organization và Agent Workspace predicate, không lọc sau khi đã lấy toàn bộ dữ liệu.
 - Chỉ trả field tối thiểu cần cho intent; pagination/time window có giới hạn.
 - Source ID phải đến từ kết quả retrieval được phép, model không được tự tạo ID.
-- Cache/memory key chứa actor, workspace, purpose và consent hash; không dùng cache chung xuyên tenant.
+- Cache/memory key chứa actor, workspace, purpose và consent hash; không dùng cache chung xuyên Workspace.
 
 #### G3 — Agent runtime
 
@@ -1048,7 +1048,7 @@ Task chỉ bắt đầu khi có:
 
 ### 18.3 Done cho dự án
 
-- Một Organization Workspace chứa hai Agent Workspace cô lập.
+- Company Root chứa các Department Workspace cô lập và một Executive Workspace chỉ đọc validated aggregate.
 - Shared core chạy Delivery, Quality và Executive profiles.
 - Delivery/Quality chỉ đọc resource đúng workspace.
 - Executive chỉ đọc validated briefs mặc định.

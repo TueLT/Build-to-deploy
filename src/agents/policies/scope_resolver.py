@@ -100,20 +100,38 @@ async def resolve_agent_scope(
     if agent_profile == AgentProfile.EXECUTIVE:
         if requested_scope != RequestedScope.AGGREGATE or target_agent_workspace_id is not None:
             return _denied(PolicyReason.INVALID_SCOPE)
+        executive_membership = (
+            await db.execute(
+                select(AgentWorkspaceMembership.id)
+                .join(
+                    AgentWorkspace,
+                    AgentWorkspace.id == AgentWorkspaceMembership.agent_workspace_id,
+                )
+                .where(
+                    AgentWorkspace.organization_workspace_id == organization_workspace_id,
+                    AgentWorkspace.agent_profile == AgentProfile.EXECUTIVE.value,
+                    AgentWorkspace.status == "active",
+                    AgentWorkspaceMembership.user_id == user_id,
+                    AgentWorkspaceMembership.business_role.in_(("lead", "member", "executive_viewer")),
+                    AgentWorkspaceMembership.status == "active",
+                )
+            )
+        ).scalar_one_or_none()
+        if executive_membership is None:
+            return _denied(PolicyReason.NOT_MEMBER)
         allowed_ids = tuple(
             (
                 await db.execute(
                     select(AgentWorkspace.id)
-                    .join(
-                        AgentWorkspaceMembership,
-                        AgentWorkspaceMembership.agent_workspace_id == AgentWorkspace.id,
-                    )
                     .where(
                         AgentWorkspace.organization_workspace_id == organization_workspace_id,
                         AgentWorkspace.status == "active",
-                        AgentWorkspaceMembership.user_id == user_id,
-                        AgentWorkspaceMembership.business_role == "executive_viewer",
-                        AgentWorkspaceMembership.status == "active",
+                        AgentWorkspace.agent_profile.in_(
+                            (
+                                AgentProfile.PRODUCT_DELIVERY.value,
+                                AgentProfile.QUALITY_ASSURANCE.value,
+                            )
+                        ),
                     )
                     .order_by(AgentWorkspace.key.asc())
                 )
@@ -121,8 +139,6 @@ async def resolve_agent_scope(
             .scalars()
             .all()
         )
-        if not allowed_ids:
-            return _denied(PolicyReason.NOT_MEMBER)
         return ResolvedAgentScope(
             decision=PolicyDecision.ALLOW,
             reason=PolicyReason.ALLOWED,

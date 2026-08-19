@@ -16,9 +16,10 @@ from src.db.models import (
     WorkspaceMembership,
 )
 
-SPECIALIST_PROFILES = {
+WORKSPACE_AGENT_PROFILES = {
     AgentProfile.PRODUCT_DELIVERY,
     AgentProfile.QUALITY_ASSURANCE,
+    AgentProfile.EXECUTIVE,
 }
 AGENT_WORKSPACE_ROLES = {"member", "lead", "executive_viewer"}
 PROFILE_CLASSIFICATION = {
@@ -131,10 +132,10 @@ async def create_agent_workspace(
             status_code=status.HTTP_409_CONFLICT,
             detail="Agent workspaces require an organization workspace",
         )
-    if agent_profile not in SPECIALIST_PROFILES:
+    if agent_profile not in WORKSPACE_AGENT_PROFILES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Agent workspace requires a specialist profile",
+            detail="Workspace requires a supported agent profile",
         )
     normalized_key = key.strip().lower().replace(" ", "-")
     normalized_name = name.strip()
@@ -335,7 +336,12 @@ async def link_agent_workspace_conversation(
     linked_by_user_id: str,
 ) -> AgentWorkspaceConversation:
     agent_workspace = await require_agent_workspace(db, organization_workspace_id, agent_workspace_id)
-    expected_classification = PROFILE_CLASSIFICATION[AgentProfile(agent_workspace.agent_profile)]
+    expected_classification = PROFILE_CLASSIFICATION.get(AgentProfile(agent_workspace.agent_profile))
+    if expected_classification is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Executive workspaces consume validated briefs, not raw conversations",
+        )
     if classification != expected_classification:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

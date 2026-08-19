@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import src.db.session as db_session
 from src.agents.graph import close_checkpointer, init_checkpointer
 from src.api.admin_routes import router as admin_router
 from src.api.agent_workspace_routes import router as agent_workspace_router
@@ -25,6 +26,7 @@ from src.config import get_settings
 from src.db.session import init_db
 from src.services import calendar_service, thread_memory_service
 from src.services.ai_config_service import load_saved_ai_configuration
+from src.services.company_service import get_or_create_company_workspace
 from src.services.scheduler import scheduler
 from src.websocket.routes import router as ws_router
 
@@ -40,6 +42,9 @@ async def lifespan(app: FastAPI):
     print(f"Starting {settings.app_name} in {settings.app_env} mode")
     if settings.app_env != "production":
         await init_db()
+    async with db_session.async_session_maker() as db:
+        await get_or_create_company_workspace(db)
+        await db.commit()
     await load_saved_ai_configuration()
     await init_checkpointer()
     await thread_memory_service.cleanup_expired_threads()
