@@ -276,26 +276,26 @@ async def test_context_builder_fails_closed_when_profile_flag_is_disabled(client
 
 
 @pytest.mark.asyncio
-async def test_agent_workspace_configuration_api_is_organization_admin_only(
+async def test_workspace_configuration_api_is_platform_admin_only(
     client, auth_headers, admin_auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
 
-    response = await client.get(
+    denied_owner = await client.get(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",
         headers=auth_headers,
+    )
+    assert denied_owner.status_code == 403
+
+    response = await client.get(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",
+        headers=admin_auth_headers,
     )
     assert response.status_code == 200
     assert {item["agent_profile"] for item in response.json()} == {
         "product_delivery",
         "quality_assurance",
     }
-
-    denied_platform_admin = await client.get(
-        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",
-        headers=admin_auth_headers,
-    )
-    assert denied_platform_admin.status_code == 403
     summaries = await client.get("/api/v1/admin/workspaces", headers=admin_auth_headers)
     assert summaries.status_code == 200
     organization_summary = next(
@@ -312,7 +312,7 @@ async def test_agent_workspace_configuration_api_is_organization_admin_only(
             "agent_profile": "product_delivery",
             "lead_email": "quality@example.com",
         },
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert created.status_code == 201
     assert created.json()["lead_email"] == "quality@example.com"
@@ -320,7 +320,7 @@ async def test_agent_workspace_configuration_api_is_organization_admin_only(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{created.json()['id']}/members",
         json={"email": "delivery@example.com", "business_role": "member"},
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert member.status_code == 201
     assert member.json()["business_role"] == "member"
@@ -344,7 +344,7 @@ async def test_agent_workspace_configuration_api_is_organization_admin_only(
 
 
 @pytest.mark.asyncio
-async def test_organization_admin_assigns_one_lead_from_existing_organization_members(
+async def test_platform_admin_assigns_one_lead_and_explicitly_enrolls_membership(
     client, auth_headers, admin_auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
@@ -358,32 +358,19 @@ async def test_organization_admin_assigns_one_lead_from_existing_organization_me
     )
     assert registered.status_code == 201
 
-    denied_platform_admin = await client.patch(
-        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
-        f"{seed['delivery_id']}/lead",
-        json={"email": "replacement@example.com"},
-        headers=admin_auth_headers,
-    )
-    assert denied_platform_admin.status_code == 403
-    missing_organization_membership = await client.patch(
+    denied_owner = await client.patch(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/lead",
         json={"email": "replacement@example.com"},
         headers=auth_headers,
     )
-    assert missing_organization_membership.status_code == 409
-    added_to_organization = await client.post(
-        f"/api/v1/workspaces/{seed['organization_id']}/members",
-        json={"email": "replacement@example.com", "role": "member"},
-        headers=auth_headers,
-    )
-    assert added_to_organization.status_code == 201
+    assert denied_owner.status_code == 403
 
     changed = await client.patch(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/lead",
         json={"email": "replacement@example.com"},
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert changed.status_code == 200
     assert changed.json()["business_role"] == "lead"
@@ -418,14 +405,14 @@ async def test_organization_admin_assigns_one_lead_from_existing_organization_me
     cannot_revoke_current_lead = await client.delete(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/members/{changed.json()['id']}",
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert cannot_revoke_current_lead.status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
-    client, auth_headers
+    client, auth_headers, admin_auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
     conversation = await client.post(
@@ -445,7 +432,7 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/conversations",
         json={"conversation_id": conversation_id, "classification": "quality"},
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert wrong_classification.status_code == 422
 
@@ -453,7 +440,7 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/conversations",
         json={"conversation_id": conversation_id, "classification": "delivery"},
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert linked.status_code == 201
 
@@ -532,20 +519,20 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
 
 @pytest.mark.asyncio
 async def test_agent_workspace_membership_revoke_api_takes_effect_immediately(
-    client, auth_headers
+    client, auth_headers, admin_auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
     reassigned = await client.patch(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/lead",
         json={"email": "executive@example.com"},
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert reassigned.status_code == 200
     response = await client.delete(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/members/{seed['delivery_membership_id']}",
-        headers=auth_headers,
+        headers=admin_auth_headers,
     )
     assert response.status_code == 204
 

@@ -6,19 +6,34 @@
 
 ## 1. Kết luận nghiệp vụ
 
-Mô hình phù hợp nhất không phải là “một admin làm tất cả”. Hệ thống cần tách ba lớp trách nhiệm:
+### Quyết định sản phẩm được chốt ngày 2026-08-19
 
-1. `platform_admin` vận hành nền tảng và provision tenant, nhưng không quản lý nhân sự hằng ngày và không tự có quyền đọc dữ liệu doanh nghiệp.
-2. `organization_owner`/`organization_admin` quản trị Organization Workspace, phòng ban, thành viên và bổ nhiệm trưởng phòng.
-3. `agent_workspace_lead` điều hành nghiệp vụ trong phòng, nhưng mặc định không tự cấp quyền truy cập cho người khác.
+Trong UI, `Workspace` là phòng/vùng làm việc do Platform Admin tạo và được gắn đúng một
+supporting agent profile. Trong schema hiện tại, đối tượng này được lưu bằng bảng
+`agent_workspaces`; `Organization Workspace` chỉ là container tenant/bảo mật cấp công ty và
+không phải phòng làm việc mà user tự tạo.
+
+```text
+Organization (biên công ty, quản lý ngầm)
+└── Workspace (Admin tạo)
+    ├── primary lead (Admin bổ nhiệm)
+    ├── members (Admin phân công)
+    └── supporting agent profile (Admin gắn)
+```
+
+Hệ thống tách ba lớp trách nhiệm:
+
+1. `platform_admin` provision Organization, tạo Workspace, gắn agent, bổ nhiệm lead và phân member.
+2. `organization_owner` là business sponsor của công ty, nhưng không tạo Workspace trong baseline này.
+3. `agent_workspace_lead` điều hành nghiệp vụ trong Workspace được phân, không tạo Workspace và không tự cấp quyền truy cập.
 
 Quyết định khuyến nghị:
 
 - User không tự tạo Organization Workspace trong chế độ doanh nghiệp.
 - User không tự join Agent Workspace.
-- Organization Owner/Admin là người phê duyệt cuối cùng việc vào phòng và bổ nhiệm lead.
-- Lead được đề xuất hoặc yêu cầu thêm member; chỉ được thêm trực tiếp nếu Organization Owner bật delegation rõ ràng.
-- Platform Admin có thể provision Organization Workspace và gán owner ban đầu, nhưng không tự trở thành owner/member/lead.
+- Platform Admin là người tạo Workspace, gắn supporting agent, phân member và bổ nhiệm lead.
+- Lead không tạo Workspace và không tự thay lead/member trong baseline.
+- Platform Admin không tự trở thành owner/member/lead và không tự có quyền đọc dữ liệu nghiệp vụ.
 - Mỗi Agent Workspace active có đúng một `primary_lead` trong MVP. Có thể bổ sung deputy/acting lead sau này nhưng không thay thế invariant primary lead.
 
 ## 2. Phân biệt ba loại workspace
@@ -26,8 +41,8 @@ Quyết định khuyến nghị:
 | Loại | Ý nghĩa | Ai tạo | Ai quản trị |
 |---|---|---|---|
 | Personal Workspace | Không gian cá nhân được tạo cùng account | System | Chính user |
-| Organization Workspace | Tenant và biên bảo mật của một doanh nghiệp | Platform provisioning hoặc quy trình đăng ký doanh nghiệp được duyệt | Organization Owner/Admin |
-| Agent Workspace | Phòng ban hoặc vùng nghiệp vụ trong một Organization Workspace | Organization Owner/Admin | Organization Owner/Admin; Lead điều hành nghiệp vụ |
+| Organization Workspace | Tenant và biên bảo mật ngầm của một doanh nghiệp | Platform Admin | Platform Admin quản lý metadata; Owner là business sponsor |
+| Agent Workspace (`Workspace` trên UI) | Phòng/vùng làm việc có một supporting agent | Platform Admin | Platform Admin cấu hình; Lead điều hành nghiệp vụ |
 
 Không dùng Agent Workspace thay cho tenant. Mọi Agent Workspace bắt buộc thuộc đúng một Organization Workspace.
 
@@ -39,13 +54,14 @@ Không dùng Agent Workspace thay cho tenant. Mọi Agent Workspace bắt buộc
 
 - Provision, suspend hoặc phục hồi Organization Workspace.
 - Gán owner đầu tiên khi provision tenant.
+- Tạo/suspend Workspace nghiệp vụ, gắn agent profile, phân member và bổ nhiệm/thay lead.
 - Xem metadata, health, quota và audit vận hành.
 - Thực hiện owner recovery qua quy trình có audit.
 - Yêu cầu support grant có thời hạn khi cần hỗ trợ.
 
 Không được mặc định:
 
-- Tự thêm mình hoặc người khác vào business membership hằng ngày.
+- Tự thêm chính mình vào business membership.
 - Tự đọc chat, task, memory, calendar hoặc dữ liệu nghiệp vụ.
 - Tự cấp support grant cho mình.
 - Đóng vai Delivery/Quality Lead chỉ vì có quyền platform admin.
@@ -54,9 +70,7 @@ Không được mặc định:
 
 - Chịu trách nhiệm cao nhất với tenant.
 - Bổ nhiệm/hạ quyền Organization Admin.
-- Tạo, đổi trạng thái và archive Agent Workspace.
-- Bổ nhiệm hoặc thay primary lead.
-- Phê duyệt member/guest và chính sách delegation.
+- Theo dõi Workspace ở góc độ business sponsor và yêu cầu thay đổi qua Admin.
 - Quản lý retention, policy và audit cấp doanh nghiệp.
 - Không được đọc private resource nếu không có business entitlement/resource membership phù hợp.
 
@@ -64,11 +78,8 @@ Organization Workspace luôn phải có ít nhất một active owner.
 
 ### 3.3 Organization Admin
 
-- Quản lý member hằng ngày.
-- Tạo Agent Workspace khi policy cho phép.
-- Phê duyệt member vào Agent Workspace.
-- Bổ nhiệm/thay lead nếu owner đã cho phép bằng policy.
-- Suspend/revoke membership và xử lý yêu cầu truy cập.
+- Không tạo Workspace, bổ nhiệm lead hoặc cấp membership trong baseline quản trị tập trung.
+- Có thể gửi yêu cầu thay đổi cho Platform Admin ở phase workflow sau.
 - Không được thay owner, xóa tenant hoặc thay chính sách nhạy cảm nếu không có quyền riêng.
 
 ### 3.4 Agent Workspace Lead
@@ -76,8 +87,7 @@ Organization Workspace luôn phải có ít nhất một active owner.
 - Chịu trách nhiệm nghiệp vụ của phòng.
 - Xem và sử dụng agent trong đúng workspace được phân.
 - Quản lý task/process nghiệp vụ nếu resource policy cho phép.
-- Đề xuất thêm hoặc loại member.
-- Có thể quản lý membership trực tiếp chỉ khi có delegated capability.
+- Có thể đề xuất thay đổi member cho Admin ở phase workflow sau.
 
 Lead không được:
 
@@ -101,18 +111,17 @@ Lead không được:
 
 ## 4. Ai được cho member vào Agent Workspace?
 
-### 4.1 Chính sách mặc định khuyến nghị: Admin-approved
+### 4.1 Chính sách baseline: Platform Admin phân công
 
 Đây là lựa chọn phù hợp nhất cho nền móng hiện tại:
 
-1. User phải là active Organization Member trước.
-2. Lead chọn người từ directory nội bộ và gửi `membership_request`.
-3. Organization Owner/Admin duyệt hoặc từ chối.
-4. Khi duyệt, backend tạo/activate Agent Workspace Membership trong một transaction.
-5. User nhận thông báo và membership có hiệu lực.
-6. Hệ thống ghi đầy đủ requester, approver, role, reason và timestamp vào audit.
+1. Platform Admin chọn một active account đã đăng ký.
+2. Backend tạo/reactivate Organization Membership nếu cần như một phần của quyết định Admin.
+3. Backend tạo/activate Workspace Membership trong cùng transaction nghiệp vụ.
+4. User nhận quyền ở request kế tiếp.
+5. Hệ thống ghi actor, workspace, user, role và timestamp vào audit.
 
-Lead không phải người phê duyệt cuối vì lead là bên hưởng lợi từ việc mở rộng quyền của phòng. Tách requester và approver giúp giảm cấp quyền nhầm và phù hợp separation of duty.
+Lead không phải người phê duyệt vì lead là bên hưởng lợi từ việc mở rộng quyền của phòng. Admin giữ control plane, còn lead chỉ vận hành business plane.
 
 ### 4.2 Delegated mode cho doanh nghiệp nhỏ
 
@@ -223,11 +232,11 @@ Thiếu bất kỳ điều kiện nào thì `DENY` hoặc `MASK`; không gọi r
 |---|---:|---:|---:|---:|---:|
 | Provision Organization Workspace | Có | Không | Không | Không | Không |
 | Gán owner đầu tiên | Có, lúc provision/recovery | Không áp dụng | Không | Không | Không |
-| Tạo Agent Workspace | Không mặc định | Có | Có theo policy | Không | Không |
-| Bổ nhiệm/thay primary lead | Không mặc định | Có | Có theo policy | Không | Không |
-| Duyệt Agent Workspace member | Không mặc định | Có | Có | Chỉ khi delegated | Không |
+| Tạo Workspace và gắn agent | Có | Không | Không | Không | Không |
+| Bổ nhiệm/thay primary lead | Có | Không | Không | Không | Không |
+| Phân Workspace member | Có | Không | Không | Không | Không |
 | Đề xuất member | Không | Có | Có | Có | Có thể gửi self-request |
-| Suspend/revoke member | Không mặc định | Có | Có | Chỉ khi delegated | Không |
+| Suspend/revoke Workspace member | Có | Không | Không | Không | Không |
 | Đọc raw business data | Không | Chỉ khi có entitlement | Chỉ khi có entitlement | Trong scope | Trong scope |
 | Đọc Executive aggregate | Không | Khi có executive entitlement | Khi có executive entitlement | Không mặc định | Không |
 
@@ -244,32 +253,31 @@ Thiếu bất kỳ điều kiện nào thì `DENY` hoặc `MASK`; không gọi r
 5. Chuyển workspace sang `active`.
 6. Ghi audit; Platform Admin không được thêm làm membership.
 
-### 9.2 Tạo phòng ban
+### 9.2 Tạo Workspace và gắn agent
 
-1. Organization Owner/Admin tạo Agent Workspace ở `draft`.
-2. Chọn profile Delivery hoặc Quality.
-3. Chọn primary lead từ active Organization Members.
-4. Tạo lead membership.
+1. Platform Admin chọn Organization đích.
+2. Tạo Workspace và chọn supporting agent profile Delivery hoặc Quality.
+3. Chọn primary lead từ active account đã đăng ký.
+4. Backend explicit-enroll lead vào Organization nếu cần và tạo lead membership.
 5. Cấu hình resource mapping/policy tối thiểu.
-6. Activate Agent Workspace.
+6. Activate Workspace.
 
-Không tự động biến một account ngoài tổ chức thành Organization Member chỉ vì được nhập ở ô lead. Nếu chưa là member, admin phải hoàn thành invitation/approval trước.
+Việc Admin chọn account tại ô lead/member là quyết định cấp quyền tường minh. Backend không tin email/role từ client một cách độc lập mà kiểm tra account active, cấm Platform Admin trở thành business member và ghi audit.
 
 ### 9.3 Thêm member vào phòng
 
-1. Requester chọn active Organization Member.
-2. Backend kiểm tra requester capability và target eligibility.
-3. Tạo request/invitation có expiry.
-4. Organization Owner/Admin duyệt; hoặc Lead thực hiện trực tiếp nếu delegated.
-5. Activate Agent Workspace Membership.
-6. Audit và notify.
+1. Platform Admin chọn active account và Workspace đích.
+2. Backend kiểm tra account, Organization và Workspace đều active.
+3. Backend explicit-enroll Organization Membership nếu cần.
+4. Activate Workspace Membership.
+5. Audit và notify.
 
 ### 9.4 Đổi trưởng phòng
 
 Trong một transaction:
 
 1. Khóa các active lead memberships của workspace.
-2. Kiểm tra người mới là active Organization Member.
+2. Kiểm tra người mới là active account; explicit-enroll Organization Membership nếu cần.
 3. Promote người mới thành primary lead.
 4. Demote lead cũ thành member hoặc revoke theo quyết định explicit.
 5. Ghi actor, old lead, new lead, reason vào audit.
@@ -292,7 +300,7 @@ POST  /api/v1/platform/workspaces
 PATCH /api/v1/platform/workspaces/{id}/status
 POST  /api/v1/platform/workspaces/{id}/owner-recovery
 
-# Organization control plane
+# Platform workspace control plane (Platform Admin only)
 POST  /api/v1/workspaces/{org_id}/agent-workspaces
 PATCH /api/v1/workspaces/{org_id}/agent-workspaces/{agent_id}
 PATCH /api/v1/workspaces/{org_id}/agent-workspaces/{agent_id}/lead
@@ -304,7 +312,7 @@ POST  /api/v1/workspaces/{org_id}/agent-workspaces/{agent_id}/membership-request
 DELETE /api/v1/workspaces/{org_id}/agent-workspaces/{agent_id}/members/{membership_id}
 ```
 
-Platform endpoint không trả raw business data. Organization endpoints phải authorize bằng Organization Membership hiện tại, không dựa vào platform role.
+Các endpoint control plane trên authorize bằng `platform_admin` nhưng chỉ trả metadata cấu hình, không trả raw business data. Discovery/runtime endpoint vẫn authorize bằng Organization + Workspace Membership hiện tại.
 
 ## 11. Audit bắt buộc
 
@@ -339,17 +347,17 @@ Audit lưu actor, target, organization/agent workspace, before/after metadata đ
 
 1. Self-service Organization Workspace mặc định bị tắt; Platform Admin provision tenant và chọn owner.
 2. Platform Admin không tự được thêm vào Organization Membership.
-3. Organization Owner/Admin tạo và quản lý Agent Workspace, lead, member và resource mapping.
-4. Lead bắt buộc là active Organization Member; thao tác gán lead không tự thêm/reactivate membership.
+3. Platform Admin tạo và quản lý Workspace, supporting agent profile, lead và member.
+4. Admin chọn lead/member là quyết định explicit-enroll vào Organization; Platform Admin không thể tự chọn chính mình.
 5. Lead/member chỉ nhìn thấy Agent Workspace được phân qua discovery API lấy role/profile từ DB.
 6. Revoke Organization Membership chặn agent scope ngay ở request kế tiếp.
-7. User và Admin frontend đã tách đúng platform provisioning với organization workspace administration.
+7. Admin frontend giữ toàn bộ workspace control plane; User frontend chỉ discovery các Workspace được phân.
 
 ### Chủ động để phase sau vì chưa cần cho agent MVP
 
 1. Invitation acceptance và request/approve/reject nhiều bước.
 2. Trạng thái Agent Workspace `draft`; baseline hiện tạo atomic cùng lead rồi active.
-3. Delegated policy cho lead tự quản lý member; baseline hiện chỉ Owner/Admin quản lý.
+3. Workflow đề xuất/duyệt member; baseline hiện chỉ Platform Admin quản lý.
 4. SCIM/SSO provisioning, access review và membership expiry.
 5. Background cleanup child membership; runtime authorization hiện đã fail closed theo Organization Membership.
 
@@ -360,8 +368,8 @@ Baseline này đủ chặt để nối specialist agent an toàn mà không kéo
 ### P0 — Đã hoàn thành cho specialist agent MVP
 
 1. Platform provisioning Organization Workspace và owner ban đầu.
-2. Organization Owner/Admin quản trị Agent Workspace.
-3. Lead phải là active Organization Member.
+2. Platform Admin tạo Workspace, gắn agent, bổ nhiệm lead và phân member.
+3. Lead/member được explicit-enroll vào Organization trong thao tác Admin.
 4. Một active workspace có đúng một lead và không revoke lead thiếu replacement.
 5. Organization Membership không active làm agent scope fail closed.
 6. Discovery API trả workspace/profile/business role hiệu lực từ DB.
@@ -385,7 +393,7 @@ Baseline này đủ chặt để nối specialist agent an toàn mà không kéo
 
 - User thường không thể tự tạo Organization/Agent Workspace trong enterprise mode.
 - Platform Admin provision tenant nhưng không xuất hiện trong member directory nếu không được mời riêng.
-- Org Owner/Admin tạo Agent Workspace và chọn lead chỉ từ active org members.
+- Platform Admin tạo Workspace, gắn supporting agent và chọn lead/member từ active account.
 - Lead mặc định chỉ request member; direct add trả `403` nếu chưa delegated.
 - Một active Agent Workspace luôn có đúng một primary lead.
 - Revoke organization membership chặn mọi specialist agent call ở request kế tiếp.

@@ -104,7 +104,7 @@ class WorkspaceMembership(Base):
 
 
 class AgentWorkspace(Base):
-    """A business-scoped agent area inside one organization workspace."""
+    """A user-facing business workspace with one supporting agent profile."""
 
     __tablename__ = "agent_workspaces"
     __table_args__ = (

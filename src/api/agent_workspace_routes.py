@@ -29,7 +29,8 @@ from src.services.agent_workspace_service import (
     update_agent_workspace,
 )
 from src.services.audit_service import record_audit_event
-from src.services.authorization_service import require_workspace_role
+from src.services.authorization_service import require_platform_admin
+from src.services.workspace_service import ensure_workspace_member_by_email
 
 router = APIRouter()
 
@@ -39,7 +40,7 @@ async def _require_agent_workspace_admin(
     current_user: User,
     workspace_id: str,
 ) -> None:
-    await require_workspace_role(db, current_user, workspace_id, {"owner", "admin"})
+    require_platform_admin(current_user)
 
 
 async def _agent_workspace_out(db: AsyncSession, agent_workspace) -> AgentWorkspaceOut:
@@ -75,6 +76,12 @@ async def create_workspace_agent(
         request.key,
         request.name,
         request.agent_profile,
+    )
+    await ensure_workspace_member_by_email(
+        db,
+        workspace_id,
+        str(request.lead_email),
+        current_user.id,
     )
     _, lead_user = await assign_agent_workspace_lead_by_email(
         db,
@@ -142,6 +149,12 @@ async def change_workspace_agent_lead(
     db: AsyncSession = Depends(get_db),
 ) -> AgentWorkspaceMemberOut:
     await _require_agent_workspace_admin(db, current_user, workspace_id)
+    await ensure_workspace_member_by_email(
+        db,
+        workspace_id,
+        str(request.email),
+        current_user.id,
+    )
     membership, user = await assign_agent_workspace_lead_by_email(
         db,
         workspace_id,
@@ -218,6 +231,12 @@ async def add_workspace_agent_member(
     db: AsyncSession = Depends(get_db),
 ) -> AgentWorkspaceMemberOut:
     await _require_agent_workspace_admin(db, current_user, workspace_id)
+    await ensure_workspace_member_by_email(
+        db,
+        workspace_id,
+        str(request.email),
+        current_user.id,
+    )
     membership = await add_agent_workspace_member_by_email(
         db,
         workspace_id,

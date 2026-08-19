@@ -62,8 +62,8 @@ Trạng thái dưới đây là trạng thái **working tree cục bộ**; chỉ
 | Product Delivery Agent | Chưa triển khai | Owner B thực hiện vertical slice |
 | Quality Assurance Agent | Chưa triển khai | Owner C thực hiện vertical slice |
 | Executive Agent | Chưa triển khai | Owner D thực hiện trên WorkspaceBrief mock trước |
-| Platform Admin UI | Hoàn thành baseline | Provision Organization Workspace và chọn owner ban đầu |
-| Organization Workspace UI | Hoàn thành baseline | Owner/admin tạo phòng, chọn lead/member và suspend/activate |
+| Platform Admin UI | Hoàn thành baseline | Provision Organization; tạo Workspace, gắn agent, chọn lead/member và suspend/activate |
+| User Workspace UI | Hoàn thành baseline read-only | Chỉ hiển thị Workspace được Admin phân công |
 | User UI nghiệp vụ theo Agent Workspace | Chưa triển khai | Mỗi agent owner làm UI của slice mình; A giữ shared shell |
 
 PR-00 đã đổi đồng bộ `customer_operations` thành `quality_assurance` trong:
@@ -81,7 +81,7 @@ PR-00 và contract/scope/router baseline đã pass test cục bộ; vẫn phải
 |---|---|---|
 | Personal Workspace | Dữ liệu cá nhân của một người | Lịch, reminder, memory cá nhân |
 | Organization Workspace | Biên tenant/bảo mật của công ty | Orbit Demo Company |
-| Agent Workspace | Vùng nghiệp vụ trong Organization Workspace | Product Delivery, Quality Assurance |
+| Workspace (`AgentWorkspace` trong schema) | Vùng nghiệp vụ do Admin tạo, có một supporting agent | Product Delivery, Quality Assurance |
 | Agent Profile | Cấu hình prompt, tool, scope và output | `product_delivery`, `quality_assurance`, `executive` |
 | WorkspaceBrief | Kết quả có cấu trúc của specialist agent | Delivery Brief, Quality Brief |
 
@@ -155,14 +155,14 @@ Không thành viên nào tự tạo phiên bản contract riêng trong agent mì
 
 ### 5.1 Admin và business entitlement
 
-- `platform_admin` chỉ provision Organization Workspace và owner ban đầu; không tự nhận business membership.
-- Organization owner/admin tạo và cấu hình Agent Workspace, lead, member và resource mapping.
+- `platform_admin` provision Organization, tạo Workspace, gắn agent profile, bổ nhiệm lead và phân member; không tự nhận business membership.
+- Organization owner/lead không tạo hoặc cấu hình Workspace trong baseline quản trị tập trung.
 - Mỗi Agent Workspace active có đúng một active `lead`; đổi lead sẽ hạ lead cũ thành `member`.
-- Lead phải là active Organization Member trước; gán lead không tự thêm/reactivate organization membership.
+- Chọn lead/member trong Admin control plane là quyết định explicit-enroll Organization Membership nếu cần.
 - Admin không tự động có quyền đọc dữ liệu nghiệp vụ.
 - Người dùng agent phải có active membership trong đúng Agent Workspace.
 - Executive cần entitlement aggregate riêng.
-- `platform_admin` chỉ vận hành hệ thống; support access phải có grant và thời hạn.
+- `platform_admin` được quản lý metadata Workspace nhưng support access vào raw business data vẫn phải có grant và thời hạn.
 - Không xây Admin Agent.
 
 ### 5.2 Ma trận quyền demo

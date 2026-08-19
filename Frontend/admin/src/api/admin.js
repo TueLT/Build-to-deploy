@@ -28,6 +28,37 @@ export const listOrganizationWorkspaces = token => apiFetch('/admin/workspaces',
 export const provisionOrganizationWorkspace = (token, body) =>
   apiFetch('/admin/workspaces', { method: 'POST', token, body })
 
+export const listManagedWorkspaces = (token, organizationId) =>
+  apiFetch(`/workspaces/${organizationId}/agent-workspaces`, { token })
+
+export const createManagedWorkspace = (token, organizationId, body) =>
+  apiFetch(`/workspaces/${organizationId}/agent-workspaces`, { method: 'POST', token, body })
+
+export const updateManagedWorkspace = (token, organizationId, workspaceId, body) =>
+  apiFetch(`/workspaces/${organizationId}/agent-workspaces/${workspaceId}`, {
+    method: 'PATCH', token, body,
+  })
+
+export const assignManagedWorkspaceLead = (token, organizationId, workspaceId, email) =>
+  apiFetch(`/workspaces/${organizationId}/agent-workspaces/${workspaceId}/lead`, {
+    method: 'PATCH', token, body: { email },
+  })
+
+export const listManagedWorkspaceMembers = (token, organizationId, workspaceId) =>
+  apiFetch(`/workspaces/${organizationId}/agent-workspaces/${workspaceId}/members`, { token })
+
+export const addManagedWorkspaceMember = (token, organizationId, workspaceId, body) =>
+  apiFetch(`/workspaces/${organizationId}/agent-workspaces/${workspaceId}/members`, {
+    method: 'POST', token, body,
+  })
+
+export const revokeManagedWorkspaceMember = (
+  token, organizationId, workspaceId, membershipId,
+) => apiFetch(
+  `/workspaces/${organizationId}/agent-workspaces/${workspaceId}/members/${membershipId}`,
+  { method: 'DELETE', token },
+)
+
 export const updateUserRole = (token, userId, role) =>
   apiFetch(`/admin/users/${userId}/role`, { method: 'PATCH', token, body: { role } })
 

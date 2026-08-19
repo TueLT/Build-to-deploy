@@ -160,6 +160,57 @@ async def add_workspace_member_by_email(
     return await add_workspace_member(db, workspace_id, user.id, role, invited_by_user_id)
 
 
+async def ensure_workspace_member_by_email(
+    db: AsyncSession,
+    workspace_id: str,
+    email: str,
+    invited_by_user_id: str,
+) -> tuple[WorkspaceMembership, User]:
+    """Explicitly enroll an admin-selected business user in an organization.
+
+    This is used by the platform workspace provisioning flow: selecting a lead or
+    member is the administrator's explicit membership decision, not an implicit
+    side effect of a user-controlled agent request.
+    """
+    user = (
+        await db.execute(select(User).where(func.lower(User.email) == email.strip().lower()))
+    ).scalar_one_or_none()
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active user not found")
+    if user.platform_role == "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Platform administrators cannot be workspace leads or members",
+        )
+
+    existing = (
+        await db.execute(
+            select(WorkspaceMembership).where(
+                WorkspaceMembership.workspace_id == workspace_id,
+                WorkspaceMembership.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        membership = await add_workspace_member(
+            db,
+            workspace_id,
+            user.id,
+            "member",
+            invited_by_user_id,
+        )
+        return membership, user
+
+    if existing.status != "active" or existing.role == "guest":
+        existing.status = "active"
+        existing.role = "member"
+        existing.invited_by_user_id = invited_by_user_id
+        existing.joined_at = datetime.now(UTC)
+        existing.updated_at = datetime.now(UTC)
+        await db.flush()
+    return existing, user
+
+
 async def list_workspace_members(
     db: AsyncSession,
     workspace_id: str,
