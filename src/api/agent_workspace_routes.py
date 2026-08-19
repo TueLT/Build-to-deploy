@@ -23,12 +23,13 @@ from src.services.agent_workspace_service import (
     list_agent_workspace_conversations,
     list_agent_workspace_members,
     list_agent_workspaces,
+    list_user_agent_workspaces,
     revoke_agent_workspace_member,
     unlink_agent_workspace_conversation,
     update_agent_workspace,
 )
 from src.services.audit_service import record_audit_event
-from src.services.authorization_service import require_platform_admin
+from src.services.authorization_service import require_workspace_role
 
 router = APIRouter()
 
@@ -38,7 +39,7 @@ async def _require_agent_workspace_admin(
     current_user: User,
     workspace_id: str,
 ) -> None:
-    require_platform_admin(current_user)
+    await require_workspace_role(db, current_user, workspace_id, {"owner", "admin"})
 
 
 async def _agent_workspace_out(db: AsyncSession, agent_workspace) -> AgentWorkspaceOut:
@@ -80,7 +81,6 @@ async def create_workspace_agent(
         workspace_id,
         agent_workspace.id,
         str(request.lead_email),
-        current_user.id,
     )
     await record_audit_event(
         db,
@@ -111,6 +111,25 @@ async def get_workspace_agents(
     return [await _agent_workspace_out(db, workspace) for workspace in workspaces]
 
 
+@router.get(
+    "/{workspace_id}/agent-workspaces/available",
+    response_model=list[AgentWorkspaceOut],
+)
+async def get_available_workspace_agents(
+    workspace_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[AgentWorkspaceOut]:
+    rows = await list_user_agent_workspaces(db, workspace_id, current_user.id)
+    outputs: list[AgentWorkspaceOut] = []
+    for workspace, membership in rows:
+        output = await _agent_workspace_out(db, workspace)
+        outputs.append(
+            output.model_copy(update={"current_user_business_role": membership.business_role})
+        )
+    return outputs
+
+
 @router.patch(
     "/{workspace_id}/agent-workspaces/{agent_workspace_id}/lead",
     response_model=AgentWorkspaceMemberOut,
@@ -128,7 +147,6 @@ async def change_workspace_agent_lead(
         workspace_id,
         agent_workspace_id,
         str(request.email),
-        current_user.id,
     )
     await record_audit_event(
         db,

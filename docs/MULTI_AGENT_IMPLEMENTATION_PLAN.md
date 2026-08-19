@@ -62,8 +62,9 @@ Trạng thái dưới đây là trạng thái **working tree cục bộ**; chỉ
 | Product Delivery Agent | Chưa triển khai | Owner B thực hiện vertical slice |
 | Quality Assurance Agent | Chưa triển khai | Owner C thực hiện vertical slice |
 | Executive Agent | Chưa triển khai | Owner D thực hiện trên WorkspaceBrief mock trước |
-| Admin UI quản trị Agent Workspace | Hoàn thành baseline | Platform admin tạo phòng, chọn/đổi lead và suspend/activate |
-| User UI theo Agent Workspace | Chưa triển khai | Mỗi agent owner làm UI nghiệp vụ của slice mình; A giữ shared shell |
+| Platform Admin UI | Hoàn thành baseline | Provision Organization Workspace và chọn owner ban đầu |
+| Organization Workspace UI | Hoàn thành baseline | Owner/admin tạo phòng, chọn lead/member và suspend/activate |
+| User UI nghiệp vụ theo Agent Workspace | Chưa triển khai | Mỗi agent owner làm UI của slice mình; A giữ shared shell |
 
 PR-00 đã đổi đồng bộ `customer_operations` thành `quality_assurance` trong:
 
@@ -154,9 +155,10 @@ Không thành viên nào tự tạo phiên bản contract riêng trong agent mì
 
 ### 5.1 Admin và business entitlement
 
-- Chỉ `platform_admin` được tạo và cấu hình Agent Workspace; Organization owner/admin không tự có quyền control-plane này.
+- `platform_admin` chỉ provision Organization Workspace và owner ban đầu; không tự nhận business membership.
+- Organization owner/admin tạo và cấu hình Agent Workspace, lead, member và resource mapping.
 - Mỗi Agent Workspace active có đúng một active `lead`; đổi lead sẽ hạ lead cũ thành `member`.
-- Khi admin chọn lead chưa thuộc Organization Workspace, hệ thống thêm người đó làm organization `member` trước khi cấp business role.
+- Lead phải là active Organization Member trước; gán lead không tự thêm/reactivate organization membership.
 - Admin không tự động có quyền đọc dữ liệu nghiệp vụ.
 - Người dùng agent phải có active membership trong đúng Agent Workspace.
 - Executive cần entitlement aggregate riêng.

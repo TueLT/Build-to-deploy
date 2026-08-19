@@ -16,6 +16,10 @@ class OrganizationWorkspaceCreate(BaseModel):
         return normalized
 
 
+class AdminOrganizationWorkspaceCreate(OrganizationWorkspaceCreate):
+    owner_email: EmailStr
+
+
 class WorkspaceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

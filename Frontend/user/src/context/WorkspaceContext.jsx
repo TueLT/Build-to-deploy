@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { createWorkspace, listWorkspaces } from '../api/workspaces'
+import { listWorkspaces } from '../api/workspaces'
 import { useAuth } from './AuthContext'
 
 const WORKSPACE_KEY = 'orbit_workspace_id'
@@ -43,19 +43,12 @@ export function WorkspaceProvider({ children }) {
     [workspaces, workspaceId],
   )
 
-  const createOrganization = async (name) => {
-    const created = await createWorkspace(token, name)
-    await refreshWorkspaces(created.id)
-    return created
-  }
-
   return (
     <WorkspaceContext.Provider value={{
       workspaces,
       workspace,
       workspaceId,
       selectWorkspace,
-      createOrganization,
       refreshWorkspaces,
     }}>
       {children}

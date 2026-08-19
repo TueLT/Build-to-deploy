@@ -50,6 +50,7 @@ async def _has_organization_access(db: AsyncSession, user_id: str, workspace_id:
                 WorkspaceMembership.workspace_id == workspace_id,
                 WorkspaceMembership.user_id == user_id,
                 WorkspaceMembership.status == "active",
+                WorkspaceMembership.role.in_(("owner", "admin", "member")),
             )
         )
     ).scalar_one_or_none() is not None

@@ -40,10 +40,12 @@ from src.models.admin_schemas import (
     UpdateStatusRequest,
 )
 from src.models.agent_workspace_schemas import AdminWorkspaceSummaryOut
+from src.models.workspace_schemas import AdminOrganizationWorkspaceCreate
 from src.services import ai_config_service, reminder_service, usage_service
 from src.services.audit_service import record_audit_event
 from src.services.authorization_service import require_support_scope
 from src.services.scheduler import scheduler
+from src.services.workspace_service import create_organization_workspace
 from src.websocket.manager import manager
 
 router = APIRouter(dependencies=[Depends(require_admin)])
@@ -396,6 +398,54 @@ async def list_organization_workspaces(db: AsyncSession = Depends(get_db)) -> li
             )
         )
     return results
+
+
+@router.post(
+    "/workspaces",
+    response_model=AdminWorkspaceSummaryOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def provision_organization_workspace(
+    request: AdminOrganizationWorkspaceCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> AdminWorkspaceSummaryOut:
+    owner = (
+        await db.execute(
+            select(User).where(
+                func.lower(User.email) == str(request.owner_email).strip().lower(),
+                User.is_active.is_(True),
+            )
+        )
+    ).scalar_one_or_none()
+    if owner is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active workspace owner not found")
+    if owner.platform_role == "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Initial owner must be a non-platform user",
+        )
+    workspace = await create_organization_workspace(db, request.name, owner.id)
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="organization_workspace.provisioned",
+        target_type="workspace",
+        target_id=workspace.id,
+        workspace_id=workspace.id,
+        metadata={"owner_user_id": owner.id},
+    )
+    await db.commit()
+    await db.refresh(workspace)
+    return AdminWorkspaceSummaryOut(
+        id=workspace.id,
+        name=workspace.name,
+        status=workspace.status,
+        owner_email=owner.email,
+        owner_display_name=owner.display_name,
+        agent_workspace_count=0,
+        created_at=workspace.created_at,
+    )
 
 
 @router.patch("/users/{user_id}/role", response_model=AdminUserOut)

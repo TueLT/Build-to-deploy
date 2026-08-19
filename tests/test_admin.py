@@ -1,5 +1,8 @@
 import pytest
+from sqlalchemy import select
 
+import src.db.session as db_session
+from src.db.models import User, WorkspaceMembership
 from src.services.scheduler import scheduler
 
 
@@ -60,6 +63,44 @@ async def test_admin_can_list_users(client, admin_auth_headers, auth_headers):
     emails = {u["email"] for u in resp.json()}
     assert "admin@example.com" in emails
     assert "alice@example.com" in emails
+
+
+@pytest.mark.asyncio
+async def test_platform_admin_provisions_organization_without_joining_it(
+    client, admin_auth_headers, auth_headers
+):
+    response = await client.post(
+        "/api/v1/admin/workspaces",
+        json={"name": "Provisioned Company", "owner_email": "alice@example.com"},
+        headers=admin_auth_headers,
+    )
+    assert response.status_code == 201
+    workspace = response.json()
+    assert workspace["owner_email"] == "alice@example.com"
+    assert workspace["agent_workspace_count"] == 0
+
+    owner_workspaces = await client.get("/api/v1/workspaces", headers=auth_headers)
+    organization = next(item for item in owner_workspaces.json() if item["id"] == workspace["id"])
+    assert organization["current_user_role"] == "owner"
+
+    async with db_session.async_session_maker() as db:
+        admin = (await db.execute(select(User).where(User.email == "admin@example.com"))).scalar_one()
+        admin_membership = (
+            await db.execute(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == workspace["id"],
+                    WorkspaceMembership.user_id == admin.id,
+                )
+            )
+        ).scalar_one_or_none()
+    assert admin_membership is None
+
+    cannot_assign_platform_admin_as_owner = await client.post(
+        "/api/v1/admin/workspaces",
+        json={"name": "Invalid Dual Role", "owner_email": "admin@example.com"},
+        headers=admin_auth_headers,
+    )
+    assert cannot_assign_platform_admin_as_owner.status_code == 409
 
 
 @pytest.mark.asyncio

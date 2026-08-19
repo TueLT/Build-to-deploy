@@ -35,6 +35,7 @@ class AgentWorkspaceOut(BaseModel):
     lead_user_id: str | None = None
     lead_email: str | None = None
     lead_display_name: str | None = None
+    current_user_business_role: Literal["member", "lead", "executive_viewer"] | None = None
 
 
 class AgentWorkspaceLeadUpdate(BaseModel):

@@ -62,6 +62,43 @@ async def list_agent_workspaces(
     )
 
 
+async def list_user_agent_workspaces(
+    db: AsyncSession,
+    organization_workspace_id: str,
+    user_id: str,
+) -> list[tuple[AgentWorkspace, AgentWorkspaceMembership]]:
+    organization_membership = (
+        await db.execute(
+            select(WorkspaceMembership.id).where(
+                WorkspaceMembership.workspace_id == organization_workspace_id,
+                WorkspaceMembership.user_id == user_id,
+                WorkspaceMembership.status == "active",
+                WorkspaceMembership.role.in_(("owner", "admin", "member")),
+            )
+        )
+    ).scalar_one_or_none()
+    if organization_membership is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Workspace access denied")
+    return list(
+        (
+            await db.execute(
+                select(AgentWorkspace, AgentWorkspaceMembership)
+                .join(
+                    AgentWorkspaceMembership,
+                    AgentWorkspaceMembership.agent_workspace_id == AgentWorkspace.id,
+                )
+                .where(
+                    AgentWorkspace.organization_workspace_id == organization_workspace_id,
+                    AgentWorkspace.status == "active",
+                    AgentWorkspaceMembership.user_id == user_id,
+                    AgentWorkspaceMembership.status == "active",
+                )
+                .order_by(AgentWorkspace.key.asc())
+            )
+        ).all()
+    )
+
+
 async def get_agent_workspace_lead(
     db: AsyncSession,
     agent_workspace_id: str,
@@ -138,6 +175,7 @@ async def add_agent_workspace_member(
                 WorkspaceMembership.workspace_id == agent_workspace.organization_workspace_id,
                 WorkspaceMembership.user_id == user_id,
                 WorkspaceMembership.status == "active",
+                WorkspaceMembership.role.in_(("owner", "admin", "member")),
             )
         )
     ).scalar_one_or_none()
@@ -202,7 +240,6 @@ async def assign_agent_workspace_lead_by_email(
     organization_workspace_id: str,
     agent_workspace_id: str,
     email: str,
-    assigned_by_user_id: str,
 ) -> tuple[AgentWorkspaceMembership, User]:
     await require_agent_workspace(db, organization_workspace_id, agent_workspace_id)
     user = (
@@ -210,31 +247,6 @@ async def assign_agent_workspace_lead_by_email(
     ).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active user not found")
-
-    organization_membership = (
-        await db.execute(
-            select(WorkspaceMembership).where(
-                WorkspaceMembership.workspace_id == organization_workspace_id,
-                WorkspaceMembership.user_id == user.id,
-            )
-        )
-    ).scalar_one_or_none()
-    if organization_membership is None:
-        organization_membership = WorkspaceMembership(
-            workspace_id=organization_workspace_id,
-            user_id=user.id,
-            role="member",
-            status="active",
-            invited_by_user_id=assigned_by_user_id,
-        )
-        db.add(organization_membership)
-        await db.flush()
-    elif organization_membership.status != "active":
-        organization_membership.status = "active"
-        organization_membership.updated_at = datetime.now(UTC)
-        if organization_membership.role not in {"owner", "admin"}:
-            organization_membership.role = "member"
-        await db.flush()
 
     membership = await add_agent_workspace_member(db, agent_workspace_id, user.id, "lead")
     return membership, user

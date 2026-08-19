@@ -1,6 +1,6 @@
 # Nền móng Workspace và Membership theo nghiệp vụ doanh nghiệp
 
-> Trạng thái: **Đề xuất canonical v1 để team review**  
+> Trạng thái: **Canonical v1 — baseline cơ bản đã triển khai; lifecycle nâng cao để phase sau**
 > Phạm vi: Personal Workspace, Organization Workspace, Agent Workspace, membership, lead và quyền quản trị  
 > Mục tiêu: thống nhất nghiệp vụ trước khi mở rộng Delivery, Quality và Executive Agent
 
@@ -335,34 +335,43 @@ Audit lưu actor, target, organization/agent workspace, before/after metadata đ
 - Không cho revoke lead hiện tại trước khi có người thay thế.
 - Scope resolver kiểm tra organization + agent workspace + membership + consent.
 
-### Chưa đúng hoàn toàn với target enterprise
+### Baseline cơ bản đã triển khai
 
-1. Bất kỳ authenticated user nào vẫn có thể tự tạo Organization Workspace và trở thành owner.
-2. Agent Workspace management hiện dùng `platform_admin`, thay vì Organization Owner/Admin.
-3. Chọn lead hiện tự thêm/reactivate Organization Membership; target enterprise phải qua invitation/approval riêng.
-4. Thêm Organization/Agent member hiện active ngay, chưa có invitation acceptance/approval lifecycle đầy đủ.
-5. Agent Workspace tạo ở `active`, chưa có trạng thái `draft` để cấu hình an toàn.
-6. Chưa có membership request và delegated lead policy.
-7. Chưa có cascade/invalidation service rõ ràng khi Organization Membership bị suspend/revoke.
+1. Self-service Organization Workspace mặc định bị tắt; Platform Admin provision tenant và chọn owner.
+2. Platform Admin không tự được thêm vào Organization Membership.
+3. Organization Owner/Admin tạo và quản lý Agent Workspace, lead, member và resource mapping.
+4. Lead bắt buộc là active Organization Member; thao tác gán lead không tự thêm/reactivate membership.
+5. Lead/member chỉ nhìn thấy Agent Workspace được phân qua discovery API lấy role/profile từ DB.
+6. Revoke Organization Membership chặn agent scope ngay ở request kế tiếp.
+7. User và Admin frontend đã tách đúng platform provisioning với organization workspace administration.
 
-Do đó implementation hiện tại phù hợp làm **MVP bootstrap**, nhưng chưa nên gọi là hoàn chỉnh theo nghiệp vụ doanh nghiệp.
+### Chủ động để phase sau vì chưa cần cho agent MVP
+
+1. Invitation acceptance và request/approve/reject nhiều bước.
+2. Trạng thái Agent Workspace `draft`; baseline hiện tạo atomic cùng lead rồi active.
+3. Delegated policy cho lead tự quản lý member; baseline hiện chỉ Owner/Admin quản lý.
+4. SCIM/SSO provisioning, access review và membership expiry.
+5. Background cleanup child membership; runtime authorization hiện đã fail closed theo Organization Membership.
+
+Baseline này đủ chặt để nối specialist agent an toàn mà không kéo theo một hệ thống IAM quá phức tạp.
 
 ## 13. Lộ trình chỉnh code khuyến nghị
 
-### P0 — Trước khi nối specialist agent thật
+### P0 — Đã hoàn thành cho specialist agent MVP
 
-1. Chặn user tự tạo Organization Workspace trong enterprise mode; chuyển sang platform provisioning/approved signup.
-2. Chuyển Agent Workspace management sang Organization Owner/Admin.
-3. Không auto-add Organization Membership khi gán lead; target phải là active organization member.
-4. Thêm `draft` cho Agent Workspace và validation trước activate.
-5. Enforce cascade deny khi Organization Membership không active.
+1. Platform provisioning Organization Workspace và owner ban đầu.
+2. Organization Owner/Admin quản trị Agent Workspace.
+3. Lead phải là active Organization Member.
+4. Một active workspace có đúng một lead và không revoke lead thiếu replacement.
+5. Organization Membership không active làm agent scope fail closed.
+6. Discovery API trả workspace/profile/business role hiệu lực từ DB.
 
 ### P1 — Trước demo đầy đủ
 
-1. Thêm invitation/request/approve/reject lifecycle.
-2. Thêm policy `lead_can_manage_members`, mặc định `false`.
-3. Thêm Admin UI đúng scope: Platform provisioning tách khỏi Organization Workspace administration.
-4. Thêm audit before/after và reason cho role/membership transition.
+1. Thêm invitation/request/approve/reject lifecycle nếu demo cần onboarding ngoài account có sẵn.
+2. Thêm trạng thái `draft` nếu cần cấu hình resource trước activate.
+3. Thêm audit before/after và reason đầy đủ cho role/membership transition.
+4. Giữ `lead_can_manage_members=false`; chỉ thêm delegation khi có yêu cầu nghiệp vụ thật.
 
 ### P2 — Khi hướng production enterprise
 

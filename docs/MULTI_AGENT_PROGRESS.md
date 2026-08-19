@@ -25,8 +25,9 @@ Phần nền bắt buộc cho kiến trúc multi-agent theo workspace đã hoàn
 | Executive Agent | Chưa triển khai | Có thể bắt đầu bằng WorkspaceBrief fixtures |
 | Runtime `/chat` integration | Chưa triển khai | Chỉ nối sau khi profile, tool và output validator sẵn sàng |
 | HITL executor hoàn chỉnh | Chưa triển khai | Hiện mới khóa `ActionProposal` contract |
-| Agent Workspace Admin UI | Hoàn thành baseline | Platform admin tạo phòng, chọn/đổi lead và suspend/activate |
-| Agent Workspace User UI | Chưa triển khai | Chờ UI nghiệp vụ của từng vertical slice |
+| Platform Workspace UI | Hoàn thành baseline | Provision Organization Workspace và chọn owner |
+| Organization Workspace UI | Hoàn thành baseline | Owner/admin tạo phòng, chọn lead/member và suspend/activate |
+| Agent Workspace nghiệp vụ UI | Chưa triển khai | Chờ UI Delivery/Quality của từng vertical slice |
 
 ## 3. Những phần đã hoàn thành và giá trị mang lại
 
@@ -96,7 +97,7 @@ Migration hỗ trợ cả upgrade và downgrade.
 
 ### 3.4 Agent Workspace Management API
 
-Đã có API admin-only để:
+Đã có API Organization Owner/Admin-only để:
 
 - Tạo và liệt kê Agent Workspace.
 - Bắt buộc chọn lead khi tạo; đổi lead là thao tác riêng và atomic.
@@ -107,8 +108,10 @@ Migration hỗ trợ cả upgrade và downgrade.
 
 **Áp dụng**
 
-- Chỉ platform admin cấu hình Agent Workspace và membership; organization owner/admin không được tự tạo phòng nghiệp vụ.
-- Admin UI đã có trang quản trị Agent Workspace, không cần thao tác trực tiếp database.
+- Platform Admin chỉ provision Organization Workspace và owner ban đầu.
+- Organization Owner/Admin cấu hình Agent Workspace và membership.
+- Lead phải là active Organization Member; hệ thống không tự cấp organization access khi gán lead.
+- User frontend có trang quản trị và discovery API cho workspace được phân.
 - Platform admin vẫn không tự động có business entitlement để đọc dữ liệu nghiệp vụ.
 
 **Giá trị**
@@ -254,7 +257,7 @@ Hiện các bước từ request đến router/scope/context/guard đã có nề
 |---|---:|
 | Foundation contract/router/scope/migration tests | Pass |
 | Security regression | 62/62 pass |
-| Full backend regression | 281/281 pass |
+| Full backend regression | 306 pass, 1 skip |
 | Golden dataset validation | 150/150 case hợp lệ |
 | Ruff `src/tests/scripts` | Pass |
 | Alembic upgrade/downgrade trên database tạm | Pass |
@@ -271,7 +274,7 @@ Các warning còn lại là deprecation từ Starlette/SQLite adapter và cảnh
 - Chưa có WorkspaceBrief persistence/service và producer thật.
 - Chưa nối multi-agent router vào `/chat`.
 - Chưa có HITL executor, approval store và idempotent side-effect execution hoàn chỉnh.
-- Chưa có Agent Workspace management UI.
+- Chưa có UI nghiệp vụ Delivery/Quality; UI quản trị workspace nền móng đã hoàn thành.
 - Dataset v1 hiện kiểm tra structural contract/policy; chưa phải điểm chất lượng LLM production.
 
 ## 8. Thứ tự công việc tiếp theo

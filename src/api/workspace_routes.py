@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user
+from src.config import get_settings
 from src.db.models import SupportAccessGrant, User, WorkspaceMembership
 from src.db.session import get_db
 from src.models.platform_schemas import SupportAccessGrantOut
@@ -35,6 +36,11 @@ async def create_workspace(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceOut:
+    if not get_settings().allow_self_service_organization_creation:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization workspaces are provisioned by platform administrators",
+        )
     workspace = await create_organization_workspace(db, request.name, current_user.id)
     await db.commit()
     await db.refresh(workspace)
@@ -99,7 +105,8 @@ async def add_member(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceMemberOut:
-    await require_workspace_role(db, current_user, workspace_id, {"owner", "admin"})
+    allowed_roles = {"owner"} if request.role == "admin" else {"owner", "admin"}
+    await require_workspace_role(db, current_user, workspace_id, allowed_roles)
     membership = await add_workspace_member_by_email(
         db,
         workspace_id,

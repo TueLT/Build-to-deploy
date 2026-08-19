@@ -18,6 +18,7 @@
 .admin-table-toolbar > div > small { margin-top: 2px; color: var(--admin-muted); font-size: 8px; }
 .admin-workspace-table { min-width: 900px; }
 .admin-inline-select { width: 240px; height: 34px; }
+.admin-organization-form { grid-template-columns: minmax(220px, 1fr) minmax(320px, 1.5fr) auto; }
 
 @media (max-width: 1200px) {
   .admin-workspace-form { grid-template-columns: repeat(3, 1fr); }

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     product_delivery_agent_enabled: bool = False
     quality_assurance_agent_enabled: bool = False
     executive_agent_enabled: bool = False
+    # Enterprise default: organizations are provisioned by platform operations.
+    # Keep this switch only for local/demo compatibility and isolated tests.
+    allow_self_service_organization_creation: bool = False
 
     # Database
     database_url: str = "sqlite:///./data/app.db"

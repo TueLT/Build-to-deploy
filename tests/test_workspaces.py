@@ -183,3 +183,64 @@ async def test_user_can_create_organization_workspace(client):
         ).scalar_one()
         assert membership.role == "owner"
         assert membership.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_enterprise_mode_blocks_user_workspace_creation(client, monkeypatch):
+    _, headers = await _register_and_login(
+        client,
+        "self-service-blocked@example.com",
+        "Blocked Creator",
+    )
+    monkeypatch.setattr(
+        "src.api.workspace_routes.get_settings",
+        lambda: type("Settings", (), {"allow_self_service_organization_creation": False})(),
+    )
+
+    response = await client.post(
+        "/api/v1/workspaces",
+        json={"name": "Unapproved Organization"},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Organization workspaces are provisioned by platform administrators"
+
+
+@pytest.mark.asyncio
+async def test_only_owner_can_appoint_an_organization_admin(client):
+    owner, owner_headers = await _register_and_login(
+        client, "role-owner@example.com", "Role Owner"
+    )
+    _, admin_headers = await _register_and_login(
+        client, "organization-admin@example.com", "Organization Admin"
+    )
+    await _register_and_login(client, "new-admin@example.com", "New Admin")
+
+    async with db_session.async_session_maker() as db:
+        organization = await workspace_service.create_organization_workspace(
+            db, name="Role Boundaries", owner_user_id=owner["id"]
+        )
+        await db.commit()
+        organization_id = organization.id
+
+    appointed = await client.post(
+        f"/api/v1/workspaces/{organization_id}/members",
+        json={"email": "organization-admin@example.com", "role": "admin"},
+        headers=owner_headers,
+    )
+    assert appointed.status_code == 201
+
+    denied = await client.post(
+        f"/api/v1/workspaces/{organization_id}/members",
+        json={"email": "new-admin@example.com", "role": "admin"},
+        headers=admin_headers,
+    )
+    assert denied.status_code == 403
+
+    member_allowed = await client.post(
+        f"/api/v1/workspaces/{organization_id}/members",
+        json={"email": "new-admin@example.com", "role": "member"},
+        headers=admin_headers,
+    )
+    assert member_allowed.status_code == 201

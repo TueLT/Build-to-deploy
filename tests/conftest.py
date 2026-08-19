@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["SECRET_KEY"] = "test-only-secret-key-with-at-least-32-bytes"
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+os.environ["ALLOW_SELF_SERVICE_ORGANIZATION_CREATION"] = "true"
 os.environ["CREDENTIAL_ENCRYPTION_KEY"] = "T3WGf3PaqPii2yO527bMcShobRNF3TpJ4sA3f9lkJkU="
 
 import src.db.session as db_session

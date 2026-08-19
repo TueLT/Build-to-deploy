@@ -451,8 +451,8 @@ Tên giai đoạn trong kế hoạch: **Giai đoạn 0 — Foundation/Contract B
 | Shared contract v1.0 | Hoàn thành | Context, source, tool result, proposal và briefs dùng chung |
 | Feature flags | Hoàn thành baseline | Master + từng profile mặc định tắt |
 | Agent Workspace models/migration | Hoàn thành baseline | Có workspace, membership và conversation mapping |
-| Agent Workspace management API | Hoàn thành baseline | Platform admin cấu hình; đúng một active lead; business entitlement tách riêng |
-| Agent Workspace Admin UI | Hoàn thành baseline | Tạo phòng, gán/đổi lead, suspend/activate |
+| Agent Workspace management API | Hoàn thành baseline | Organization owner/admin cấu hình; đúng một active lead; business entitlement tách riêng |
+| Platform/Organization Workspace UI | Hoàn thành baseline | Platform provision tenant; owner/admin quản lý phòng, lead và member |
 | Scope Resolver | Hoàn thành baseline | Organization/profile/role/scope deny-by-default |
 | Consent-aware resource mapping | Hoàn thành baseline | Chỉ mapped group conversation có active AI consent vào scope |
 | Resource Guard | Hoàn thành baseline | Recheck membership/consent/resource tại tool boundary |
@@ -462,7 +462,7 @@ Tên giai đoạn trong kế hoạch: **Giai đoạn 0 — Foundation/Contract B
 
 Kết quả kiểm thử gần nhất:
 
-- Full backend: `281/281` pass.
+- Full backend: `306` pass, `1` skip.
 - Security regression: `62/62` pass.
 - Golden dataset: `150/150` case hợp lệ.
 - Ruff toàn bộ `src/tests/scripts`: pass.

@@ -186,6 +186,34 @@ async def test_revoked_agent_workspace_membership_is_effective_on_next_resolutio
 
 
 @pytest.mark.asyncio
+async def test_revoked_organization_membership_blocks_agent_workspace_immediately(client, auth_headers):
+    seed = await _seed_agent_workspaces(client, auth_headers)
+
+    async with db_session.async_session_maker() as db:
+        organization_membership = (
+            await db.execute(
+                select(WorkspaceMembership).where(
+                    WorkspaceMembership.workspace_id == seed["organization_id"],
+                    WorkspaceMembership.user_id == seed["delivery_user_id"],
+                )
+            )
+        ).scalar_one()
+        organization_membership.status = "revoked"
+        await db.commit()
+        resolution = await resolve_agent_scope(
+            db,
+            user_id=seed["delivery_user_id"],
+            organization_workspace_id=seed["organization_id"],
+            agent_profile=AgentProfile.PRODUCT_DELIVERY,
+            requested_scope=RequestedScope.WORKSPACE,
+            target_agent_workspace_id=seed["delivery_id"],
+        )
+
+    assert resolution.decision == PolicyDecision.DENY
+    assert resolution.reason == PolicyReason.NOT_MEMBER
+
+
+@pytest.mark.asyncio
 async def test_context_builder_uses_db_role_and_feature_flags(client, auth_headers):
     seed = await _seed_agent_workspaces(client, auth_headers)
     invocation = AgentInvocationRequest(
@@ -248,26 +276,26 @@ async def test_context_builder_fails_closed_when_profile_flag_is_disabled(client
 
 
 @pytest.mark.asyncio
-async def test_agent_workspace_configuration_api_is_platform_admin_only(
+async def test_agent_workspace_configuration_api_is_organization_admin_only(
     client, auth_headers, admin_auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
 
-    denied_owner = await client.get(
-        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",
-        headers=auth_headers,
-    )
-    assert denied_owner.status_code == 403
-
     response = await client.get(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert response.status_code == 200
     assert {item["agent_profile"] for item in response.json()} == {
         "product_delivery",
         "quality_assurance",
     }
+
+    denied_platform_admin = await client.get(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",
+        headers=admin_auth_headers,
+    )
+    assert denied_platform_admin.status_code == 403
     summaries = await client.get("/api/v1/admin/workspaces", headers=admin_auth_headers)
     assert summaries.status_code == 200
     organization_summary = next(
@@ -284,7 +312,7 @@ async def test_agent_workspace_configuration_api_is_platform_admin_only(
             "agent_profile": "product_delivery",
             "lead_email": "quality@example.com",
         },
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert created.status_code == 201
     assert created.json()["lead_email"] == "quality@example.com"
@@ -292,7 +320,7 @@ async def test_agent_workspace_configuration_api_is_platform_admin_only(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{created.json()['id']}/members",
         json={"email": "delivery@example.com", "business_role": "member"},
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert member.status_code == 201
     assert member.json()["business_role"] == "member"
@@ -307,10 +335,16 @@ async def test_agent_workspace_configuration_api_is_platform_admin_only(
         headers=member_headers,
     )
     assert denied.status_code == 403
+    available = await client.get(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/available",
+        headers=member_headers,
+    )
+    assert available.status_code == 200
+    assert {item["current_user_business_role"] for item in available.json()} == {"lead", "member"}
 
 
 @pytest.mark.asyncio
-async def test_platform_admin_assigns_exactly_one_lead_and_adds_organization_membership(
+async def test_organization_admin_assigns_one_lead_from_existing_organization_members(
     client, auth_headers, admin_auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
@@ -324,11 +358,32 @@ async def test_platform_admin_assigns_exactly_one_lead_and_adds_organization_mem
     )
     assert registered.status_code == 201
 
-    changed = await client.patch(
+    denied_platform_admin = await client.patch(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/lead",
         json={"email": "replacement@example.com"},
         headers=admin_auth_headers,
+    )
+    assert denied_platform_admin.status_code == 403
+    missing_organization_membership = await client.patch(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{seed['delivery_id']}/lead",
+        json={"email": "replacement@example.com"},
+        headers=auth_headers,
+    )
+    assert missing_organization_membership.status_code == 409
+    added_to_organization = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/members",
+        json={"email": "replacement@example.com", "role": "member"},
+        headers=auth_headers,
+    )
+    assert added_to_organization.status_code == 201
+
+    changed = await client.patch(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{seed['delivery_id']}/lead",
+        json={"email": "replacement@example.com"},
+        headers=auth_headers,
     )
     assert changed.status_code == 200
     assert changed.json()["business_role"] == "lead"
@@ -363,14 +418,14 @@ async def test_platform_admin_assigns_exactly_one_lead_and_adds_organization_mem
     cannot_revoke_current_lead = await client.delete(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/members/{changed.json()['id']}",
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert cannot_revoke_current_lead.status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
-    client, auth_headers, admin_auth_headers
+    client, auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
     conversation = await client.post(
@@ -390,7 +445,7 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/conversations",
         json={"conversation_id": conversation_id, "classification": "quality"},
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert wrong_classification.status_code == 422
 
@@ -398,7 +453,7 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/conversations",
         json={"conversation_id": conversation_id, "classification": "delivery"},
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert linked.status_code == 201
 
@@ -477,20 +532,20 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
 
 @pytest.mark.asyncio
 async def test_agent_workspace_membership_revoke_api_takes_effect_immediately(
-    client, auth_headers, admin_auth_headers
+    client, auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
     reassigned = await client.patch(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/lead",
         json={"email": "executive@example.com"},
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert reassigned.status_code == 200
     response = await client.delete(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/members/{seed['delivery_membership_id']}",
-        headers=admin_auth_headers,
+        headers=auth_headers,
     )
     assert response.status_code == 204
 
