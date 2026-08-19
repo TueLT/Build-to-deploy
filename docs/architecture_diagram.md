@@ -1,5 +1,7 @@
 # Kiến trúc hệ thống Multi-Agent theo Workspace — Orbit CHAT-01
 
+> Nghiệp vụ provisioning, membership, lead và phân tách Platform Admin/Organization Admin được định nghĩa canonical tại `docs/ENTERPRISE_WORKSPACE_FOUNDATION.md`.
+
 > Tài liệu kiến trúc canonical cho mô hình Product Delivery + Quality Assurance + Executive
 >
 > Cập nhật: 2026-08-18

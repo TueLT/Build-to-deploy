@@ -10,6 +10,8 @@
 
 > Kiến trúc, data boundary, router, trách nhiệm Workspace Agent và luồng policy/HITL được định nghĩa canonical tại `docs/architecture_diagram.md`. Tài liệu này chỉ quản lý phạm vi, dependency, phân công và release gates.
 
+> Provisioning, vai trò Platform/Organization Admin, lead, membership approval và lifecycle workspace được định nghĩa tại `docs/ENTERPRISE_WORKSPACE_FOUNDATION.md`. Tài liệu nền móng này được ưu tiên khi tài liệu cũ dùng từ “admin” chưa rõ scope.
+
 ## 1. Tóm tắt quyết định
 
 Nhóm xây một `Organization Workspace` đại diện cho công ty, bên trong có hai `Agent Workspace` nghiệp vụ:
