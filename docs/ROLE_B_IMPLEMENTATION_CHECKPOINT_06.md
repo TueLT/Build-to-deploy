@@ -15,7 +15,7 @@ Review router sau Checkpoint 05 phát hiện hai điểm không đủ chuẩn pr
 1. Workspace guard revalidate membership/workspace nhưng chưa so sánh `consent_scope_hash`; revoke group AI consent giữa turn có thể không được phát hiện với workspace-level read.
 2. Scope resolver chỉ dựa vào Agent Workspace mapping mà chưa filter `classification`; policy không nên chỉ tin validation của API khi dữ liệu DB có thể được ghi từ migration/admin/integration khác.
 
-Checkpoint này sửa đúng hai root cause trên, không mở rộng sang model executor hay API endpoint.
+Checkpoint này sửa đúng hai root cause trên, không mở rộng sang model executor hay API endpoint..
 
 ## 2. Artifact và hành vi đã triển khai
 
