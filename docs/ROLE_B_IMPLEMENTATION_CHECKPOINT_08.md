@@ -16,7 +16,7 @@
 
 - `tests/test_tasks.py`: **12 passed**.
 - `tests/test_agents/test_delivery_api.py`, milestone và brief suite: **11 passed**.
-- Ruff, dataset 150 case/10 category, User production build và `git diff --check`: passed.
+- Ruff, dataset 150 case/10 category, User production build và `git diff --check`: passed..
 
 Một patch đầu checkpoint đã đặt nhầm revalidation consent của AI-extracted task. Lỗi được phát hiện trong review trước runtime, sửa về `_require_current_ai_provenance`, rồi task regression xanh. Ruff cũng sửa một import test thừa; không nới policy hoặc sửa fixture để che lỗi.
 
