@@ -30,7 +30,7 @@ Không coi Agent hoàn thành nếu chỉ có prompt hoặc chỉ chạy bằng 
 
 ### 2.1 Đã có
 
-- Company Root single-company.
+- Company Root single-company..
 - Product Delivery Workspace với key canonical `product-delivery`.
 - Lead/member lifecycle và user discovery.
 - Conversation mapping `classification=delivery`.
