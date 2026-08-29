@@ -25,7 +25,7 @@ capability dự kiến:
 Các hạng mục production nâng cao vẫn được giữ trong roadmap, không báo cáo nhầm là đã hoàn tất: normalized riêng các bảng
 Defect/TestCase/TestRun/Policy/Waiver, immutable `QualityBrief` publication/event queue, HITL reminder/meeting/waiver,
 browser E2E, live-LLM/load/soak và staging canary. Chúng không chặn vertical slice hiện tại nhưng là release gate trước
-khi bật rộng ngoài canary.
+khi bật rộng ngoài canary..
 
 ## 1. Kết luận baseline
 
