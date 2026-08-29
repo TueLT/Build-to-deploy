@@ -11,7 +11,7 @@ Hệ thống hiện hỗ trợ hai loại công việc:
 1. **Task thông thường**: người được giao có thể bắt đầu, báo blocker và hoàn thành.
 2. **Task cần Lead review**: người được giao không thể tự đánh dấu hoàn thành. Họ phải nộp kết quả/bằng chứng; Lead chấp nhận hoặc yêu cầu sửa.
 
-Task do AI phát hiện từ hội thoại vẫn ở trạng thái `suggested`. AI không được biến một câu chat thành cam kết chính thức nếu con người chưa chấp nhận. Lead cũng có thể tạo và giao task rõ ràng trên Delivery control plane, không phụ thuộc vào việc AI trích xuất từ chat.
+Task do AI phát hiện từ hội thoại vẫn ở trạng thái `suggested`. AI không được biến một câu chat thành cam kết chính thức nếu con người chưa chấp nhận. Lead cũng có thể tạo và giao task rõ ràng trên Delivery control plane, không phụ thuộc vào việc AI trích xuất từ chat..
 
 ## 2. State machine thực tế
 
