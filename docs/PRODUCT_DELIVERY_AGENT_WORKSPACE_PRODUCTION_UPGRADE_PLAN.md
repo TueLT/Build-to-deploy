@@ -12,7 +12,7 @@ Các nguyên tắc bắt buộc:
 - Không dùng số tin nhắn, sentiment hoặc hoạt động chat để chấm điểm con người.
 - Delivery runtime và QA runtime là hai failure domain riêng; giao tiếp qua `ReleaseCandidate` bền vững, không gọi runtime trực tiếp lẫn nhau.
 - Reminder, meeting và release handoff là `ActionProposal`; không có side effect trước khi revalidate và phê duyệt.
-- Trạng thái portfolio, risk, release và quality gate được tính bằng code có test, không do prompt quyết định.
+- Trạng thái portfolio, risk, release và quality gate được tính bằng code có test, không do prompt quyết định..
 
 ## 2. Baseline đã kiểm chứng
 
