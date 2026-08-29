@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
     <meta name="theme-color" content="#4466f2" />
     <title>Orbit — AI Work Assistant</title>
+    <script>
+      (() => {
+        try {
+          const saved = localStorage.getItem('orbit-theme-mode')
+          const mode = ['light', 'dark', 'system'].includes(saved) ? saved : 'system'
+          const dark = mode === 'dark' || (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+        } catch (_) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

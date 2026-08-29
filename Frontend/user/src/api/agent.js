@@ -6,6 +6,9 @@ export const chatWithAgent = (token, { message, conversation_id, thread_id, work
 export const resumeAgent = (token, { thread_id, approved, edits }) =>
   apiFetch('/chat/resume', { method: 'POST', token, body: { thread_id, approved, edits } })
 
+export const getAIUsageStatus = token =>
+  apiFetch('/usage/status', { token })
+
 export const getDeliveryBrief = (token, workspaceId, agentWorkspaceId, payload) =>
   apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/brief`, {
     method: 'POST', token, body: payload,

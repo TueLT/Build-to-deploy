@@ -20,6 +20,10 @@ export default function ChatPage() {
   const { sendJson, subscribe } = useOutletContext()
   const [mobileChat, setMobileChat] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
+  const [aiPanelCollapsed, setAiPanelCollapsed] = useState(() => {
+    try { return window.localStorage.getItem('orbit-chat-ai-panel-collapsed') === 'true' }
+    catch { return false }
+  })
   const [newConvoOpen, setNewConvoOpen] = useState(false)
   const [selectedId, setSelectedId] = useState(() => location.state?.conversationId || null)
   const [aiGranted, setAiGranted] = useState(false)
@@ -147,6 +151,19 @@ export default function ChatPage() {
 
   const onSend = (content) => { if (selectedId) sendJson({ type: 'send_message', conversation_id: selectedId, content }) }
 
+  const setDesktopAiPanelCollapsed = collapsed => {
+    setAiPanelCollapsed(collapsed)
+    try { window.localStorage.setItem('orbit-chat-ai-panel-collapsed', String(collapsed)) } catch { /* Keep the in-session state. */ }
+  }
+  const openAiPanel = () => {
+    setDesktopAiPanelCollapsed(false)
+    setAiOpen(true)
+  }
+  const closeAiPanel = () => {
+    if (window.matchMedia('(min-width: 1201px)').matches) setDesktopAiPanelCollapsed(true)
+    setAiOpen(false)
+  }
+
   const onCreated = (conv) => {
     setConversations(prev => [conv, ...prev.filter(c => c.id !== conv.id)])
     setSelectedId(conv.id)
@@ -173,12 +190,12 @@ export default function ChatPage() {
   }
 
   return (
-    <div className={`chat-layout ${mobileChat ? 'show-chat' : ''}`}>
+    <div className={`chat-layout ${mobileChat ? 'show-chat' : ''} ${aiPanelCollapsed ? 'ai-panel-collapsed' : ''}`}>
       <ConversationList conversations={conversations} selectedId={selectedId} onSelect={onSelect} onNewConversation={() => setNewConvoOpen(true)} onToggleAi={onToggleAiInList} />
       <section className="conversation-pane">
         {selectedConversation ? (
           <>
-            <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={() => setAiOpen(true)} onHide={onHide} onLeave={onLeave} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} />
+            <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={openAiPanel} onHide={onHide} onLeave={onLeave} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} aiPanelCollapsed={aiPanelCollapsed} />
             <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} loading={messagesLoading} firstUnreadMessageId={firstUnreadMessageId} unreadCount={unreadCount} />
           </>
         ) : (
@@ -187,7 +204,7 @@ export default function ChatPage() {
       </section>
       <AIPanel
         open={aiOpen}
-        onClose={() => setAiOpen(false)}
+        onClose={closeAiPanel}
         messages={messages}
         conversationId={selectedId}
         workspaceId={workspaceId}

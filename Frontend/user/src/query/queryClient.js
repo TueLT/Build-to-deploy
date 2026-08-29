@@ -37,4 +37,5 @@ export const queryKeys = {
   qualityReleaseCandidates: (workspaceId, agentWorkspaceId) => ['quality-release-candidates', workspaceId, agentWorkspaceId],
   assistantThreads: ['assistant-threads'],
   assistantMessages: threadId => ['assistant-messages', threadId],
+  aiUsage: ['ai-usage'],
 }

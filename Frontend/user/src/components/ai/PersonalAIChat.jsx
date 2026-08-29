@@ -30,7 +30,7 @@ function describeInterrupt(interrupt) {
 // sidebar and this chat panel stay in sync: selecting a past session sets it from outside, and this
 // component reports back (onThreadIdChange) whenever the server mints a new one on the first
 // message of a fresh session.
-export default function PersonalAIChat({ onContext, threadId, onThreadIdChange, onActivity }) {
+export default function PersonalAIChat({ onContext, contextCollapsed, threadId, onThreadIdChange, onActivity }) {
   const { token, user } = useAuth()
   const [draft,setDraft]=useState('')
   const [messages,setMessages]=useState([])
@@ -65,6 +65,7 @@ export default function PersonalAIChat({ onContext, threadId, onThreadIdChange, 
 
   const handleResult = (res) => {
     if (res.thread_id) queryClient.invalidateQueries({ queryKey: queryKeys.assistantMessages(res.thread_id) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.aiUsage })
     if (res.thread_id && res.thread_id !== threadId) onThreadIdChange?.(res.thread_id)
     setLoadedThreadId(res.thread_id)
     if (res.status === 'interrupted') {
@@ -115,7 +116,7 @@ export default function PersonalAIChat({ onContext, threadId, onThreadIdChange, 
   }
 
   return <section className="personal-chat">
-    <header className="personal-chat-header"><div className="personal-ai-avatar"><i className="bi bi-stars"/><span/></div><div><h3>Orbit Personal AI</h3><span><i/> Sẵn sàng hỗ trợ bạn</span></div><div className="personal-header-actions"><button className="context-mobile-btn" onClick={onContext}><i className="bi bi-layout-sidebar-reverse"/> Bối cảnh</button><button className="icon-btn" aria-label="Cuộc trò chuyện mới" onClick={()=>onThreadIdChange?.(null)}><i className="bi bi-arrow-clockwise"/></button><button className="icon-btn"><i className="bi bi-three-dots"/></button></div></header>
+    <header className="personal-chat-header"><div className="personal-ai-avatar"><i className="bi bi-stars"/><span/></div><div><h3>Orbit Personal AI</h3><span><i/> Sẵn sàng hỗ trợ bạn</span></div><div className="personal-header-actions"><button className={`context-mobile-btn context-toggle-btn ${contextCollapsed ? 'show-desktop' : ''}`} onClick={onContext} aria-label="Mở bảng bối cảnh"><span><i className="bi bi-layout-sidebar-reverse"/></span>Bối cảnh</button><button className="icon-btn" aria-label="Cuộc trò chuyện mới" onClick={()=>onThreadIdChange?.(null)}><i className="bi bi-arrow-clockwise"/></button><button className="icon-btn"><i className="bi bi-three-dots"/></button></div></header>
     <div ref={messagesRef} className="personal-messages">
       {messages.length===0 && <div className="personal-welcome"><motion.div initial={{scale:.85,opacity:0}} animate={{scale:1,opacity:1}} className="welcome-ai-mark"><i className="bi bi-stars"/></motion.div><span className="welcome-kicker">Chào {user?.display_name || 'bạn'}</span><h1>Hôm nay mình có thể<br/><em>giúp gì cho bạn?</em></h1><p>Hỏi mình về lịch, công việc, deadline hoặc thông tin từ các cuộc trò chuyện đã được cấp quyền.</p><div className="prompt-grid">{prompts.map(p=><motion.button whileHover={{y:-3}} whileTap={{scale:.98}} key={p.label} onClick={()=>send(p.prompt)}><span><i className={`bi ${p.icon}`}/></span><strong>{p.label}</strong><small>{p.prompt}</small><i className="bi bi-arrow-up-right"/></motion.button>)}</div></div>}
       <AnimatePresence>{messages.map(m=><motion.div key={m.id} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className={`personal-message ${m.own?'own':''}`}>

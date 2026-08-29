@@ -9,10 +9,12 @@ import '../../shared/styles.css'
 import './assistant.css'
 import './workspace-management.css'
 import './workspace-agent.css'
+import './theme.css'
 import AppRouter from './router/AppRouter'
 import { AuthProvider } from './context/AuthContext'
 import { WorkspaceProvider } from './context/WorkspaceContext'
 import { ToastProvider } from './context/ToastContext'
+import { ThemeProvider } from './context/ThemeContext'
 import { queryClient } from './query/queryClient'
 
 // Empty clientId just disables the Google button's provider context (GoogleLogin quietly
@@ -23,7 +25,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <QueryClientProvider client={queryClient}>
       <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
         <ToastProvider>
-          <AuthProvider><WorkspaceProvider><AppRouter /></WorkspaceProvider></AuthProvider>
+          <AuthProvider><ThemeProvider><WorkspaceProvider><AppRouter /></WorkspaceProvider></ThemeProvider></AuthProvider>
         </ToastProvider>
       </GoogleOAuthProvider>
     </QueryClientProvider>

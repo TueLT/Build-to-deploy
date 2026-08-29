@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -9,6 +10,7 @@ import { listMemories } from '../../api/memories'
 import { listReminders } from '../../api/reminders'
 import { listTasks } from '../../api/tasks'
 import { listAvailableAgentWorkspaces } from '../../api/workspaces'
+import { getAIUsageStatus } from '../../api/agent'
 import { queryClient, queryKeys } from '../../query/queryClient'
 
 const personalNav = [
@@ -30,7 +32,25 @@ export default function Sidebar({ open, onClose }) {
   const { workspace, workspaceId } = useWorkspace()
   const agentOrganizationId = workspace?.type === 'organization' ? workspaceId : null
   const assignedAgentsQuery = useAvailableAgentsQuery(token, agentOrganizationId)
+  const usageQuery = useQuery({
+    queryKey: queryKeys.aiUsage,
+    queryFn: () => getAIUsageStatus(token),
+    enabled: Boolean(token),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
   const hasAssignedAgent = (assignedAgentsQuery.data || []).length === 1
+  const usage = usageQuery.data
+  const usagePct = Math.max(0, Number(usage?.used_pct || 0))
+  const usageBarPct = Math.min(100, usagePct)
+  const budgetDisabled = usage?.daily_token_budget === 0
+  const usageTone = usagePct >= 100 ? 'exceeded' : usagePct >= 80 ? 'warning' : 'normal'
+  const usageLabel = budgetDisabled ? 'Không giới hạn' : usage ? `${Math.round(usagePct)}%` : '—'
+  const usageDetail = budgetDisabled
+    ? 'Không đặt giới hạn token theo ngày'
+    : usage
+      ? `${Number(usage.tokens_used_today || 0).toLocaleString('vi-VN')} / ${Number(usage.daily_token_budget || 0).toLocaleString('vi-VN')} token dùng chung`
+      : 'Đang tải hạn mức AI…'
   const adminUrl = import.meta.env.VITE_ADMIN_APP_URL || 'http://localhost:5174'
   useEffect(() => {
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection
@@ -86,7 +106,12 @@ export default function Sidebar({ open, onClose }) {
           {isAdmin && <><div className="nav-caption">Administration</div><a className="side-link" href={adminUrl}><i className="bi bi-box-arrow-up-right" /><span>Open Admin</span></a></>}
         </nav>
         <div className="sidebar-bottom">
-          <div className="ai-usage"><div className="d-flex align-items-center gap-2 mb-2"><i className="bi bi-stars" /><strong>AI credits</strong><span>72%</span></div><div className="progress"><div className="progress-bar" style={{width:'72%'}} /></div><small>Resets in 12 days</small></div>
+          <div className={`ai-usage ${usageTone}`} title="Ngân sách token AI dùng chung của hệ thống, đặt lại vào đầu ngày mới.">
+            <div className="ai-usage-heading"><i className="bi bi-stars" /><strong>AI hôm nay</strong><span>{usageLabel}</span></div>
+            {!budgetDisabled && <div className="progress" role="progressbar" aria-label="Mức sử dụng AI hôm nay" aria-valuemin="0" aria-valuemax="100" aria-valuenow={usageBarPct}><div className="progress-bar" style={{width:`${usageBarPct}%`}} /></div>}
+            <small>{usageDetail}</small>
+            <em>{usagePct >= 100 ? 'Personal Agent đang bị giới hạn' : 'Đặt lại lúc 00:00'}</em>
+          </div>
           <NavLink to="/profile" className="user-mini"><span className="avatar-photo">{getInitials(user?.display_name)}</span><span><strong>{user?.display_name || 'Loading...'}</strong><small>{user?.email}</small></span><i className="bi bi-three-dots ms-auto" /></NavLink>
         </div>
       </aside>
