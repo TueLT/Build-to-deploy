@@ -16,7 +16,7 @@ Kịch bản này kiểm tra sự khác biệt thực tế giữa single-agent v
 - scope, nguồn, owner và deadline không bị suy đoán hoặc mở rộng trái quyền.
 
 Không kiểm tra bằng cách so khớp nguyên văn câu trả lời LLM. Tiêu chí pass dựa trên intent, workflow,
-artifact, số liệu nghiệp vụ, provenance và invariant bảo mật.
+artifact, số liệu nghiệp vụ, provenance và invariant bảo mật..
 
 ## 2. Điều kiện trước khi test
 
