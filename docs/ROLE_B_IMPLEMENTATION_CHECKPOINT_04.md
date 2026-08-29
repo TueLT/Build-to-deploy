@@ -15,7 +15,7 @@ Checkpoint này hoàn tất hai phần độc lập còn thiếu của ngày 3:
 1. B3-05: một Delivery brief hết hạn phải trở thành response `partial`, được gắn rõ `freshness=stale` và `is_current=false`; brief còn hạn nhưng có data gap cũng không được hiển thị như trạng thái hoàn chỉnh.
 2. B3-07: fixture integration Delivery phải có ID/schema/source ổn định và source phải thuộc chính Delivery Agent Workspace.
 
-Không có profile runner, shared planner binding, persistent `WorkspaceBrief` store, API hay UI được tạo ở checkpoint này. Các phần đó vẫn cần gate shared-platform tương ứng.
+Không có profile runner, shared planner binding, persistent `WorkspaceBrief` store, API hay UI được tạo ở checkpoint này. Các phần đó vẫn cần gate shared-platform tương ứng..
 
 ## 2. Artifact và hành vi đã triển khai
 
