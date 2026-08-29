@@ -11,6 +11,7 @@ from sqlalchemy import and_, or_, select
 from src.config import get_settings
 from src.db import session as db_session
 from src.db.models import Conversation, EventCandidate, EventExtractionCursor, Message, User
+from src.models.chat_content import text_only_chat_content
 from src.services import consent_service, usage_service
 from src.services.authorization_service import get_authorized_participant_ids
 from src.services.llm import get_llm
@@ -27,7 +28,7 @@ _EVENT_SIGNAL = re.compile(
 
 
 def looks_like_event(text: str) -> bool:
-    return bool(_EVENT_SIGNAL.search(text))
+    return bool(_EVENT_SIGNAL.search(text_only_chat_content(text)))
 
 
 def _clean_json(text: str) -> dict:
@@ -121,7 +122,7 @@ async def _extract_event_candidate(
         candidates_by_id = {item.id: item for item in visible}
 
     context_text = "\n".join(
-        f"[{row.created_at.isoformat()}] {sender.display_name}: {row.content}"
+        f"[{row.created_at.isoformat()}] {sender.display_name}: {text_only_chat_content(row.content)}"
         for row, sender in context_rows
     )
     now = datetime.now(ZoneInfo(settings.calendar_timezone))

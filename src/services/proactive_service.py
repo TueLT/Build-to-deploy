@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import get_settings
 from src.db import session as db_session
 from src.db.models import AIPermission, Conversation, Message, Task, User
+from src.models.chat_content import text_only_chat_content
 from src.services import chat_service, consent_service, usage_service
 from src.services.llm import get_llm
 from src.websocket.manager import manager
@@ -126,10 +127,10 @@ async def _load_window(
         )
     ).all()
     window = list(reversed(rows))
-    total_chars = sum(len(message.content) for message, _ in window)
+    total_chars = sum(len(text_only_chat_content(message.content)) for message, _ in window)
     while total_chars > _WINDOW_MAX_CHARS and len(window) > 1:
         dropped, _ = window.pop(0)
-        total_chars -= len(dropped.content)
+        total_chars -= len(text_only_chat_content(dropped.content))
     return window, roster, eligible_ids, is_direct
 
 
@@ -142,7 +143,7 @@ def _format_window(window: list[tuple[Message, User]], tz_name: str) -> str:
             created_at = created_at.replace(tzinfo=UTC)
         lines.append(
             f"[{index}] {sender.display_name} ({created_at.astimezone(timezone).strftime('%H:%M')}): "
-            f"{message.content}"
+            f"{text_only_chat_content(message.content)}"
         )
     return "\n".join(lines)
 
@@ -223,7 +224,7 @@ def _verify_owner(
     if evidence == "invited":
         if message.sender_id == user_id:
             return None
-        if not is_direct and _strip_name_suffix(claim_name).casefold() not in message.content.casefold():
+        if not is_direct and _strip_name_suffix(claim_name).casefold() not in text_only_chat_content(message.content).casefold():
             return None
     return user_id
 
@@ -334,6 +335,9 @@ async def maybe_suggest_task(
 ) -> None:
     """Create consent-scoped task suggestions from a bounded recent conversation window."""
     try:
+        content = text_only_chat_content(content)
+        if not content:
+            return
         async with db_session.async_session_maker() as db:
             conversation = await db.get(Conversation, conversation_id)
             if conversation is None:

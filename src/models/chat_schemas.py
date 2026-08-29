@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 from src.models.auth_schemas import UserPublic
+from src.models.chat_content import MAX_CHAT_MESSAGE_LENGTH
 
 
 class ConversationCreateRequest(BaseModel):
@@ -47,7 +48,9 @@ class MessageListResponse(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
-    content: str = Field(..., min_length=1, max_length=5000)
+    # Attachment payloads are data URLs embedded by the chat composer. The frontend caps the
+    # encoded message below 4.5 MB; this ceiling leaves room for marker metadata.
+    content: str = Field(..., min_length=1, max_length=MAX_CHAT_MESSAGE_LENGTH)
 
 
 class AIPermissionOut(BaseModel):

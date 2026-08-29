@@ -92,6 +92,8 @@ export default function ChatPage() {
   useEffect(() => {
     if (!conversations.length) return
     if (selectedId && conversations.some(conversation => conversation.id === selectedId)) return
+    // Mobile uses separate list/thread screens, so do not skip the list by auto-opening row one.
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches) return
 
     const fallbackId = conversations[0].id
     setSelectedId(fallbackId)
