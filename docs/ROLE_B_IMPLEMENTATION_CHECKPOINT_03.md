@@ -16,7 +16,7 @@ Checkpoint này hoàn thiện phần còn lại của ngày 2 ở ranh giới an
 2. Chỉ resolve người được server allowlist, trả đúng projection tối thiểu cần cho Delivery (`user_id`, `display_name`).
 3. Bổ sung regression test cho evidence từ QA/private conversation ngoài scope và guessed person ID.
 
-Checkpoint **không** triển khai repository thật, migration, registry/planner/API/UI. Vì vậy đây không phải là trạng thái hoàn thành PR-B2, Day 2 hay Delivery Agent production.
+Checkpoint **không** triển khai repository thật, migration, registry/planner/API/UI. Vì vậy đây không phải là trạng thái hoàn thành PR-B2, Day 2 hay Delivery Agent production..
 
 ## 2. Artifact và hành vi đã triển khai
 
