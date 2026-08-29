@@ -20,6 +20,14 @@ elif _jobstore_url.startswith("postgresql://"):
 # timezone=... matters even though the datetimes passed in are usually tz-aware already: without
 # it, APScheduler falls back to the *system's* local timezone (often UTC on a server) for any
 # naive datetime it's given, which would fire reminders up to 7h off from Hanoi time.
+_jobstore_engine_options = {"pool_pre_ping": True}
+if _jobstore_url.startswith("postgresql"):
+    # The job store only runs a small number of scheduler queries. A large
+    # independent sync pool can otherwise exhaust a managed Postgres pool when
+    # combined with the async request pool and LangGraph checkpointer.
+    _jobstore_engine_options.update(pool_size=1, max_overflow=0, pool_timeout=30)
+
 scheduler = AsyncIOScheduler(
-    jobstores={"default": SQLAlchemyJobStore(url=_jobstore_url)}, timezone=settings.scheduler_timezone
+    jobstores={"default": SQLAlchemyJobStore(url=_jobstore_url, engine_options=_jobstore_engine_options)},
+    timezone=settings.scheduler_timezone,
 )

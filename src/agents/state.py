@@ -22,6 +22,10 @@ class AgentState(TypedDict, total=False):
     response: str
     error: str
     metadata: dict
+    # Deterministic pre/post LLM policy checks. These flags make a blocked turn terminal
+    # without allowing it to reach the planner or any tool.
+    guardrail_blocked: bool
+    guardrail_requires_clarification: bool
     user_id: str | None  # id of the user driving this run, for tools that push WS updates to them
     workspace_id: str | None  # active workspace for tenant-scoped tools
     trace_id: str | None

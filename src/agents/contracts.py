@@ -266,6 +266,13 @@ class WorkspaceBrief(FrozenContract):
             raise ValueError("brief_type and producer_profile do not match")
         if self.brief_type == BriefType.DELIVERY and self.release_readiness is not None:
             raise ValueError("release_readiness belongs only to a quality brief")
+        if self.brief_type == BriefType.QUALITY and self.release_readiness is None:
+            raise ValueError("A quality brief requires release_readiness")
+        if self.release_readiness == ReleaseReadiness.READY and self.data_gaps:
+            raise ValueError("A READY quality brief cannot contain data gaps")
+        structured_content = (*self.facts, *self.risks, *self.dependencies, *self.decisions_needed)
+        if structured_content and not self.sources:
+            raise ValueError("A factual WorkspaceBrief requires at least one source")
         if any(source.agent_workspace_id != self.agent_workspace_id for source in self.sources):
             raise ValueError("Every source must belong to the producing agent workspace")
         return self

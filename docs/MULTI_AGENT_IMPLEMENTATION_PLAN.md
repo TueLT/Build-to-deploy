@@ -4,11 +4,19 @@
 >
 > Mục tiêu demo: **Product Delivery Agent + Quality Assurance Agent + Executive Agent**
 >
-> Thời gian mục tiêu: 7 ngày làm việc, phát triển song song trên một shared core
+> Thời gian mục tiêu ban đầu: 7 ngày làm việc cho functional demo; phần cô lập runtime/deployment
+> được triển khai tiếp theo theo các checkpoint R0–R7 tại mục 23–29, không ép vào cùng cửa sổ 7 ngày
 >
 > Nguyên tắc: workspace trước, agent sau; policy bằng code; mọi side effect qua HITL
 
-> Kiến trúc, data boundary, router, trách nhiệm Workspace Agent và luồng policy/HITL được định nghĩa canonical tại `docs/ARCHITECTURE.md`. Tài liệu này chỉ quản lý phạm vi, dependency, phân công và release gates.
+> **Quyết định Product Delivery ngày 2026-08-27:** hợp nhất Task Intelligence và Work Intelligence
+> thành một `Delivery Task Intelligence Agent` dùng nội bộ bởi Product Delivery Workspace Agent.
+> Agent duy nhất này sở hữu task cụ thể, My Work và tổng hợp task nhóm/workspace. Router chỉ cấp thêm
+> checkpoint/portfolio tools cho các intent tổng hợp; không tạo một agent riêng cho từng tool.
+> `work_intelligence` chỉ được chuẩn hóa khi đọc workflow lịch sử và không còn là một runtime agent,
+> feature flag, child run hay lựa chọn mới trên UI.
+
+> Kiến trúc, data boundary, router, trách nhiệm Workspace Agent và luồng policy/HITL được định nghĩa canonical tại `docs/ARCHITECTURE.md`. Tài liệu này quản lý phạm vi, dependency, phân công và release gates. Quyết định cô lập runtime mới tại mục 23 là phần mở rộng bắt buộc của kiến trúc production và được đồng bộ vào `docs/ARCHITECTURE.md` v1.1.
 
 > Company Root single-company, quyền Platform Admin, lead, Executive Workspace, membership và lifecycle được định nghĩa tại `docs/ENTERPRISE_WORKSPACE_FOUNDATION.md`. Tài liệu nền móng này được ưu tiên khi phần cũ còn giả định multi-tenant.
 
@@ -34,7 +42,10 @@ Hai phòng ban được chọn vì có quan hệ trực tiếp nhưng ít nghi�
 
 Không chọn HR, Finance, Legal, Procurement hoặc Sales cho MVP vì các miền này dễ kéo theo luật lao động, thuế, hợp đồng, doanh thu, dữ liệu cá nhân hoặc quy trình phê duyệt phức tạp.
 
-Planner cá nhân hiện tại tiếp tục chạy như `Personal Agent compatibility flow`, nhưng không phải một trong ba agent được trình diễn.
+Personal Agent hiện tại tiếp tục chạy như compatibility flow trong functional demo, nhưng không phải một
+Workspace Agent và không được chia sẻ prompt, tool, checkpoint hoặc mutable runtime state với Workspace Agent.
+Mục tiêu production là Personal Agent Service độc lập và một Workspace Agent runtime deployment độc lập cho
+mỗi Workspace quan trọng; các runtime dùng chung contract/image, không sao chép source code.
 
 > **Quy tắc lập lịch của nhóm:** PR-00 rename → contract freeze → migration/scope baseline là chuỗi bắt buộc tuần tự. Sau khi contract freeze, A/B/C/D được làm song song bằng interface và fixture; chỉ bước nối dữ liệu thật, Executive aggregation thật, HITL E2E và release mới phải chờ producer tương ứng hoàn thành.
 
@@ -59,7 +70,7 @@ Foundation/contract baseline dưới đây đã có trên nhánh `develop`; từ
 | Agent contracts, AgentState, feature flags | Contract v1.0 đã khóa trong working tree | Review consumer compatibility và merge |
 | Agent Workspace models/migration/API | Baseline hoàn thành trên `develop` | Seed/demo data ở phase sau |
 | Context Builder, Scope Resolver, Registry/Router | Baseline hoàn thành trong working tree | Nối runtime agent thật sau khi specialist profile tồn tại |
-| Product Delivery Agent | Chưa triển khai | Owner B thực hiện vertical slice |
+| Product Delivery Agent | Đã có vertical slice local: scoped Delivery runtime, LLM, dashboard, Lead/Member UI và test | Hoàn thiện citation/audit/E2E rồi dùng làm runtime đầu tiên được tách service |
 | Quality Assurance Agent | Chưa triển khai | Owner C thực hiện vertical slice |
 | Executive Agent | Chưa triển khai | Owner D thực hiện trên WorkspaceBrief mock trước |
 | Platform Admin UI | Hoàn thành baseline | Tạo Workspace trong company cố định; gắn agent, chọn lead/member và suspend/activate |
@@ -103,7 +114,7 @@ flowchart LR
     API --> CB[Server Context Builder]
     CB --> POLICY[Scope and Policy Resolver]
     POLICY -->|DENY or MASK| SAFE[Safe response]
-    POLICY -->|ALLOW| ORC[Shared Orchestrator]
+    POLICY -->|ALLOW| ORC[Agent Gateway / Orchestrator]
     ORC --> ROUTER[Deterministic Router]
     ROUTER --> DA[Delivery Agent]
     ROUTER --> QA[Quality Agent]
@@ -121,11 +132,17 @@ flowchart LR
     HITL --> AUDIT
 ```
 
-Ba agent là ba profile trên một core chung, không phải ba service hoặc ba LangGraph được sao chép:
+Ba Workspace Agent dùng chung contract, policy protocol và runtime image; không sao chép source code hoặc tự
+tạo contract riêng. Câu này không đồng nghĩa chúng phải chạy chung một process. Functional demo có thể chạy
+trong modular monolith, còn production target tách fault domain bằng deployment/runtime độc lập:
 
 ```text
 agent = profile + prompt version + allowed scope + tool allowlist
       + output schema + policy rules + eval suite + runtime budget
+```
+
+```text
+shared contract/image != shared process/state/failure domain
 ```
 
 ### 4.1 Contract chung phải khóa trước
@@ -302,7 +319,10 @@ Không agent nào được bật feature flag nếu guardrail của profile đó
 - Calendar của actor; shared calendar chỉ khi có entitlement riêng.
 - Directory tối thiểu để resolve owner.
 
-**Tool allowlist**
+**Tool allowlist mục tiêu ban đầu**
+
+Registry đang chạy hiện chỉ có `get_quality_work_items` và `build_quality_brief`; các tool còn lại dưới đây là
+target capability, không phải implementation hiện có.
 
 - `get_delivery_tasks`
 - `search_delivery_messages`
@@ -335,6 +355,9 @@ Không agent nào được bật feature flag nếu guardrail của profile đó
 - Owner/date mơ hồ phải trả `needs_clarification`.
 
 ### 6.2 Quality Assurance Agent
+
+> Kế hoạch nâng cấp thực thi và inventory tool/harness canonical: xem
+> [Quality Assurance Agent Workspace — Comprehensive Upgrade Plan](QUALITY_AGENT_WORKSPACE_COMPREHENSIVE_UPGRADE_PLAN.md).
 
 **Mục tiêu**
 
@@ -1049,13 +1072,15 @@ Task chỉ bắt đầu khi có:
 ### 18.3 Done cho dự án
 
 - Company Root chứa các Department Workspace cô lập và một Executive Workspace chỉ đọc validated aggregate.
-- Shared core chạy Delivery, Quality và Executive profiles.
+- Shared contracts/control plane route được Delivery, Quality và Executive profile runtimes; không yêu cầu chúng
+  chạy chung process.
 - Delivery/Quality chỉ đọc resource đúng workspace.
 - Executive chỉ đọc validated briefs mặc định.
 - Admin role tách khỏi business entitlement.
 - Handoff có schema, source, freshness, trace và audit.
 - Tool allowlist enforce tại runtime và tool boundary.
 - Mọi side effect có HITL, payload binding, expiry và idempotency.
+- Personal ↔ Workspace và dedicated Workspace ↔ Workspace fault-isolation gates tại mục 28 pass.
 - Release gates đạt; seed/demo/runbook/kill switch sẵn sàng.
 
 ## 19. Vận hành, rollback và xử lý sự cố
@@ -1078,7 +1103,8 @@ EXECUTIVE_AGENT_ENABLED
 - Migration giai đoạn đầu chỉ thêm bảng/cột nullable; không phá flow cũ.
 - Rollback hành vi bằng feature flags.
 - Migration production sửa forward; không xóa dữ liệu để rollback.
-- Khi specialist bị tắt, trả safe response/Personal compatibility flow phù hợp.
+- Khi specialist bị tắt, trả safe unavailable response. Personal Agent vẫn hoạt động độc lập nhưng không xử lý thay
+  workspace intent để né policy hoặc che lỗi runtime.
 
 ### 19.3 Sự cố
 
@@ -1137,3 +1163,639 @@ Không được cắt:
 5. Tách bốn workstream branch ở mục 11.
 6. B/C/D bắt đầu skeleton song song; A giữ ownership shared core và review scope/tool boundary.
 7. Cuối ngày chạy full regression và demo nội bộ theo gate ngày 1.
+
+## 23. Quyết định tiến hóa kiến trúc runtime — ADR-MA-10
+
+> **Ngày review:** 2026-08-24
+>
+> **Trạng thái:** Accepted cho hướng production; triển khai tuần tự sau khi giữ xanh functional demo
+>
+> **Mục tiêu:** Personal Agent lỗi không làm Workspace Agent lỗi; Workspace A lỗi hoặc quá tải không làm
+> Workspace B lỗi; không sao chép code để đạt cô lập.
+
+### 23.1 Kết quả audit hiện trạng
+
+Repository hiện là **modular monolith**, chưa phải microservice/cell architecture:
+
+- `src/main.py` import Personal routes, Delivery routes và khởi tạo Personal LangGraph checkpointer trong cùng
+  FastAPI lifespan.
+- `Dockerfile` chạy một `uvicorn src.main:app`.
+- `docker-compose.yml` chỉ có một `backend` và một `postgres`.
+- `render.yaml` chỉ deploy một web service `orbit-backend`.
+- Personal Agent và Product Delivery Agent đã có graph/tool boundary riêng; Product Delivery còn có exception
+  boundary trả `partial` khi LLM runtime lỗi.
+- PostgreSQL, process, auth, cấu hình LLM và provider quota vẫn là shared failure domain.
+
+Kết luận audit:
+
+| Lớp cô lập | Hiện tại | Mục tiêu production |
+|---|---|---|
+| Prompt/tool/state theo profile | Đã có phần lớn | Bắt buộc giữ |
+| Authorization theo Agent Workspace | Đã có | Bắt buộc giữ và revalidate |
+| Process/container Personal ↔ Workspace | Chưa có | Tách độc lập |
+| Process/container Workspace A ↔ B | Chưa có | Dedicated runtime cho Workspace quan trọng |
+| CPU/RAM/concurrency/token budget theo Workspace | Chưa có | Bắt buộc trước production |
+| Health/version/rollback theo Workspace | Chưa có | Bắt buộc trước production |
+| Queue/circuit breaker/fair scheduling | Chưa có | R6; không chặn R2 functional extraction |
+
+### 23.2 Quyết định
+
+Chọn mô hình **Hybrid Bridge / Workspace-isolated runtime**:
+
+```text
+Shared Control Plane
+├── Core API / Agent Gateway
+├── Auth, membership, policy
+├── Workspace Registry
+├── Groups, tasks, messages, consent
+└── Audit / observability metadata
+
+Independent Agent Data Plane
+├── Personal Agent Service                  # multi-user, state theo user/thread
+├── Product Delivery Agent Runtime          # cố định agent_workspace_id=delivery
+├── Quality Assurance Agent Runtime         # cố định agent_workspace_id=quality
+└── Executive Agent Runtime                 # aggregate brief, không raw specialist data
+```
+
+Quy tắc triển khai:
+
+1. Một runtime image chuẩn có thể được dùng cho nhiều Workspace deployment; không copy repository.
+2. Mỗi dedicated Workspace runtime là process/container, quota, health, version và circuit breaker độc lập.
+3. Runtime được bind cứng với `organization_id + agent_workspace_id + agent_profile`; request lệch target bị từ chối.
+4. Core API là nguồn sự thật cho identity, membership, resource mapping, consent và policy.
+5. Agent không truyền system prompt, checkpoint, token hoặc toàn bộ state cho nhau.
+6. Personal ↔ Workspace và specialist ↔ Executive chỉ giao tiếp qua typed handoff/brief đã validate.
+7. MVP tiếp tục dùng PostgreSQL chung; cô lập compute trước, storage isolation nâng cấp theo rủi ro thực tế.
+
+### 23.3 Vì sao không tách full silo ngay
+
+Không tạo database, Redis cluster, Core API và source tree riêng cho từng phòng ban ngay lập tức. Việc đó làm tăng
+chi phí vận hành trước khi runtime contract, observability và automated provisioning ổn định. Thứ tự ưu tiên là:
+
+```text
+fault boundary trong code
+→ tách Product Delivery runtime
+→ Gateway/Registry
+→ tách Personal runtime
+→ per-workspace quota/circuit/queue
+→ cell hoặc scale-to-zero khi số Workspace tăng
+```
+
+### 23.4 Deployment mode khi số Workspace tăng
+
+| Mode | Dùng khi | Isolation | Ghi chú |
+|---|---|---|---|
+| `dedicated` | Workspace quan trọng, ít Workspace, SLA cao | Process/container riêng | Mode đầu tiên cho Delivery |
+| `scale_to_zero` | Nhiều Workspace ít sử dụng | Như dedicated khi active | Có cold-start; cần automated provisioning |
+| `cell` | Nhiều Workspace thông thường | Cô lập theo cell + bulkhead theo Workspace | Không dùng trước khi per-workspace quota test pass |
+
+Không chuyển một Workspace từ `dedicated` sang `cell` chỉ vì chi phí nếu chưa có load/fault evidence chứng minh
+SLO vẫn đạt.
+
+## 24. Biên trách nhiệm giữa Core, Personal và Workspace runtime
+
+### 24.1 Core API / Agent Gateway
+
+Core chịu trách nhiệm:
+
+- xác thực JWT và tạo `actor_user_id`;
+- resolve Company Root, Agent Workspace, role và source bindings;
+- kiểm tra consent/purpose trước retrieval;
+- tạo `AgentContext` hoặc authorized snapshot đã sanitize;
+- lookup runtime endpoint/version/status từ Workspace Runtime Registry;
+- ký internal invocation, đặt deadline và `trace_id`;
+- lưu sanitized audit, run status và usage metadata;
+- fail closed khi runtime không đúng target, unhealthy hoặc version không được phép.
+
+Core không chịu trách nhiệm:
+
+- thực thi profile graph sau khi runtime đã được tách;
+- giữ mutable LangGraph state của Workspace runtime;
+- relay system prompt hoặc raw checkpoint giữa Agent;
+- fallback từ Workspace Agent sang Personal Agent để né lỗi quyền.
+
+### 24.2 Personal Agent Service
+
+Personal Agent là một service đa user, không tạo container cho từng người. Nó sở hữu:
+
+- Personal graph, planner, guardrail và tool binding;
+- server-side thread/checkpointer;
+- Personal Memory retrieval;
+- Calendar/Reminder HITL của actor;
+- state key `personal:{user_id}:{thread_id}`;
+- quota/concurrency theo user và service.
+
+Personal Agent không đọc toàn bộ tiến độ phòng ban. Nếu nhận workspace intent, nó tạo handoff candidate hoặc hướng
+người dùng mở đúng Workspace Agent; Core phải kiểm tra quyền trước khi chuyển.
+
+### 24.3 Workspace Agent runtime
+
+Mỗi runtime deployment sở hữu:
+
+- profile prompt/graph/output guardrail;
+- profile tool allowlist;
+- runtime timeout, recursion/tool/token budget;
+- health/readiness và version;
+- workspace-scoped thread state nếu profile hỗ trợ chat nhiều lượt;
+- metrics không chứa raw private content.
+
+Runtime không tự quyết định role/scope từ prompt. Với Product Delivery giai đoạn R2, Core chuẩn bị authorized,
+source-backed snapshot; runtime chỉ gọi tool snapshot cục bộ và tổng hợp. Đây là biên tách an toàn nhất từ code hiện
+tại vì không cần cấp database credential rộng cho runtime.
+
+### 24.4 Personal ↔ Workspace handoff
+
+Handoff tối thiểu:
+
+```json
+{
+  "handoff_id": "uuid",
+  "trace_id": "uuid",
+  "actor_user_id": "server-resolved",
+  "organization_id": "company-root-id",
+  "source_agent": "personal",
+  "target_agent_workspace_id": "product-delivery-id",
+  "target_profile": "product_delivery",
+  "intent": "delivery_brief",
+  "message": "user text",
+  "allowed_resource_ids": ["server-resolved-id"],
+  "consent_scope_hash": "hash",
+  "issued_at": "ISO-8601",
+  "expires_at": "ISO-8601"
+}
+```
+
+Invariant:
+
+- payload được ký hoặc truyền qua mTLS/service credential;
+- runtime so khớp target với cấu hình cố định của chính nó;
+- runtime revalidate hoặc yêu cầu Core xác nhận scope trước resource read quan trọng;
+- kết quả phải ghi rõ Agent nguồn; Personal không tự nhận câu trả lời Workspace là của mình;
+- Workspace output không được tự động lưu vào Personal Memory;
+- Workspace muốn tác động Calendar/Reminder cá nhân chỉ tạo `ActionProposal`; actor xác nhận trước executor.
+
+### 24.5 Specialist ↔ Executive
+
+Executive không gọi raw runtime của Delivery/QA để đọc chat trong request path. Handoff duy nhất là validated,
+versioned `WorkspaceBrief`:
+
+```text
+Delivery/QA runtime
+→ WorkspaceBrief candidate
+→ Core validator/store
+→ published brief
+→ Executive runtime
+```
+
+Runtime specialist sập không làm Executive mở rộng quyền sang raw data; Executive trả partial/stale/data gaps.
+
+## 25. Contract triển khai và Workspace Runtime Registry
+
+### 25.1 Registry target
+
+Thêm hoặc mở rộng metadata runtime bằng migration additive:
+
+```text
+agent_workspace_runtimes
+- id
+- organization_workspace_id
+- agent_workspace_id unique
+- agent_profile
+- deployment_mode: embedded | dedicated | cell | scale_to_zero
+- runtime_endpoint
+- runtime_version
+- status: provisioning | active | degraded | disabled | failed
+- max_concurrency
+- daily_token_budget
+- request_timeout_seconds
+- last_health_status
+- last_health_checked_at
+- created_at / updated_at
+```
+
+Không lưu API key thô trong bảng. Secret nằm trong secret manager/environment của deployment.
+
+### 25.2 Internal invocation contract
+
+Core gọi runtime qua internal endpoint versioned:
+
+```text
+POST /internal/v1/agent-runs
+GET  /internal/v1/health/live
+GET  /internal/v1/health/ready
+```
+
+Request envelope:
+
+```json
+{
+  "contract_version": "1.0",
+  "run_id": "uuid",
+  "trace_id": "uuid",
+  "actor": {
+    "user_id": "id",
+    "business_role": "lead|member|executive_viewer"
+  },
+  "target": {
+    "organization_id": "id",
+    "agent_workspace_id": "id",
+    "profile": "product_delivery",
+    "runtime_version": "expected-version"
+  },
+  "request": {
+    "intent": "delivery_brief",
+    "message": "text",
+    "deadline_at": "ISO-8601"
+  },
+  "authorization": {
+    "allowed_resource_ids": ["id"],
+    "consent_scope_hash": "hash",
+    "policy_version": "version"
+  },
+  "snapshot": {
+    "payload": {},
+    "sources": [],
+    "generated_at": "ISO-8601",
+    "expires_at": "ISO-8601"
+  }
+}
+```
+
+Response envelope:
+
+```json
+{
+  "contract_version": "1.0",
+  "run_id": "uuid",
+  "trace_id": "uuid",
+  "status": "success|partial|denied|error|timeout",
+  "answer": "text",
+  "sources": [],
+  "data_gaps": [],
+  "runtime": {
+    "profile": "product_delivery",
+    "version": "version",
+    "model": "model",
+    "latency_ms": 0,
+    "token_usage": 0
+  }
+}
+```
+
+Contract dùng `extra=forbid`; server-owned field không tồn tại trong public client schema.
+
+### 25.3 Routing và failure behavior
+
+```text
+runtime active + ready      → invoke
+runtime provisioning       → 503 + retry_after, không route sang profile khác
+runtime degraded           → deterministic dashboard vẫn dùng; Agent run trả partial/503 theo capability
+runtime disabled/failed     → safe unavailable response
+target/runtime mismatch     → 403/409 + security audit
+deadline exceeded           → cancel/timeout, không retry side effect
+```
+
+### 25.4 State, cache và idempotency
+
+- Personal state key: `personal:{user_id}:{thread_id}`.
+- Workspace state key: `workspace:{agent_workspace_id}:{user_id}:{thread_id}`.
+- Cache key chứa organization, Agent Workspace, actor/role, purpose, consent hash, profile/runtime version.
+- Không dùng in-memory global dictionary làm durable workspace state.
+- Mọi action proposal có idempotency key và payload hash; retry read-only được, retry side effect chỉ khi executor
+  chứng minh idempotent.
+
+## 26. Lộ trình triển khai R0–R7
+
+> **Ưu tiên hiện tại:** chỉ bắt đầu R0 → R2. Không triển khai Redis/queue/cell trước khi Product Delivery extraction
+> pass fault-isolation gate. Điều này giữ demo ổn định và tránh microservice hóa khi contract còn thay đổi.
+
+### R0 — Freeze runtime boundary và baseline
+
+**Công việc**
+
+1. Freeze `AgentRuntimeRequest/Response` và service-error taxonomy.
+2. Đánh dấu rõ Company Root, Agent Workspace và Group trong schema/docs.
+3. Chụp baseline tests, latency và dependency graph.
+4. Bổ sung run/fault fixture không phụ thuộc LLM thật.
+5. Không di chuyển file trước khi contract tests xanh.
+
+**Gate**
+
+- Existing Delivery API, dashboard và Personal flow không đổi hành vi.
+- Contract serialization/deserialization pass cả Core và fake runtime.
+- Full regression xanh; acceptance failure hiện có được ghi rõ, không che hoặc bỏ test.
+
+**Rollback:** docs/contracts additive; chưa đổi request path.
+
+### R1 — Tạo fault boundary khi còn trong monolith
+
+**Công việc**
+
+1. Tách readiness component cho Core, Personal checkpointer và Delivery runtime.
+2. Personal checkpointer init failure không làm Core dashboard/Workspace deterministic API mất readiness toàn bộ.
+3. Thêm timeout/exception boundary, cancellation và sanitized trace cho từng Agent run.
+4. Feature flag/status theo Agent Workspace, không chỉ theo profile toàn cục.
+5. Thêm concurrency/token budget counters theo Agent Workspace.
+
+**Gate**
+
+- Inject lỗi Personal planner/checkpointer: Delivery dashboard vẫn `200`.
+- Inject lỗi Delivery LLM: deterministic Delivery data vẫn trả `partial`, không gọi Personal fallback.
+- Health endpoint phản ánh đúng component; không trả ready cố định.
+
+**Rollback:** tắt component readiness mới và giữ embedded adapter cũ.
+
+### R2 — Tách Product Delivery thành runtime service đầu tiên
+
+**Công việc**
+
+1. Tạo package/service `workspace_agent_runtime` dùng lại Delivery graph/profile đã có.
+2. Core giữ authorization, scoped retrieval và tạo compact authorized snapshot.
+3. Runtime nhận signed snapshot; không nhận JWT user hoặc database credential rộng.
+4. Thêm internal HTTP adapter và in-process adapter cùng một contract để test parity.
+5. Thêm Docker service `workspace-agent-product-delivery` cho local/staging.
+6. Pin `AGENT_WORKSPACE_ID`, `AGENT_PROFILE`, runtime version và resource limits.
+
+**Gate**
+
+- Kill Delivery container: Personal `/chat`, Core task/chat và dashboard deterministic vẫn hoạt động.
+- Delivery container từ chối target Workspace khác.
+- Embedded và remote adapter cho cùng fixture tạo output cùng schema/source/data-gap semantics.
+- Không raw secret/JWT/message vượt snapshot policy trong runtime log.
+
+**Rollback:** Registry chuyển Delivery về `embedded`; public API không đổi.
+
+### R3 — Workspace Registry và Agent Gateway
+
+**Công việc**
+
+1. Migration additive cho runtime registry.
+2. Gateway lookup endpoint/status/version theo `agent_workspace_id`.
+3. Service-to-service authentication, deadline propagation và trace correlation.
+4. Admin chỉ xem metadata/health; không nhận raw prompt/data.
+5. Canary/rollback một runtime mà không deploy Core.
+
+**Gate**
+
+- Runtime endpoint không hard-code theo profile trong frontend.
+- Registry target mismatch fail closed và có audit.
+- Runtime degraded chỉ ảnh hưởng đúng Workspace.
+
+### R4 — Tách Personal Agent Service
+
+**Công việc**
+
+1. Di chuyển Personal graph/checkpointer/tool runtime sau internal adapter.
+2. Core `/chat` giữ public compatibility và proxy tới Personal service.
+3. Thread ownership, retention, HITL resume và consent revalidation giữ nguyên.
+4. Personal và Workspace dùng pool/quota/health riêng.
+
+**Gate**
+
+- Kill Personal container: mọi Workspace Agent và deterministic Workspace UI vẫn hoạt động.
+- Kill Product Delivery: Personal Agent vẫn xử lý task/calendar/memory cá nhân.
+- Không checkpoint/thread nào được reuse giữa Personal và Workspace.
+
+### R5 — Automated Workspace provisioning
+
+**Công việc**
+
+1. Admin create/activate Workspace tạo desired runtime record.
+2. Provisioner triển khai cùng runtime image với profile/config cố định.
+3. Health/status chuyển `provisioning → active|failed`.
+4. Suspend/archive Workspace dừng routing trước rồi mới scale runtime về 0.
+5. Version pin và rollout ring theo Workspace.
+
+**Gate**
+
+- Tạo Workspace mới không cần sửa source/router.
+- Provision failure không rollback business Workspace record sai cách; status/audit rõ ràng.
+- Workspace không active không nhận Agent invocation.
+
+### R6 — Bulkhead, queue và scale
+
+**Công việc**
+
+1. Redis/distributed rate limit; không dùng per-process counter cho production nhiều replica.
+2. Global + per-profile + per-workspace concurrency/token budget.
+3. Fair scheduling/queue partition theo Agent Workspace cho job dài.
+4. Circuit breaker, bounded retry, dead-letter queue và backpressure.
+5. Hỗ trợ `dedicated`, `cell`, `scale_to_zero` từ Registry.
+
+**Gate**
+
+- Workspace A bão request không làm Workspace B vượt SLO đã định.
+- Worker crash không tạo side effect trùng.
+- Shared provider outage chuyển các runtime sang degraded có kiểm soát.
+
+### R7 — Production acceptance và rollout
+
+**Công việc**
+
+1. Fault injection, load, soak, security và browser E2E.
+2. Canary Product Delivery trước; QA/Executive sau.
+3. Runbook kill/restart/rollback/revoke/provider outage.
+4. SLO dashboard và alert theo Agent Workspace.
+5. Xóa embedded path chỉ sau ít nhất một release ổn định và rollback rehearsal thành công.
+
+**Gate:** toàn bộ mục 28 pass; không còn shared-process assumption trong deployment docs.
+
+## 27. PR map cho runtime isolation
+
+| PR | Nội dung | Phụ thuộc | Gate chính |
+|---|---|---|---|
+| PR-R0 | Runtime contracts + fake adapter + ADR/docs | Functional baseline | Contract parity |
+| PR-R1 | Component health/readiness + fault boundary | PR-R0 | Personal fault không hạ Delivery deterministic path |
+| PR-R2a | Product Delivery runtime package | PR-R0 | Unit/contract tests |
+| PR-R2b | Remote adapter + Docker service | PR-R1, PR-R2a | Kill-container test |
+| PR-R3 | Registry/Gateway/service auth | PR-R2b | Target mismatch fail closed |
+| PR-R4 | Personal Agent extraction | PR-R3 | Bidirectional fault isolation |
+| PR-R5 | Provisioner/version/rollout state | PR-R3 | Create/suspend/rollback E2E |
+| PR-R6 | Redis/queue/bulkhead/circuit breaker | PR-R5 | Noisy-neighbor/load test |
+| PR-R7 | Staging production gates/runbook | Tất cả | Release acceptance |
+
+Quy tắc PR:
+
+- Public frontend/API contract không đổi trong PR extraction; dùng adapter để chuyển implementation.
+- Không gộp migration, service extraction và queue vào một PR.
+- Mỗi PR có failure injection test và rollback instruction.
+- Không xóa embedded adapter trước R7.
+- Runtime image build từ cùng commit và ghi commit/schema/prompt/policy version trong trace.
+
+## 28. Fault-isolation test matrix và production gates
+
+### 28.1 Test matrix
+
+| Failure injection | Kết quả bắt buộc |
+|---|---|
+| Personal planner exception | Workspace Agent không đổi health |
+| Personal checkpointer unavailable | Core và deterministic Workspace dashboard vẫn ready |
+| Delivery runtime process killed | Chỉ Delivery Agent run unavailable; Personal/Core/Workspace khác vẫn dùng được |
+| Delivery runtime nhận Marketing target | Fail closed, không model/tool call, có audit |
+| Workspace A hết concurrency | Workspace B vẫn nhận slot trong SLO |
+| Workspace A hết token budget | Workspace B và Personal không bị khóa nhầm |
+| LLM provider timeout | Deadline được giữ; partial/degraded đúng capability |
+| PostgreSQL temporary failure | Không báo success giả; retry chỉ read/idempotent operation |
+| Membership/consent revoke giữa run | Resource read/side effect kế tiếp bị chặn |
+| Double-click approval | Tối đa một side effect |
+| Runtime version lỗi trên canary | Rollback đúng Workspace, không deploy lại toàn fleet |
+| Cell worker crash | Job khác retry bounded; Workspace ngoài cell không ảnh hưởng |
+
+### 28.2 Production gates bổ sung
+
+- Process isolation tests `=100%` cho Personal ↔ Workspace và dedicated Workspace ↔ Workspace.
+- Unauthorized cross-workspace runtime invocation `=0`.
+- Runtime target/profile/version mismatch gọi LLM/tool `=0`.
+- Side-effect duplication sau retry/crash `=0`.
+- Per-workspace quota attribution `=100%` trong test dataset.
+- Health false-positive cho dependency bắt buộc `=0`.
+- P95/P99 và error budget được đo riêng Core, Personal và từng Workspace runtime.
+- Canary rollback hoàn thành mà không restart runtime ngoài target.
+- Logs/traces không chứa JWT, provider key, full system prompt hoặc raw restricted data.
+
+### 28.3 SLO ban đầu cần chốt trước R6
+
+Nhóm phải đặt số cụ thể theo hạ tầng staging; không sao chép số ví dụ thành cam kết production:
+
+```text
+Core deterministic API availability
+Personal Agent availability/latency
+Workspace Agent availability/latency theo profile
+maximum queue wait
+maximum run deadline
+per-workspace concurrency
+daily token budget
+recovery time objective
+```
+
+## 29. Hướng đi cần làm ngay từ trạng thái hiện tại
+
+Thứ tự thực thi được chốt:
+
+1. Giữ Product Delivery functional slice và dashboard hiện tại xanh; chưa xây thêm profile mới vào shared process.
+2. Hoàn thiện P1 còn thiếu của Delivery: server-side thread/context, source deep-link/freshness, dashboard audit và
+   browser E2E; không mang localStorage transcript nhạy cảm sang runtime mới.
+3. Thực hiện R0 để khóa internal runtime contract và terminology.
+4. Thực hiện R1 để một lỗi Personal checkpointer không chặn toàn backend readiness.
+5. Thực hiện R2: tách Product Delivery runtime đầu tiên bằng authorized snapshot boundary.
+6. Chạy kill-container, target-mismatch và revoke tests; chỉ khi pass mới chuyển Delivery staging sang remote mode.
+7. Thực hiện R3 Registry/Gateway; giữ public URL hiện tại để frontend không phụ thuộc địa chỉ runtime.
+8. Thực hiện R4 tách Personal Agent sau khi Delivery extraction chứng minh adapter/gateway ổn định.
+9. Chỉ bắt đầu R5/R6 khi có Workspace thứ hai hoặc có số liệu tải cho thấy provisioning/queue thực sự cần.
+10. QA và Executive dùng runtime contract đã chứng minh, không tạo một kiểu service integration mới.
+
+Không làm ngay:
+
+- database riêng cho từng phòng ban;
+- Kubernetes/operator trước khi local Docker fault-isolation test pass;
+- queue cho mọi request tương tác ngắn;
+- một source tree/repository riêng cho từng Workspace;
+- Personal gọi thẳng Workspace runtime hoặc Workspace đọc Personal Memory;
+- xóa embedded fallback trước khi remote runtime có release evidence.
+
+Kết quả mong muốn sau R4:
+
+```text
+Personal Agent down
+→ Core, Product Delivery và Workspace khác vẫn hoạt động
+
+Product Delivery Agent down
+→ Personal, Core và Workspace khác vẫn hoạt động
+```
+
+Kết quả bổ sung sau R6 khi có nhiều Workspace runtime:
+
+```text
+Workspace A lỗi/quá tải
+→ Workspace B giữ quota, process và health độc lập
+```
+
+## 30. Trạng thái triển khai runtime isolation cập nhật ngày 2026-08-25
+
+Checkpoint thực thi chi tiết: [ROLE_B_IMPLEMENTATION_CHECKPOINT_16.md](ROLE_B_IMPLEMENTATION_CHECKPOINT_16.md).
+
+| Giai đoạn | Trạng thái thực | Evidence chính | Phạm vi chưa làm |
+|---|---|---|---|
+| R0 — runtime boundary | `complete` trong local integration scope | Strict `AgentRuntimeRequest/Response`, snapshot hash, HMAC tests, full regression `431 passed` | Chưa freeze thành release tag |
+| R1 — in-process fault boundary | `complete` trong local integration scope | Component health, Personal init containment, timeout, per-Workspace local bulkhead, usage attribution | Distributed quota/circuit breaker thuộc R6 |
+| R2 — Product Delivery + Quality runtime services | `complete` trong local Docker integration scope | Hai container riêng, shared signed-snapshot contract, remote/embedded adapters, target/profile/version pin, health riêng và resource limits riêng | Chưa phải per-Workspace provisioning; staging canary và secret manager chưa chạy |
+| R3 — Registry/Gateway | `not_started` | Hiện Core dùng URL/config adapter cố định | Cần migration, lookup, audit và canary routing |
+| R4 — Personal service | `not_started` | Personal mới có startup fault boundary | Graph/checkpointer vẫn nằm trong Core process |
+| R5 — provisioning | `not_started` | Compose pin một Delivery và một Quality demo Workspace | Chưa tự tạo runtime khi Admin tạo Workspace |
+| R6 — distributed bulkhead/queue | `not_started` | Chỉ có bulkhead local theo Workspace | Chưa Redis, queue, DLQ, distributed token quota |
+| R7 — production rollout | `not_started` | Local Docker gate đã pass | Chưa staging load/soak/canary/runbook rehearsal |
+
+Quyết định sau checkpoint 16:
+
+1. Giữ `embedded` là rollback mode ngoài Docker; Docker local chạy `remote` để test boundary thật.
+2. Quality được nối sớm bằng đúng signed-snapshot runtime contract của Delivery; không tạo protocol/service-integration kiểu mới. Chưa mở rộng sang Executive trước R3.
+3. Không tuyên bố Personal đã độc lập process: hiện chỉ lỗi khởi tạo Personal không còn làm Core/Delivery mất readiness.
+4. Không triển khai Redis/queue chỉ để hoàn thiện sơ đồ; thực hiện ở R6 khi có tải và Workspace thứ hai cần SLO riêng.
+
+### 30.1 Mức cô lập thực tế sau khi nối Quality
+
+Trong Docker `remote` mode, Product Delivery và Quality Assurance là hai data-plane container độc lập. Backend
+không `depends_on` health của hai runtime này, nên một runtime chết hoặc chưa sẵn sàng không chặn Core khởi động.
+Core tạo authorized, source-backed snapshot trước khi gọi runtime; runtime không giữ JWT hoặc database credential.
+Nếu Quality runtime lỗi/timeout, Quality deterministic brief vẫn trả `partial` kèm
+`QUALITY_AGENT_RUNTIME_FAILED`; Delivery, Personal và Core API không fallback qua profile khác và không bị dừng.
+
+Mỗi runtime được bind cứng với một `agent_workspace_id + profile + runtime_version`, dùng secret, healthcheck,
+CPU/RAM và endpoint riêng. Request lệch target bị từ chối trước executor. Core readiness báo `degraded` cho đúng
+component nhưng vẫn giữ `ready=true` khi Core/database còn phục vụ được.
+
+Giới hạn phải công bố rõ:
+
+- `embedded` mode chỉ có exception/timeout/bulkhead boundary, không có process isolation thật;
+- hiện Compose chỉ provision một Delivery và một Quality Workspace cố định, chưa hỗ trợ tự động một container cho
+  mọi Agent Workspace cùng profile;
+- Core API và PostgreSQL vẫn là shared control-plane/storage failure domain theo ADR-MA-10;
+- Registry/canary per Workspace, distributed quota/circuit breaker và automated provisioning vẫn thuộc R3/R5/R6.
+
+## 31. Task submission/review governance — cập nhật 2026-08-28
+
+Workflow giao task, nộp evidence, Lead yêu cầu sửa/chấp nhận, checkpoint semantics, RBAC, audit và kịch bản demo đã được triển khai và kiểm chứng. Xem tài liệu thực thi: [PRODUCT_DELIVERY_TASK_GOVERNANCE_DEMO.md](PRODUCT_DELIVERY_TASK_GOVERNANCE_DEMO.md).
+
+## 32. Stateful routing và specialist artifact — cập nhật 2026-08-29
+
+Product Delivery không còn định tuyến chỉ từ keyword của turn mới nhất. Luồng hiện tại dùng hai tầng:
+
+1. deterministic router xử lý intent rõ ràng với chi phí thấp;
+2. semantic router dùng tối đa sáu message đã được scope-bind để giải quyết typo, tên nhóm gần đúng,
+   đại từ và câu xác nhận như `đúng rồi`; kết quả chỉ được map sang capability do server sở hữu.
+
+`meeting_plan` là business intent riêng, chạy DAG tuần tự:
+
+```text
+Task Intelligence
+  └─ team_task_assessment.v1
+       ↓ hash-verified handoff
+Risk & Dependency
+  └─ dependency_risk_analysis.v1
+       ↓ task + risk artifacts
+Planning & Forecast
+  └─ meeting_plan.v1
+       ↓
+Workspace Supervisor: format, source validation, guardrail
+```
+
+Ranh giới ownership:
+
+- Task Intelligence xác định baseline từng team, attention tasks và team có completion thấp nhất; group rỗng
+  không bị coi là team yếu.
+- Risk & Dependency giải thích `input_required → blocked_work → business consequence`, kèm owner/deadline
+  chỉ khi record có dữ liệu.
+- Planning & Forecast sở hữu mục tiêu, preparation, agenda, câu hỏi, decision và action item của cuộc họp.
+- Supervisor không tự tạo lại kế hoạch; nó chỉ format artifact, kiểm tra scope/source và tạo câu trả lời cuối.
+
+Mỗi specialist vẫn thực hiện một lượt LLM riêng để diễn giải/phản biện artifact deterministic. Artifact, input/output
+hash, upstream hash, tool calls, prompt version và model usage được lưu cùng durable workflow. UI hiển thị lần lượt
+agent đang chạy, agent đã hoàn thành, loại artifact bàn giao và agent tiếp theo nhận bao nhiêu gói kết quả.
+
+Evidence ngày 2026-08-29:
+
+- 89 backend tests riêng biệt liên quan routing, workflow, prompt budget, memory và runtime isolation đã pass;
+- frontend production build pass;
+- E2E với `Lên kế hoạch họp cho nhóm bị đánh giá thấp nhất` chọn `meeting_plan`, gọi đúng ba specialist,
+  tạo `meeting_plan.v1` cho Customer Portal và hoàn thành bốn lượt LLM (ba specialist + Supervisor);
+- backend, PostgreSQL và Product Delivery runtime đều healthy trong Docker remote mode.

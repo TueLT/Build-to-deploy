@@ -113,13 +113,14 @@ async def test_thread_messages_returns_history_and_checks_ownership(
     client, auth_headers, other_auth_headers, monkeypatch, fake_llm_factory
 ):
     _mock_reply(monkeypatch, fake_llm_factory, "Câu trả lời thật.")
-    resp = await client.post("/api/v1/chat", json={"message": "Câu hỏi thật"}, headers=auth_headers)
+    user_message = "Hãy giúp tôi lập kế hoạch công việc hôm nay."
+    resp = await client.post("/api/v1/chat", json={"message": user_message}, headers=auth_headers)
     thread_id = resp.json()["thread_id"]
 
     history = await client.get(f"/api/v1/assistant/threads/{thread_id}/messages", headers=auth_headers)
     assert history.status_code == 200
     messages = history.json()
-    assert {"role": "user", "content": "Câu hỏi thật"} in messages
+    assert {"role": "user", "content": user_message} in messages
     assert {"role": "assistant", "content": "Câu trả lời thật."} in messages
 
     forbidden = await client.get(f"/api/v1/assistant/threads/{thread_id}/messages", headers=other_auth_headers)

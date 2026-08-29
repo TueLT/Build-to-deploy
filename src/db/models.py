@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -175,6 +175,550 @@ class AgentWorkspaceMembership(Base):
     status: Mapped[str] = mapped_column(default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class WorkspaceAgentThread(Base):
+    """Durable, tenant-bound conversation memory for one workspace agent."""
+
+    __tablename__ = "workspace_agent_threads"
+    __table_args__ = (
+        CheckConstraint(
+            "agent_profile IN ('product_delivery', 'quality_assurance')",
+            name="ck_workspace_agent_thread_profile",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'archived')",
+            name="ck_workspace_agent_thread_status",
+        ),
+        Index(
+            "ix_workspace_agent_threads_scope",
+            "organization_workspace_id",
+            "agent_workspace_id",
+            "owner_id",
+            "last_active_at",
+        ),
+        Index("ix_workspace_agent_threads_expiry", "expires_at"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    organization_workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    agent_profile: Mapped[str]
+    authorization_scope_hash: Mapped[str | None] = mapped_column(default=None, index=True)
+    status: Mapped[str] = mapped_column(default="active")
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: _utcnow() + timedelta(days=30)
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class WorkspaceAgentMessage(Base):
+    """Bounded chat history; tool payloads and authorization snapshots are never persisted."""
+
+    __tablename__ = "workspace_agent_messages"
+    __table_args__ = (
+        UniqueConstraint("thread_id", "sequence_number", name="uq_workspace_agent_message_sequence"),
+        CheckConstraint("role IN ('user', 'assistant')", name="ck_workspace_agent_message_role"),
+        Index("ix_workspace_agent_messages_thread_sequence", "thread_id", "sequence_number"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    thread_id: Mapped[str] = mapped_column(
+        ForeignKey("workspace_agent_threads.id", ondelete="CASCADE"), index=True
+    )
+    workflow_id: Mapped[str | None] = mapped_column(
+        ForeignKey("delivery_agent_workflows.id", ondelete="SET NULL"), default=None, index=True
+    )
+    sequence_number: Mapped[int] = mapped_column(Integer)
+    role: Mapped[str]
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ReleaseCandidate(Base):
+    """Structured Delivery-to-QA handoff that remains available across runtime failures."""
+
+    __tablename__ = "release_candidates"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'qa_requested', 'qa_in_progress', 'approved', 'rejected', "
+            "'released', 'cancelled')",
+            name="ck_release_candidate_status",
+        ),
+        UniqueConstraint(
+            "organization_workspace_id",
+            "release_key",
+            "version",
+            "build_number",
+            name="uq_release_candidate_identity",
+        ),
+        Index(
+            "ix_release_candidates_handoff",
+            "organization_workspace_id",
+            "quality_agent_workspace_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    organization_workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    delivery_agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    quality_agent_workspace_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_workspaces.id"), default=None, index=True
+    )
+    source_conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    delivery_milestone_id: Mapped[str | None] = mapped_column(
+        ForeignKey("delivery_milestones.id"), default=None, index=True
+    )
+    release_key: Mapped[str]
+    version: Mapped[str] = mapped_column(default="")
+    build_number: Mapped[str] = mapped_column(default="")
+    commit_sha: Mapped[str | None] = mapped_column(default=None)
+    environment: Mapped[str] = mapped_column(default="staging")
+    status: Mapped[str] = mapped_column(default="draft")
+    quality_policy_version: Mapped[str] = mapped_column(default="quality-gate-v1")
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class QualityEvidence(Base):
+    """Immutable artifact reference with an explicit human verification state."""
+
+    __tablename__ = "quality_evidence"
+    __table_args__ = (
+        CheckConstraint(
+            "artifact_type IN ('url', 'report', 'log', 'screenshot', 'other')",
+            name="ck_quality_evidence_type",
+        ),
+        CheckConstraint(
+            "verification_status IN ('pending', 'verified', 'rejected')",
+            name="ck_quality_evidence_verification",
+        ),
+        Index(
+            "ix_quality_evidence_scope",
+            "workspace_id",
+            "agent_workspace_id",
+            "conversation_id",
+            "release_id",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    release_id: Mapped[str] = mapped_column(index=True)
+    artifact_type: Mapped[str]
+    uri: Mapped[str]
+    sha256: Mapped[str | None] = mapped_column(default=None)
+    verification_status: Mapped[str] = mapped_column(default="pending")
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    submitted_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    verified_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class QualityRequirement(Base):
+    __tablename__ = "quality_requirements"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "agent_workspace_id", "release_id", "requirement_key",
+            name="uq_quality_requirement_key",
+        ),
+        CheckConstraint("status IN ('active', 'deprecated')", name="ck_quality_requirement_status"),
+        Index(
+            "ix_quality_requirements_scope",
+            "workspace_id", "agent_workspace_id", "conversation_id", "release_id", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    release_id: Mapped[str] = mapped_column(index=True)
+    requirement_key: Mapped[str]
+    title: Mapped[str]
+    required: Mapped[bool] = mapped_column(default=True)
+    status: Mapped[str] = mapped_column(default="active")
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class QualityTestCase(Base):
+    __tablename__ = "quality_test_cases"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "agent_workspace_id", "release_id", "test_case_key",
+            name="uq_quality_test_case_key",
+        ),
+        CheckConstraint(
+            "test_kind IN ('functional', 'regression', 'security', 'performance', 'compliance')",
+            name="ck_quality_test_case_kind",
+        ),
+        CheckConstraint("status IN ('active', 'deprecated')", name="ck_quality_test_case_status"),
+        Index(
+            "ix_quality_test_cases_scope",
+            "workspace_id", "agent_workspace_id", "conversation_id", "release_id", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    release_id: Mapped[str] = mapped_column(index=True)
+    requirement_id: Mapped[str | None] = mapped_column(
+        ForeignKey("quality_requirements.id"), default=None, index=True
+    )
+    test_case_key: Mapped[str]
+    title: Mapped[str]
+    test_kind: Mapped[str] = mapped_column(default="functional")
+    required: Mapped[bool] = mapped_column(default=False)
+    status: Mapped[str] = mapped_column(default="active")
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class QualityTestRun(Base):
+    __tablename__ = "quality_test_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'passed', 'failed', 'blocked', 'cancelled')",
+            name="ck_quality_test_run_status",
+        ),
+        Index(
+            "ix_quality_test_runs_scope",
+            "workspace_id", "agent_workspace_id", "conversation_id", "release_id", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    release_id: Mapped[str] = mapped_column(index=True)
+    test_case_id: Mapped[str] = mapped_column(ForeignKey("quality_test_cases.id"), index=True)
+    release_candidate_id: Mapped[str | None] = mapped_column(
+        ForeignKey("release_candidates.id"), default=None, index=True
+    )
+    evidence_id: Mapped[str | None] = mapped_column(ForeignKey("quality_evidence.id"), default=None)
+    build_number: Mapped[str]
+    environment: Mapped[str]
+    status: Mapped[str] = mapped_column(default="queued")
+    executed_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class QualityDefect(Base):
+    __tablename__ = "quality_defects"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "agent_workspace_id", "release_id", "defect_key",
+            name="uq_quality_defect_key",
+        ),
+        CheckConstraint(
+            "severity IN ('low', 'medium', 'high', 'critical')",
+            name="ck_quality_defect_severity",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'triaged', 'in_progress', 'resolved', 'verified', 'waived', 'closed')",
+            name="ck_quality_defect_status",
+        ),
+        Index(
+            "ix_quality_defects_scope",
+            "workspace_id", "agent_workspace_id", "conversation_id", "release_id", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    release_id: Mapped[str] = mapped_column(index=True)
+    defect_key: Mapped[str]
+    title: Mapped[str]
+    severity: Mapped[str]
+    status: Mapped[str] = mapped_column(default="open")
+    test_run_id: Mapped[str | None] = mapped_column(ForeignKey("quality_test_runs.id"), default=None)
+    requirement_id: Mapped[str | None] = mapped_column(ForeignKey("quality_requirements.id"), default=None)
+    evidence_id: Mapped[str | None] = mapped_column(ForeignKey("quality_evidence.id"), default=None)
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class QualityPolicy(Base):
+    __tablename__ = "quality_policies"
+    __table_args__ = (
+        UniqueConstraint("agent_workspace_id", "version", name="uq_quality_policy_version"),
+        CheckConstraint("status IN ('draft', 'active', 'retired')", name="ck_quality_policy_status"),
+        Index("ix_quality_policy_active", "workspace_id", "agent_workspace_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    version: Mapped[str]
+    status: Mapped[str] = mapped_column(default="draft")
+    rules: Mapped[dict] = mapped_column(JSON, default=dict)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    approved_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class QualityWaiver(Base):
+    __tablename__ = "quality_waivers"
+    __table_args__ = (
+        CheckConstraint(
+            "target_type IN ('defect', 'test_run', 'requirement')",
+            name="ck_quality_waiver_target_type",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'expired', 'revoked')",
+            name="ck_quality_waiver_status",
+        ),
+        Index(
+            "ix_quality_waivers_scope",
+            "workspace_id", "agent_workspace_id", "release_id", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    release_id: Mapped[str] = mapped_column(index=True)
+    target_type: Mapped[str]
+    target_id: Mapped[str]
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(default="pending")
+    expires_at: Mapped[datetime]
+    requested_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    decided_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class WorkspaceActionProposalRecord(Base):
+    """Durable HITL envelope; execution is impossible before explicit approval."""
+
+    __tablename__ = "workspace_action_proposals"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_workspace_action_proposal_idempotency"),
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'executed', 'expired', 'failed')",
+            name="ck_workspace_action_proposal_status",
+        ),
+        Index(
+            "ix_workspace_action_proposals_scope",
+            "workspace_id", "agent_workspace_id", "actor_user_id", "status",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    agent_profile: Mapped[str]
+    workflow_id: Mapped[str | None] = mapped_column(default=None, index=True)
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    action: Mapped[str]
+    payload: Mapped[dict] = mapped_column(JSON)
+    payload_hash: Mapped[str]
+    idempotency_key: Mapped[str]
+    status: Mapped[str] = mapped_column(default="pending")
+    authorization_scope_hash: Mapped[str | None] = mapped_column(default=None)
+    expires_at: Mapped[datetime]
+    decided_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    result_json: Mapped[dict | None] = mapped_column(JSON, default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class WorkspaceOutboxEvent(Base):
+    __tablename__ = "workspace_outbox_events"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_workspace_outbox_event_idempotency"),
+        CheckConstraint(
+            "status IN ('pending', 'processing', 'processed', 'failed', 'dead_letter')",
+            name="ck_workspace_outbox_event_status",
+        ),
+        Index("ix_workspace_outbox_pending", "status", "available_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    aggregate_type: Mapped[str]
+    aggregate_id: Mapped[str]
+    event_type: Mapped[str]
+    payload: Mapped[dict] = mapped_column(JSON)
+    idempotency_key: Mapped[str]
+    status: Mapped[str] = mapped_column(default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class DeliveryAgentWorkflow(Base):
+    """Durable parent state for one Product Delivery orchestration."""
+
+    __tablename__ = "delivery_agent_workflows"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('created','running','waiting_evidence','waiting_approval','completed',"
+            "'partial','failed','cancelled','expired')",
+            name="ck_delivery_agent_workflow_status",
+        ),
+        CheckConstraint(
+            "execution_mode IN ('single_specialist','multi_specialist')",
+            name="ck_delivery_agent_workflow_execution_mode",
+        ),
+        Index(
+            "ix_delivery_agent_workflows_scope",
+            "workspace_id",
+            "agent_workspace_id",
+            "actor_user_id",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    actor_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    actor_role: Mapped[str]
+    workflow_type: Mapped[str]
+    execution_mode: Mapped[str]
+    status: Mapped[str] = mapped_column(default="created")
+    subject_type: Mapped[str | None] = mapped_column(default=None)
+    subject_id: Mapped[str | None] = mapped_column(default=None)
+    subject_version: Mapped[str | None] = mapped_column(default=None)
+    authorization_scope_hash: Mapped[str | None] = mapped_column(default=None)
+    request_hash: Mapped[str]
+    plan_version: Mapped[str]
+    result_json: Mapped[dict | None] = mapped_column(JSON, default=None)
+    data_gaps: Mapped[list] = mapped_column(JSON, default=list)
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class DeliveryAgentRun(Base):
+    __tablename__ = "delivery_agent_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending','running','retry_scheduled','succeeded','partial','failed',"
+            "'cancelled','timed_out')",
+            name="ck_delivery_agent_run_status",
+        ),
+        UniqueConstraint("workflow_id", "specialist", "attempt", name="uq_delivery_agent_run_attempt"),
+        Index("ix_delivery_agent_runs_workflow", "workflow_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("delivery_agent_workflows.id", ondelete="CASCADE"), index=True
+    )
+    parent_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("delivery_agent_runs.id", ondelete="SET NULL"), default=None
+    )
+    specialist: Mapped[str]
+    status: Mapped[str] = mapped_column(default="pending")
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    input_hash: Mapped[str]
+    output_hash: Mapped[str | None] = mapped_column(default=None)
+    prompt_version: Mapped[str]
+    model_name: Mapped[str] = mapped_column(default="")
+    error_code: Mapped[str | None] = mapped_column(default=None)
+    usage_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    lineage_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class DeliverySpecialistResultRecord(Base):
+    __tablename__ = "delivery_specialist_results"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_delivery_specialist_result_run"),
+        Index("ix_delivery_specialist_results_workflow", "workflow_id", "specialist"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("delivery_agent_workflows.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("delivery_agent_runs.id", ondelete="CASCADE"))
+    specialist: Mapped[str]
+    result_type: Mapped[str]
+    schema_version: Mapped[str] = mapped_column(default="1.0")
+    status: Mapped[str]
+    payload: Mapped[dict] = mapped_column(JSON)
+    source_references: Mapped[list] = mapped_column(JSON, default=list)
+    data_gaps: Mapped[list] = mapped_column(JSON, default=list)
+    input_hash: Mapped[str]
+    output_hash: Mapped[str]
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class DeliveryWorkflowEventRecord(Base):
+    __tablename__ = "delivery_workflow_events"
+    __table_args__ = (
+        Index("ix_delivery_workflow_events_order", "workflow_id", "created_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workflow_id: Mapped[str] = mapped_column(
+        ForeignKey("delivery_agent_workflows.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str]
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class DeliveryEventInbox(Base):
+    __tablename__ = "delivery_event_inbox"
+    __table_args__ = (
+        UniqueConstraint("consumer", "message_id", name="uq_delivery_event_inbox_message"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    consumer: Mapped[str]
+    message_id: Mapped[str]
+    payload_hash: Mapped[str]
+    processed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class AgentWorkspaceConversation(Base):
@@ -499,28 +1043,106 @@ class Message(Base):
     sender: Mapped["User"] = relationship()
 
 
+class DeliveryGroupSchedule(Base):
+    """Lead-approved, one-shot Workspace Agent update scheduled for a source group."""
+
+    __tablename__ = "delivery_group_schedules"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_delivery_group_schedule_idempotency"),
+        CheckConstraint(
+            "status IN ('scheduled', 'sent', 'cancelled', 'failed')",
+            name="ck_delivery_group_schedule_status",
+        ),
+        Index(
+            "ix_delivery_group_schedule_due",
+            "workspace_id",
+            "agent_workspace_id",
+            "status",
+            "scheduled_for",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    approved_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    title: Mapped[str]
+    content: Mapped[str] = mapped_column(Text)
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    status: Mapped[str] = mapped_column(default="scheduled")
+    idempotency_key: Mapped[str]
+    sent_message_id: Mapped[str | None] = mapped_column(ForeignKey("messages.id"), default=None)
+    last_error: Mapped[str | None] = mapped_column(Text, default=None)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
 class Task(Base):
     __tablename__ = "tasks"
     __table_args__ = (
         CheckConstraint("priority IN ('High', 'Medium', 'Low')", name="ck_task_priority"),
         CheckConstraint(
-            "status IN ('suggested', 'pending', 'in_progress', 'completed', 'dismissed', 'invalidated')",
+            "status IN ('suggested', 'pending', 'in_progress', 'blocked', 'submitted', 'changes_requested', 'completed', 'dismissed', 'invalidated')",
             name="ck_task_status",
         ),
         CheckConstraint("source IN ('manual', 'ai_extracted', 'proactive')", name="ck_task_source"),
+        CheckConstraint(
+            "work_item_type IS NULL OR work_item_type IN ('bug', 'test_case', 'release_check')",
+            name="ck_task_quality_type",
+        ),
+        CheckConstraint(
+            "severity IS NULL OR severity IN ('low', 'medium', 'high', 'critical')",
+            name="ck_task_quality_severity",
+        ),
+        CheckConstraint(
+            "quality_status IS NULL OR quality_status IN ('open', 'testing', 'passed', 'failed', 'blocked')",
+            name="ck_task_quality_status",
+        ),
+        CheckConstraint(
+            "(work_item_type IS NULL AND severity IS NULL AND quality_status IS NULL AND release_target IS NULL AND quality_required = false) OR "
+            "(work_item_type IS NOT NULL AND quality_status IS NOT NULL AND release_target IS NOT NULL "
+            "AND ((work_item_type = 'bug' AND severity IS NOT NULL) "
+            "OR (work_item_type != 'bug' AND severity IS NULL)) "
+            "AND (quality_required = false OR work_item_type = 'release_check'))",
+            name="ck_task_quality_shape",
+        ),
         Index("ix_tasks_workspace_owner_status", "workspace_id", "owner_id", "status"),
         Index("ix_tasks_workspace_due_at", "workspace_id", "due_at"),
+        Index(
+            "ix_tasks_delivery_scope",
+            "workspace_id",
+            "agent_workspace_id",
+            "conversation_id",
+            "status",
+            "due_at",
+        ),
+        Index(
+            "ix_tasks_quality_scope",
+            "workspace_id",
+            "agent_workspace_id",
+            "conversation_id",
+            "release_target",
+            "work_item_type",
+        ),
     )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), default=None, index=True)
+    # A nullable binding preserves personal/legacy tasks.  A Delivery read may
+    # use only rows explicitly bound to its Agent Workspace and source group.
+    agent_workspace_id: Mapped[str | None] = mapped_column(
+        ForeignKey("agent_workspaces.id"), default=None, index=True
+    )
     title: Mapped[str]
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     priority: Mapped[str] = mapped_column(default="Medium")  # "High" | "Medium" | "Low"
     status: Mapped[str] = mapped_column(default="suggested")
-    # "suggested" | "pending" | "in_progress" | "completed" | "dismissed"
+    # "suggested" | "pending" | "in_progress" | "blocked" | "completed" | "dismissed"
+    blocked_reason: Mapped[str | None] = mapped_column(default=None)
     source: Mapped[str] = mapped_column(default="manual")  # "manual" | "ai_extracted" | "proactive"
     # P0 provenance for unconfirmed AI candidates.  Confirmed domain state may outlive a later
     # source-consent revocation, but a still-suggested candidate is invalidated when its source
@@ -529,11 +1151,176 @@ class Task(Base):
     source_sender_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
     consent_scope_hash: Mapped[str | None] = mapped_column(default=None, index=True)
     invalidated_reason: Mapped[str | None] = mapped_column(default=None)
+    # Quality Assurance metadata. These columns are populated only for rows explicitly bound to
+    # a quality_assurance Agent Workspace and an authorized source conversation.
+    work_item_type: Mapped[str | None] = mapped_column(default=None)
+    severity: Mapped[str | None] = mapped_column(default=None)
+    quality_status: Mapped[str | None] = mapped_column(default=None)
+    release_target: Mapped[str | None] = mapped_column(default=None, index=True)
+    quality_required: Mapped[bool] = mapped_column(default=False)
+    # Delivery completion governance. Ordinary tasks can complete directly;
+    # review-required tasks must carry explicit evidence through Lead review.
+    requires_review: Mapped[bool] = mapped_column(default=False)
+    submission_note: Mapped[str | None] = mapped_column(Text, default=None)
+    evidence_urls: Mapped[list[str]] = mapped_column(JSON, default=list)
+    submitted_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    review_note: Mapped[str | None] = mapped_column(Text, default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     owner: Mapped["User"] = relationship(foreign_keys=[owner_id])
     conversation: Mapped["Conversation | None"] = relationship()
+    agent_workspace: Mapped["AgentWorkspace | None"] = relationship()
+
+
+class DeliveryMilestone(Base):
+    """Typed, source-bound release target for Product Delivery reads."""
+
+    __tablename__ = "delivery_milestones"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'blocked', 'completed', 'dismissed', 'invalidated')",
+            name="ck_delivery_milestone_status",
+        ),
+        CheckConstraint(
+            "quality_review_status IN ('pending', 'accepted', 'rejected')",
+            name="ck_delivery_milestone_quality_review",
+        ),
+        Index(
+            "ix_delivery_milestone_scope",
+            "workspace_id",
+            "agent_workspace_id",
+            "conversation_id",
+            "status",
+            "due_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    title: Mapped[str]
+    status: Mapped[str] = mapped_column(default="pending")
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    blocked_reason: Mapped[str | None] = mapped_column(default=None)
+    # A milestone is also the durable checkpoint in a Lead-authored plan.
+    # Rules own schedule/completeness; only a Lead owns quality acceptance.
+    plan_key: Mapped[str] = mapped_column(default="default")
+    quality_review_status: Mapped[str] = mapped_column(default="pending")
+    quality_review_note: Mapped[str | None] = mapped_column(Text, default=None)
+    quality_reviewed_by_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), default=None, index=True
+    )
+    quality_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class DeliveryCheckpointTask(Base):
+    """Required/optional task membership in one Delivery plan checkpoint."""
+
+    __tablename__ = "delivery_checkpoint_tasks"
+    __table_args__ = (
+        UniqueConstraint("milestone_id", "task_id", name="uq_delivery_checkpoint_task"),
+        Index("ix_delivery_checkpoint_task_scope", "workspace_id", "agent_workspace_id", "milestone_id"),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    milestone_id: Mapped[str] = mapped_column(ForeignKey("delivery_milestones.id"), index=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    required: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class DeliveryDependencyRecord(Base):
+    """Source-bound dependency owned by one Product Delivery workspace."""
+
+    __tablename__ = "delivery_dependencies"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('open', 'blocked', 'resolved', 'invalidated')",
+            name="ck_delivery_dependency_status",
+        ),
+        CheckConstraint(
+            "predecessor_task_id IS NULL OR predecessor_task_id != successor_task_id",
+            name="ck_delivery_dependency_distinct_tasks",
+        ),
+        Index(
+            "ix_delivery_dependencies_scope",
+            "workspace_id",
+            "agent_workspace_id",
+            "conversation_id",
+            "status",
+            "due_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    title: Mapped[str]
+    status: Mapped[str] = mapped_column(default="open")
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    predecessor_task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), default=None)
+    successor_task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), default=None)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+
+class DeliveryDecisionRecord(Base):
+    """Durable decision log; pending decisions are never inferred from chat sentiment."""
+
+    __tablename__ = "delivery_decisions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'decided', 'superseded', 'invalidated')",
+            name="ck_delivery_decision_status",
+        ),
+        CheckConstraint(
+            "(status = 'decided' AND outcome IS NOT NULL) OR status != 'decided'",
+            name="ck_delivery_decision_outcome",
+        ),
+        Index(
+            "ix_delivery_decisions_scope",
+            "workspace_id",
+            "agent_workspace_id",
+            "conversation_id",
+            "status",
+            "due_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
+    title: Mapped[str]
+    status: Mapped[str] = mapped_column(default="pending")
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), default=None, index=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    options: Mapped[list[str]] = mapped_column(JSON, default=list)
+    outcome: Mapped[str | None] = mapped_column(Text, default=None)
+    row_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
 class EventCandidate(Base):

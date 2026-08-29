@@ -176,11 +176,13 @@ class FakeToolCallingLLM:
 
     def __init__(self, responses: list):
         self._responses = list(responses)
+        self.invocations: list = []
 
     def bind_tools(self, tools):
         return self
 
     async def ainvoke(self, messages):
+        self.invocations.append(messages)
         if not self._responses:
             raise AssertionError("FakeToolCallingLLM ran out of scripted responses")
         return self._responses.pop(0)

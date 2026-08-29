@@ -8,7 +8,7 @@ from sqlalchemy import select
 from src.agents.state import AgentState
 from src.db import session as db_session
 from src.db.models import Task, User
-from src.services import memory_service, timeline_service
+from src.services import guardrail_service, memory_service, timeline_service
 
 
 def _agent_identity(state: AgentState | None) -> tuple[str, str]:
@@ -61,7 +61,9 @@ async def search_my_memories(
     if not memories:
         return "Không tìm thấy memory phù hợp trong workspace hiện tại."
     return "\n".join(
-        f"- [{memory.memory_type}/{memory.category}] {memory.title}: {memory.detail[:500]}"
+        "- " + guardrail_service.sanitize_untrusted_text(
+            f"[{memory.memory_type}/{memory.category}] {memory.title}: {memory.detail[:500]}"
+        )
         for memory in memories
     )
 

@@ -4,8 +4,10 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../context/AuthContext'
 
+const POST_LOGIN_PATH = '/assistant'
+
 export default function LoginPage(){const location=useLocation();const {register,handleSubmit,formState:{errors}}=useForm({defaultValues:{email:location.state?.email||''}});const navigate=useNavigate();const {login}=useAuth();const [error,setError]=useState('');const [submitting,setSubmitting]=useState(false);const registrationSuccess=location.state?.registrationSuccess
-  const onSubmit=async({email,password})=>{setError('');setSubmitting(true);try{await login(email,password);navigate('/chat')}catch(err){setError(err.detail||'Invalid email or password')}finally{setSubmitting(false)}}
+  const onSubmit=async({email,password})=>{setError('');setSubmitting(true);try{await login(email,password);navigate(POST_LOGIN_PATH,{replace:true})}catch(err){setError(err.detail||'Invalid email or password')}finally{setSubmitting(false)}}
   return <AuthShell title="Welcome back" subtitle="Sign in to continue to Orbit."><form onSubmit={handleSubmit(onSubmit)}>{registrationSuccess&&<div className="auth-success" role="status"><i className="bi bi-check-circle"/> Account created successfully. Sign in to continue.</div>}{error&&<div className="auth-error">{error}</div>}<label className="auth-label">Email address</label><div className={`auth-input ${errors.email?'invalid':''}`}><i className="bi bi-envelope"/><input placeholder="you@company.com" {...register('email',{required:true,pattern:/^\S+@\S+\.\S+$/})}/></div>{errors.email&&<small className="text-danger">Enter a valid email address.</small>}<div className="d-flex justify-content-between align-items-center mt-3"><label className="auth-label mb-0">Password</label><button type="button" className="link-button">Forgot password?</button></div><div className={`auth-input ${errors.password?'invalid':''}`}><i className="bi bi-lock"/><input type="password" placeholder="Enter your password" {...register('password',{required:true,minLength:6})}/><i className="bi bi-eye"/></div>{errors.password&&<small className="text-danger">Password must be at least 6 characters.</small>}<label className="remember"><input type="checkbox"/> Remember me</label><button className="btn btn-primary w-100 auth-submit" disabled={submitting}>{submitting?'Signing in...':'Sign in'} <i className="bi bi-arrow-right"/></button><GoogleAuthButton onError={setError}/><p className="auth-switch">New to Orbit? <Link to="/register">Create an account</Link></p></form></AuthShell>}
 
 // Shared by LoginPage and RegisterPage - one Google button, one endpoint on the backend does
@@ -25,7 +27,7 @@ export function GoogleAuthButton({ onError }) {
         onSuccess={(credentialResponse) => {
           onError('')
           loginWithGoogle(credentialResponse.credential)
-            .then(() => navigate('/chat'))
+            .then(() => navigate(POST_LOGIN_PATH, { replace: true }))
             .catch((err) => onError(err.detail || 'Could not sign in with Google'))
         }}
         onError={() => onError('Google sign-in failed')}

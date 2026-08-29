@@ -13,6 +13,9 @@ def _production_settings(**overrides):
         "cors_origin_regex": "",
         "llm_provider": "google",
         "google_api_key": "test-api-key",
+        "multi_agent_enabled": False,
+        "product_delivery_agent_enabled": False,
+        "quality_assurance_agent_enabled": False,
     }
     values.update(overrides)
     return Settings(_env_file=None, **values)
@@ -21,6 +24,20 @@ def _production_settings(**overrides):
 def test_valid_production_settings_are_accepted():
     settings = _production_settings()
     assert settings.app_env == "production"
+
+
+def test_openrouter_requires_its_own_key_in_production():
+    with pytest.raises(ValidationError, match="OPENROUTER_API_KEY"):
+        _production_settings(llm_provider="openrouter", google_api_key="", openrouter_api_key="")
+
+    settings = _production_settings(
+        llm_provider="openrouter",
+        google_api_key="",
+        openrouter_api_key="test-openrouter-key",
+        model_name="openai/gpt-5.6-luna",
+    )
+    assert settings.openrouter_base_url == "https://openrouter.ai/api/v1"
+    assert settings.model_name == "openai/gpt-5.6-luna"
 
 
 def test_multi_agent_feature_flags_default_to_disabled(monkeypatch):

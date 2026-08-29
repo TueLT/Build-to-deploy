@@ -16,6 +16,7 @@ from src.db.models import (
     AgentWorkspaceConversation,
     AgentWorkspaceMembership,
     Conversation,
+    ConversationParticipant,
     User,
     Workspace,
     WorkspaceMembership,
@@ -60,22 +61,44 @@ async def _resolve_conversation_resources(
     db: AsyncSession,
     organization_workspace_id: str,
     agent_workspace_id: str,
+    expected_classification: str,
+    participant_user_id: str | None = None,
 ) -> tuple[tuple[str, ...], str | None]:
-    rows = (
-        await db.execute(
-            select(Conversation.id, Conversation.ai_policy_version)
-            .join(
-                AgentWorkspaceConversation,
-                AgentWorkspaceConversation.conversation_id == Conversation.id,
-            )
-            .where(
-                AgentWorkspaceConversation.agent_workspace_id == agent_workspace_id,
-                Conversation.workspace_id == organization_workspace_id,
-                Conversation.type == "group",
-                Conversation.ai_enabled.is_(True),
-            )
-            .order_by(Conversation.id.asc())
+    """Resolve live, AI-enabled group sources for one Delivery/Quality workspace.
+
+    A lead receives the workspace's resolved group allowlist. A member receives
+    only its intersection with active conversation participation. This makes
+    membership in an Agent Workspace insufficient on its own to read another
+    group's data, and keeps the router's capability envelope aligned with the
+    Role B Delivery policy.
+    """
+
+    statement = (
+        select(Conversation.id, Conversation.ai_policy_version)
+        .join(
+            AgentWorkspaceConversation,
+            AgentWorkspaceConversation.conversation_id == Conversation.id,
         )
+        .where(
+            AgentWorkspaceConversation.agent_workspace_id == agent_workspace_id,
+            AgentWorkspaceConversation.classification == expected_classification,
+            Conversation.workspace_id == organization_workspace_id,
+            Conversation.type == "group",
+            Conversation.ai_enabled.is_(True),
+        )
+        .order_by(Conversation.id.asc())
+    )
+    if participant_user_id is not None:
+        statement = statement.join(
+            ConversationParticipant,
+            ConversationParticipant.conversation_id == Conversation.id,
+        ).where(
+            ConversationParticipant.user_id == participant_user_id,
+            ConversationParticipant.revoked_at.is_(None),
+            ConversationParticipant.hidden_at.is_(None),
+        )
+    rows = (
+        await db.execute(statement)
     ).all()
     if not rows:
         return (), None
@@ -174,10 +197,15 @@ async def resolve_agent_scope(
     if membership is None:
         return _denied(PolicyReason.NOT_MEMBER)
     role = BusinessRole.LEAD if membership.business_role == "lead" else BusinessRole.MEMBER
+    expected_classification = (
+        "delivery" if agent_profile == AgentProfile.PRODUCT_DELIVERY else "quality"
+    )
     allowed_resource_ids, consent_scope_hash = await _resolve_conversation_resources(
         db,
         organization_workspace_id,
         agent_workspace.id,
+        expected_classification,
+        participant_user_id=user_id if role == BusinessRole.MEMBER else None,
     )
     return ResolvedAgentScope(
         decision=PolicyDecision.ALLOW,

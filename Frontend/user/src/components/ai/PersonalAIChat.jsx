@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { chatWithAgent, resumeAgent } from '../../api/agent'
 import { getAssistantThreadMessages } from '../../api/assistant'
 import Markdown from '../common/Markdown'
+import { queryClient, queryKeys } from '../../query/queryClient'
 
 const prompts = [
   { icon:'bi-sun', label:'Lên kế hoạch hôm nay', prompt:'Tổng hợp lịch, task và deadline của tôi hôm nay' },
@@ -46,7 +47,11 @@ export default function PersonalAIChat({ onContext, threadId, onThreadIdChange, 
     if (!threadId) { setMessages([]); setPending(null); setLoadedThreadId(null); return }
     if (threadId === loadedThreadId) return
     let cancelled = false
-    getAssistantThreadMessages(token, threadId).then(history => {
+    queryClient.fetchQuery({
+      queryKey: queryKeys.assistantMessages(threadId),
+      queryFn: () => getAssistantThreadMessages(token, threadId),
+      staleTime: 30_000,
+    }).then(history => {
       if (cancelled) return
       setMessages(history.map((m,i) => ({ id: `${threadId}-${i}`, own: m.role === 'user', text: m.content })))
       setPending(null)
@@ -57,6 +62,7 @@ export default function PersonalAIChat({ onContext, threadId, onThreadIdChange, 
   }, [threadId, token])
 
   const handleResult = (res) => {
+    if (res.thread_id) queryClient.invalidateQueries({ queryKey: queryKeys.assistantMessages(res.thread_id) })
     if (res.thread_id && res.thread_id !== threadId) onThreadIdChange?.(res.thread_id)
     setLoadedThreadId(res.thread_id)
     if (res.status === 'interrupted') {

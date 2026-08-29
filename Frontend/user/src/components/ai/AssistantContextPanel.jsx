@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { listConversations } from '../../api/chat'
-import { listTasks } from '../../api/tasks'
 import { listCalendarEvents } from '../../api/calendar'
-import { listMemories } from '../../api/memories'
+import { useConversationsQuery } from '../../hooks/useWorkspaceData'
+import { useMemoriesQuery, useTasksQuery } from '../../hooks/usePersonalData'
+import { queryKeys } from '../../query/queryClient'
 import { groupTasks } from '../../utils/taskGrouping'
 import { formatClock, formatDateShort } from '../../utils/datetime'
 
@@ -22,23 +23,25 @@ export default function AssistantContextPanel({ open, onClose }) {
   const { token } = useAuth()
   const { workspaceId } = useWorkspace()
   const navigate = useNavigate()
-  const [conversationsCount, setConversationsCount] = useState(null)
-  const [tasks, setTasks] = useState([])
-  const [events, setEvents] = useState([])
-  const [calendarConnected, setCalendarConnected] = useState(true)
-  const [memories, setMemories] = useState([])
-
-  useEffect(() => {
-    if (!token || !workspaceId) return
+  const dateRange = useMemo(() => {
     const now = new Date()
     const weekAhead = new Date(now.getTime() + 7 * 24 * 3600 * 1000)
-    listConversations(token, workspaceId).then(d => setConversationsCount(d.conversations.length)).catch(() => setConversationsCount(null))
-    listTasks(token, workspaceId).then(setTasks).catch(() => setTasks([]))
-    listCalendarEvents(token, { time_min: now.toISOString(), time_max: weekAhead.toISOString() })
-      .then(setEvents)
-      .catch(err => { setEvents([]); setCalendarConnected(err?.status !== 409) })
-    listMemories(token, workspaceId).then(setMemories).catch(() => setMemories([]))
-  }, [token, workspaceId])
+    return { time_min: now.toISOString(), time_max: weekAhead.toISOString() }
+  }, [])
+  const conversationsQuery = useConversationsQuery(token, workspaceId)
+  const tasksQuery = useTasksQuery(token)
+  const memoriesQuery = useMemoriesQuery(token)
+  const calendarQuery = useQuery({
+    queryKey: queryKeys.calendarEvents(dateRange.time_min, dateRange.time_max),
+    queryFn: () => listCalendarEvents(token, dateRange),
+    enabled: Boolean(token),
+    staleTime: 30_000,
+  })
+  const conversationsCount = conversationsQuery.data?.conversations?.length ?? null
+  const tasks = tasksQuery.items
+  const events = calendarQuery.data || []
+  const calendarConnected = calendarQuery.error?.status !== 409
+  const memories = memoriesQuery.items
 
   const openTasksCount = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress').length
   const { overdue, dueSoon, highPriority } = groupTasks(tasks)

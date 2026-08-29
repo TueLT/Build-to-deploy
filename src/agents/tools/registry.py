@@ -1,6 +1,8 @@
 from pydantic import Field, model_validator
 
 from src.agents.contracts import AgentIntent, AgentProfile, FrozenContract, RequestedScope
+from src.agents.profiles.product_delivery import PRODUCT_DELIVERY_PROMPT_VERSION
+from src.agents.profiles.quality_assurance import QUALITY_ASSURANCE_PROMPT_VERSION
 
 
 class AgentProfileRegistration(FrozenContract):
@@ -51,11 +53,12 @@ _PROFILE_REGISTRY = {
             "search_people_context",
             "search_messages",
             "get_personal_timeline",
+            "check_request_policy",
         ),
     ),
     AgentProfile.PRODUCT_DELIVERY: AgentProfileRegistration(
         profile=AgentProfile.PRODUCT_DELIVERY,
-        prompt_version="product-delivery-v1",
+        prompt_version=PRODUCT_DELIVERY_PROMPT_VERSION,
         allowed_scopes=(RequestedScope.WORKSPACE,),
         allowed_intents=(AgentIntent.DELIVERY_BRIEF,),
         allowed_tools=(
@@ -63,24 +66,36 @@ _PROFILE_REGISTRY = {
             "search_delivery_messages",
             "get_delivery_milestones",
             "get_delivery_people",
+            "get_delivery_dependencies",
+            "get_delivery_risks",
+            "get_delivery_decisions",
+            "get_delivery_release_status",
+            "get_delivery_capacity_summary",
+            "get_delivery_flow_metrics",
+            "get_delivery_portfolio_health",
             "build_delivery_brief",
-            "propose_delivery_reminder",
-            "propose_delivery_meeting",
         ),
     ),
     AgentProfile.QUALITY_ASSURANCE: AgentProfileRegistration(
         profile=AgentProfile.QUALITY_ASSURANCE,
-        prompt_version="quality-assurance-v1",
+        prompt_version=QUALITY_ASSURANCE_PROMPT_VERSION,
         allowed_scopes=(RequestedScope.WORKSPACE,),
         allowed_intents=(AgentIntent.QUALITY_READINESS, AgentIntent.QUALITY_BRIEF),
         allowed_tools=(
             "get_quality_work_items",
-            "search_quality_messages",
             "get_release_test_status",
+            "search_quality_messages",
             "get_quality_people",
             "build_quality_brief",
-            "propose_quality_reminder",
-            "propose_quality_meeting",
+            "get_defect_register",
+            "get_test_execution_summary",
+            "get_release_gate_evidence",
+            "get_requirement_traceability",
+            "get_release_candidate",
+            "get_quality_control_plane",
+            "get_quality_policy",
+            "get_quality_evidence_catalog",
+            "get_quality_waivers",
         ),
     ),
     AgentProfile.EXECUTIVE: AgentProfileRegistration(

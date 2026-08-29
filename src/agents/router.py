@@ -1,3 +1,10 @@
+"""Deterministic specialist router.
+
+This router only selects a profile from a server-owned workspace record; it
+does not treat the requested scope as a grant. Context building and live
+resource guards remain mandatory before any model or specialist tool can run.
+"""
+
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,7 +62,7 @@ async def route_agent_request(
     invocation: AgentInvocationRequest,
     intent: AgentIntent,
 ) -> AgentRoute:
-    """Select a registered profile deterministically; authorization still runs afterwards."""
+    """Select a profile deterministically; authorization runs in the next stage."""
 
     if invocation.requested_scope == RequestedScope.PERSONAL:
         if invocation.target_agent_workspace_id is not None:

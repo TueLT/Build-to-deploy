@@ -167,7 +167,11 @@ async def add_agent_workspace_member(
     agent_workspace = await db.get(AgentWorkspace, agent_workspace_id)
     if agent_workspace is None or agent_workspace.status != "active":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agent workspace not found")
-    user = await db.get(User, user_id)
+    # Serialize assignments for one principal. This closes the race between two
+    # administrators assigning the same account to different Agent Workspaces.
+    user = (
+        await db.execute(select(User).where(User.id == user_id).with_for_update())
+    ).scalar_one_or_none()
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active user not found")
     organization_membership = (
@@ -184,6 +188,29 @@ async def add_agent_workspace_member(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User must be an active organization workspace member",
+        )
+
+    active_elsewhere = (
+        await db.execute(
+            select(AgentWorkspaceMembership.id)
+            .join(
+                AgentWorkspace,
+                AgentWorkspace.id == AgentWorkspaceMembership.agent_workspace_id,
+            )
+            .where(
+                AgentWorkspaceMembership.user_id == user_id,
+                AgentWorkspaceMembership.status == "active",
+                AgentWorkspaceMembership.agent_workspace_id != agent_workspace_id,
+                AgentWorkspace.organization_workspace_id
+                == agent_workspace.organization_workspace_id,
+                AgentWorkspace.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+    if active_elsewhere is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User is already assigned to another active Agent Workspace",
         )
 
     if business_role == "lead":

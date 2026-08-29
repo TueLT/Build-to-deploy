@@ -81,6 +81,13 @@ async def update_memory(
 ) -> MemoryOut:
     memory = await _get_own_memory_or_404(memory_id, current_user, db)
     updates = request.model_dump(exclude_unset=True)
+    prospective_title = updates.get("title", memory.title)
+    prospective_detail = updates.get("detail", memory.detail)
+    if memory_service.contains_forbidden_sensitive_memory(f"{prospective_title}\n{prospective_detail}"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Memory must not contain credentials or sensitive personal data",
+        )
     expires_at = updates.get("expires_at")
     if expires_at is not None:
         expires_at = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)

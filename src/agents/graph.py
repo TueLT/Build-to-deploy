@@ -4,6 +4,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from src.agents.nodes.compact_node import compact_thread_node
+from src.agents.nodes.guardrail_node import input_guardrail_node, output_guardrail_node
 from src.agents.nodes.planner_node import planner_node
 from src.agents.state import AgentState
 from src.agents.tools import ALL_TOOLS
@@ -18,10 +19,17 @@ TERMINAL_TOOLS = {"summarize_conversation", "extract_tasks"}
 
 
 def route_after_planner(state: AgentState) -> str:
-    """Route to tool execution, or end the run if the planner errored or has a final reply."""
+    """Route tool calls to execution and plain replies through output validation."""
     if state.get("error"):
         return END
     return tools_condition(state)
+
+
+def route_after_input_guardrail(state: AgentState) -> str:
+    """Stop blocked/unclear requests before they can consume LLM tokens or call a tool."""
+    if state.get("guardrail_blocked") or state.get("guardrail_requires_clarification"):
+        return "compact_thread"
+    return "planner"
 
 
 def route_after_tools(state: AgentState) -> str:
@@ -36,13 +44,27 @@ def route_after_tools(state: AgentState) -> str:
 def build_graph(checkpointer):
     graph = StateGraph(AgentState)
 
+    graph.add_node("input_guardrail", input_guardrail_node)
     graph.add_node("planner", planner_node)
     graph.add_node("tools", ToolNode(ALL_TOOLS))
+    graph.add_node("output_guardrail", output_guardrail_node)
     graph.add_node("compact_thread", compact_thread_node)
 
-    graph.set_entry_point("planner")
-    graph.add_conditional_edges("planner", route_after_planner, {"tools": "tools", END: "compact_thread"})
-    graph.add_conditional_edges("tools", route_after_tools, {"planner": "planner", END: "compact_thread"})
+    graph.set_entry_point("input_guardrail")
+    graph.add_conditional_edges(
+        "input_guardrail",
+        route_after_input_guardrail,
+        {"planner": "planner", "compact_thread": "compact_thread"},
+    )
+    graph.add_conditional_edges(
+        "planner",
+        route_after_planner,
+        {"tools": "tools", END: "output_guardrail"},
+    )
+    graph.add_conditional_edges(
+        "tools", route_after_tools, {"planner": "planner", END: "output_guardrail"}
+    )
+    graph.add_edge("output_guardrail", "compact_thread")
     graph.add_edge("compact_thread", END)
 
     return graph.compile(checkpointer=checkpointer)
@@ -72,7 +94,13 @@ async def init_checkpointer() -> None:
 
     scheme, _, rest = _settings.database_url.partition("://")
     conninfo = f"{scheme.split('+')[0]}://{rest}"
-    pool = AsyncConnectionPool(conninfo=conninfo, max_size=10, open=False, kwargs={"autocommit": True})
+    pool = AsyncConnectionPool(
+        conninfo=conninfo,
+        min_size=1,
+        max_size=_settings.agent_checkpointer_pool_size,
+        open=False,
+        kwargs={"autocommit": True},
+    )
     await pool.open()
     saver = AsyncPostgresSaver(pool)
     await saver.setup()

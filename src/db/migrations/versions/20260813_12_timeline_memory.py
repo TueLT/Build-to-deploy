@@ -69,6 +69,17 @@ def upgrade() -> None:
         if "last_accessed_at" not in columns:
             batch_op.add_column(sa.Column("last_accessed_at", sa.DateTime(timezone=True), nullable=True))
 
+    # Legacy deployments used values such as ``fact`` before governed memory
+    # types existed. Normalize them before adding the database constraint so a
+    # valid pre-existing row cannot make the whole migration rollback.
+    connection.execute(
+        sa.text(
+            "UPDATE memories SET memory_type = 'semantic' "
+            "WHERE memory_type IS NULL OR memory_type NOT IN "
+            "('preference', 'relationship', 'episodic', 'semantic')"
+        )
+    )
+
     index_names = {index["name"] for index in sa.inspect(connection).get_indexes("memories")}
     with op.batch_alter_table("memories") as batch_op:
         if "ix_memories_owner_type_expiry" not in index_names:

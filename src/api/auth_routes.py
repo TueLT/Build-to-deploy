@@ -20,7 +20,7 @@ from src.models.auth_schemas import (
     UpdateProfileRequest,
     UserPublic,
 )
-from src.services.workspace_service import create_personal_workspace
+from src.services.workspace_service import ensure_personal_workspace
 
 router = APIRouter()
 
@@ -62,7 +62,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     )
     db.add(user)
     await db.flush()
-    await create_personal_workspace(db, user)
+    await ensure_personal_workspace(db, user)
     await db.commit()
     await db.refresh(user)
 
@@ -77,6 +77,10 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Au
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
 
+    # Repair accounts created by legacy imports or direct admin/demo provisioning.
+    # Personal APIs can then resolve their private namespace from the JWT alone.
+    await ensure_personal_workspace(db, user)
+    await db.commit()
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))
 
@@ -126,14 +130,17 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
             )
             db.add(user)
             await db.flush()
-            await create_personal_workspace(db, user)
+            await ensure_personal_workspace(db, user)
         db.add(GoogleIdentity(user_id=user.id, google_sub=google_sub, email=email))
-        await db.commit()
-        await db.refresh(user)
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account has been disabled")
 
+    # Existing Google identities and email-linked accounts need the same
+    # invariant repair as password logins.
+    await ensure_personal_workspace(db, user)
+    await db.commit()
+    await db.refresh(user)
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))
 

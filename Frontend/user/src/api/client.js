@@ -11,7 +11,9 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiFetch(path, { method = 'GET', body, token } = {}) {
+const inFlightReads = new Map()
+
+async function executeRequest(path, { method, body, token }) {
   const headers = { 'Content-Type': 'application/json' }
   if (token) headers.Authorization = `Bearer ${token}`
   const res = await fetch(`${API_BASE_URL}${path}`, {
@@ -25,4 +27,19 @@ export async function apiFetch(path, { method = 'GET', body, token } = {}) {
   }
   if (res.status === 204) return null
   return res.json()
+}
+
+export function apiFetch(path, { method = 'GET', body, token } = {}) {
+  const normalizedMethod = method.toUpperCase()
+  if (normalizedMethod !== 'GET') return executeRequest(path, { method: normalizedMethod, body, token })
+
+  // StrictMode and sibling widgets can mount together. Share the same GET promise so a single
+  // browser tab never sends duplicate concurrent reads for the same authenticated resource.
+  const requestKey = `${token || 'anonymous'}:${path}`
+  const pending = inFlightReads.get(requestKey)
+  if (pending) return pending
+  const request = executeRequest(path, { method: normalizedMethod, body, token })
+    .finally(() => inFlightReads.delete(requestKey))
+  inFlightReads.set(requestKey, request)
+  return request
 }

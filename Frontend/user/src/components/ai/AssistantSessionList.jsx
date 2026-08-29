@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../../context/AuthContext'
 import { listAssistantThreads } from '../../api/assistant'
 import { formatDateShort, formatClock } from '../../utils/datetime'
+import { queryKeys } from '../../query/queryClient'
 
 const formatThreadTime = (iso) => {
   if (!iso) return ''
@@ -12,14 +14,18 @@ const formatThreadTime = (iso) => {
 export default function AssistantSessionList({ activeThreadId, onSelectThread, onNewThread, refreshSignal }) {
   const { token } = useAuth()
   const [search, setSearch] = useState('')
-  const [threads, setThreads] = useState([])
-  const [loading, setLoading] = useState(true)
+  const threadsQuery = useQuery({
+    queryKey: queryKeys.assistantThreads,
+    queryFn: () => listAssistantThreads(token),
+    enabled: Boolean(token),
+    staleTime: 30_000,
+  })
+  const threads = threadsQuery.data || []
+  const loading = threadsQuery.isPending
 
   useEffect(() => {
-    if (!token) return
-    setLoading(true)
-    listAssistantThreads(token).then(setThreads).catch(() => setThreads([])).finally(() => setLoading(false))
-  }, [token, refreshSignal])
+    if (refreshSignal > 0) threadsQuery.refetch()
+  }, [refreshSignal]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = threads.filter(t => t.title.toLowerCase().includes(search.toLowerCase()))
 

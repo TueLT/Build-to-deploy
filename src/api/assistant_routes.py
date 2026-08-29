@@ -28,5 +28,11 @@ async def get_thread_messages(
     owned = await assistant_thread_service.get_owned_thread(db, current_user.id, thread_id)
     if owned is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
-    messages = await assistant_thread_service.get_thread_messages(current_user.id, thread_id)
+    try:
+        messages = await assistant_thread_service.get_thread_messages(current_user.id, thread_id)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Personal Agent is temporarily unavailable",
+        ) from None
     return [AssistantMessageOut(**m) for m in messages]

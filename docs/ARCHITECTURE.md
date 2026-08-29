@@ -1,8 +1,8 @@
 # Architecture — Orbit Multi-Agent theo Workspace
 
-> **Trạng thái:** Canonical v1.0
+> **Trạng thái:** Canonical v1.1
 >
-> **Cập nhật:** 2026-08-19
+> **Cập nhật:** 2026-08-24
 >
 > **Phạm vi:** Kiến trúc mục tiêu MVP và trạng thái code hiện tại
 >
@@ -14,7 +14,8 @@
 
 Kiến trúc được dẫn dắt bởi sáu yêu cầu:
 
-1. Một deployment là một công ty, không có self-service tenant creation.
+1. Một logical platform environment đại diện cho một công ty, không có self-service tenant creation; environment
+   có thể gồm nhiều service/runtime deployment để cô lập lỗi.
 2. Admin kiểm soát Workspace, lead, member và data source.
 3. Mỗi Workspace có đúng một Agent profile chuyên môn.
 4. Authorization phải hoàn tất trước retrieval và được kiểm tra lại tại tool boundary.
@@ -34,6 +35,7 @@ Kiến trúc được dẫn dắt bởi sáu yêu cầu:
 | ADR-07 | Profile registry + tool allowlist | Least privilege và testability |
 | ADR-08 | Proposal/approval tách khỏi execute | Chống side effect ẩn, replay và stale approval |
 | ADR-09 | Feature flag theo profile | Rollout/rollback độc lập |
+| ADR-10 | Shared control plane, isolated Agent runtimes | Personal và từng Workspace quan trọng có fault domain độc lập mà không copy source code |
 
 ## 3. System context
 
@@ -152,6 +154,34 @@ flowchart TB
 - `tools/registry.py`: scope, intent, prompt version và tool allowlist theo profile.
 - `graph.py`: LangGraph planner/tool/compaction loop và checkpointer.
 
+### 4.4 Deployment fault boundary target
+
+Component view phía trên mô tả modular monolith hiện tại. Production target dùng Hybrid Bridge:
+
+```mermaid
+flowchart LR
+    UI[User/Admin UI] --> CORE[Core API + Agent Gateway]
+    CORE --> PA[Personal Agent Service]
+    CORE --> REG[Workspace Runtime Registry]
+    REG --> DA[Dedicated Delivery Runtime]
+    REG --> QA[Dedicated QA Runtime]
+    REG --> EA[Executive Runtime]
+    CORE --> DATA[Core Data + Policy APIs]
+    PA --> DATA
+    DA --> DATA
+    QA --> DATA
+    EA --> BRIEFS[Validated Brief Store]
+```
+
+- Personal Agent là service đa user, state namespace theo user/thread.
+- Mỗi Workspace quan trọng có runtime deployment độc lập, bind cứng với Agent Workspace/profile.
+- Runtime dùng chung contract và image; không copy repository.
+- Core giữ identity, membership, consent, policy, Registry và sanitized audit.
+- Product Delivery là runtime được tách đầu tiên; Core chuẩn bị authorized snapshot trước khi gọi runtime.
+- Nhiều Workspace có thể dùng `dedicated`, `scale_to_zero` hoặc `cell`, nhưng cell chỉ được dùng sau khi
+  per-workspace quota và noisy-neighbor tests pass.
+- Chi tiết sequencing và release gate nằm tại mục 23–29 của `MULTI_AGENT_IMPLEMENTATION_PLAN.md`.
+
 ## 5. Domain model
 
 ```mermaid
@@ -257,7 +287,9 @@ Contract dùng `extra=forbid`, immutable và có validator để target luôn n�
 | Quality Assurance | `workspace` | `quality_readiness`, `quality_brief` | Một QA Workspace |
 | Executive | `aggregate` | `executive_brief` | Valid specialist briefs cùng Company Root |
 
-Registry hiện đã khai báo tool name cho ba Workspace Agent. Các specialist tool implementation tương ứng chưa tồn tại đầy đủ trong `src/agents/tools`; do đó registry hiện là contract/allowlist, chưa phải bằng chứng runtime hoàn thành.
+Registry đã khai báo tool name cho ba Workspace Agent. Product Delivery và Quality Assurance đã có scoped
+tool/runtime vertical slice; Executive chưa có implementation đầy đủ. Registry vẫn chỉ là contract/allowlist,
+không tự chứng minh một profile đã đạt release gate.
 
 ## 7. Routing architecture
 
@@ -430,7 +462,8 @@ Graph hiện tại gồm `planner -> tools -> compact_thread -> END`, dùng Post
 
 Target multi-agent:
 
-- Dùng một orchestration shell chung nhưng profile-specific prompt/tool binding.
+- Dùng shared orchestration contracts/adapters nhưng không bắt buộc chung process. Personal và Workspace runtime
+  production phải có deployment/checkpointer/failure boundary độc lập.
 - Thread key phải bao gồm ít nhất `user_id + agent_profile + agent_workspace_id + conversation/thread_id`.
 - Không reuse checkpoint giữa Workspace khác nhau.
 - State chỉ giữ allowed resource IDs và source IDs, không giữ capability tự khai báo.
@@ -494,11 +527,13 @@ Tên URL có thể được điều chỉnh khi implement; invariant auth và co
 
 ### 14.1 Runtime
 
-- FastAPI backend.
+- Hiện tại: một FastAPI backend chứa Core, Personal và Workspace routes.
+- Target: Core API/Agent Gateway, Personal Agent Service và Workspace Agent runtime deployments độc lập.
 - React/Vite User và Admin builds riêng.
 - PostgreSQL là production database và LangGraph checkpointer.
 - Chroma/search index chỉ là derived index; authorization vẫn dựa trên relational source IDs.
 - Scheduler/WebSocket hiện có tiếp tục phục vụ reminder/realtime, không được bypass HITL.
+- Registry, health, quota, timeout, version và circuit breaker phải quan sát được theo Agent Workspace.
 
 ### 14.2 Migrations
 
@@ -566,20 +601,34 @@ Dataset chuẩn: [Multi-Agent Test Dataset](MULTI_AGENT_TEST_DATASET.md).
 - Deterministic router, profile registry, scope resolver, resource guard.
 - Global/per-profile feature flags.
 - Unit/integration tests cho foundation/router/contracts.
+- Product Delivery scoped tools, dedicated graph, LLM brief path, deterministic dashboard và Lead/Member UI ở
+  local integration scope.
+- Quality Assurance release-scoped repository, deterministic readiness gate, source-backed brief, controlled
+  work-item API, Lead/Member scope và UI ở local integration scope.
+- Product Delivery và Quality Assurance runtime containers riêng dùng chung signed-snapshot contract, target pin,
+  health endpoint và remote/embedded adapters.
 
 ### 16.2 Chưa hoàn chỉnh
 
-- API invocation tích hợp router + context builder + profile graph.
-- Prompt/node/tool implementation cho Delivery và QA.
+- Shared invocation/Gateway tích hợp router + context builder + remote profile runtime.
+- Product Delivery/Quality còn thiếu production citation/E2E/load/fault-injection gates đầy đủ.
 - Durable WorkspaceBrief/ExecutiveBrief store, validator service và publication flow.
 - Executive aggregation runtime chỉ dùng brief.
 - Durable ActionProposal approval/executor cho Workspace Agent.
 - Workspace Agent chat/brief UI, citation/freshness/data-gap states.
 - End-to-end eval, observability dashboard và operational runbook cho multi-agent.
+- Process/container isolation cho Personal; Delivery ↔ Quality đã có local Docker boundary nhưng chưa có
+  provisioning/registry cho nhiều Workspace cùng profile.
+- Workspace Runtime Registry và automated per-Workspace routing; internal invocation contract, HMAC service
+  authentication và remote adapter đã có local integration.
+- Per-workspace concurrency/token budget/circuit breaker và automated provisioning.
 
 ### 16.3 Readiness conclusion
 
-Nền hiện tại **đủ để phát triển song song** ba Agent vì contract, profile, scope và Workspace ownership đã khóa. Nó **chưa đủ để tuyên bố multi-agent hoàn thiện**, vì các specialist tool/runtime, brief pipeline, Executive aggregation và UI execution path vẫn còn thiếu.
+Nền hiện tại **đủ để tiếp tục các vertical slice** vì contract, profile, scope và Workspace ownership đã khóa;
+Product Delivery và Quality đã chứng minh local vertical slice cùng runtime boundary. Hệ thống **chưa đủ để tuyên
+bố multi-agent production** vì Executive, durable brief/HITL, registry/provisioning, Personal process isolation,
+distributed circuit/queue/quota và staging E2E/load/fault gates vẫn còn thiếu.
 
 ## 17. Code ownership map
 
@@ -603,3 +652,10 @@ Nền hiện tại **đủ để phát triển song song** ba Agent vì contract
 - [Multi-Agent Implementation Plan](MULTI_AGENT_IMPLEMENTATION_PLAN.md)
 - [Multi-Agent Test Dataset](MULTI_AGENT_TEST_DATASET.md)
 - [Deployment Guide](deploy.md)
+# Product Delivery ↔ Quality Assurance control plane
+
+Product Delivery và Quality Assurance là hai failure domain độc lập. Chúng không gọi trực tiếp LangGraph/runtime của nhau. `ReleaseCandidate` là shared durable aggregate; mọi thay đổi handoff được ghi cùng transaction với một `WorkspaceOutboxEvent`. Consumer xử lý idempotent, retry có giới hạn và chuyển `dead_letter` sau khi hết retry.
+
+QA readiness là deterministic policy engine trên `QualityRequirement`, `QualityTestCase`, `QualityTestRun`, `QualityDefect`, `QualityEvidence`, `QualityPolicy` và `QualityWaiver`. LLM chỉ nhận immutable snapshot để diễn giải và không thể đổi readiness/release status.
+
+Các mutation do agent đề xuất đi qua `WorkspaceActionProposalRecord`: payload canonical hash, idempotency key, expiry, authorization-scope binding, Lead approval và optimistic concurrency. Domain record chỉ đổi trong transaction approve/execute; proposal bị sửa, hết hạn, mất quyền hoặc stale version đều fail closed.

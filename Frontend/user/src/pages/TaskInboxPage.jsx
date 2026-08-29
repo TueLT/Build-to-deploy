@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import PageHeader from '../components/common/PageHeader'
 import StatCard from '../components/common/StatCard'
 import { formatDue } from '../components/task/TaskTable'
 import { useAuth } from '../context/AuthContext'
-import { listTasks, updateTaskStatus } from '../api/tasks'
+import { updateTaskStatus } from '../api/tasks'
+import { useTasksQuery } from '../hooks/usePersonalData'
 
 const sourceLabel = { manual: 'Manual', proactive: 'AI suggestion' }
 const priorityClass = { High: 'danger', Medium: 'warning', Low: 'info' }
@@ -23,33 +24,22 @@ const byDueAtThenPriority = (a, b) => {
 export default function TaskInboxPage() {
   const { token } = useAuth()
   const { subscribe } = useOutletContext()
-  const [tasks, setTasks] = useState([])
-  const [loading, setLoading] = useState(true)
-
-  const refresh = () => {
-    setLoading(true)
-    if (!token) {
-      setTasks([])
-      setLoading(false)
-      return
-    }
-    listTasks(token).then(setTasks).finally(() => setLoading(false))
-  }
-
-  useEffect(() => { refresh() }, [token])
+  const { items: tasks, setItems: setTasks, loading } = useTasksQuery(token)
 
   const upsertTask = (task) => setTasks(prev => [...prev.filter(t => t.id !== task.id), task])
 
   useEffect(() => subscribe((data) => {
-    if (data.type === 'task_suggested' || data.type === 'task_created' || data.type === 'task_updated') upsertTask(data.task)
+    if (['task_suggested', 'task_created', 'task_updated', 'task_submitted', 'task_reviewed'].includes(data.type)) upsertTask(data.task)
     if (data.type === 'task_deleted') setTasks(prev => prev.filter(t => t.id !== data.task_id))
   }), [subscribe])
 
   const now = Date.now()
   const soonCutoff = now + DUE_SOON_HOURS * 3600 * 1000
-  const active = tasks.filter(t => t.status === 'pending' || t.status === 'in_progress')
+  const active = tasks.filter(t => ['pending', 'in_progress', 'blocked'].includes(t.status))
 
   const needsDecision = tasks.filter(t => t.status === 'suggested').sort(byDueAtThenPriority)
+  const awaitingReview = tasks.filter(t => t.status === 'submitted').sort(byDueAtThenPriority)
+  const changesRequested = tasks.filter(t => t.status === 'changes_requested').sort(byDueAtThenPriority)
   const overdue = active.filter(t => t.due_at && new Date(t.due_at).getTime() < now).sort(byDueAtThenPriority)
   const dueSoon = active
     .filter(t => t.due_at && new Date(t.due_at).getTime() >= now && new Date(t.due_at).getTime() <= soonCutoff)
@@ -61,7 +51,10 @@ export default function TaskInboxPage() {
   const dismiss = (task) => updateTaskStatus(token, task.id, 'dismissed').then(upsertTask)
   const complete = (task) => updateTaskStatus(token, task.id, 'completed').then(upsertTask)
 
-  const totalInboxCount = needsDecision.length + overdue.length + dueSoon.length + highPriority.length
+  const totalInboxCount = needsDecision.length + awaitingReview.length + changesRequested.length + overdue.length + dueSoon.length + highPriority.length
+  const completionAction = task => task.requires_review
+    ? <Link className="btn btn-sm btn-primary" to="/tasks">Submit evidence</Link>
+    : <button className="btn btn-sm btn-primary" onClick={() => complete(task)}>Complete</button>
 
   const Section = ({ icon, title, items, tone, actions }) => {
     if (!items.length) return null
@@ -102,7 +95,7 @@ export default function TaskInboxPage() {
         action={<Link to="/tasks" className="btn btn-light rounded-3"><i className="bi bi-list-task me-2" />All tasks</Link>}
       />
       <div className="stats-grid">
-        <StatCard label="Needs decision" value={needsDecision.length} icon="bi-stars" color={needsDecision.length ? 'primary' : 'success'} />
+        <StatCard label="Needs decision" value={needsDecision.length + changesRequested.length} icon="bi-stars" color={(needsDecision.length + changesRequested.length) ? 'primary' : 'success'} />
         <StatCard label="Overdue" value={overdue.length} icon="bi-exclamation-circle" color={overdue.length ? 'danger' : 'success'} />
         <StatCard label="Due within 48h" value={dueSoon.length} icon="bi-hourglass-split" color={dueSoon.length ? 'warning' : 'success'} />
         <StatCard label="High priority" value={highPriority.length} icon="bi-flag" color={highPriority.length ? 'warning' : 'success'} />
@@ -124,17 +117,19 @@ export default function TaskInboxPage() {
           <button className="btn btn-sm btn-light" onClick={() => dismiss(task)}>Dismiss</button>
         </>}
       />
+      <Section icon="bi-arrow-repeat" title="Lead requested changes" items={changesRequested} tone="danger" actions={completionAction} />
+      <Section icon="bi-hourglass" title="Awaiting Lead review" items={awaitingReview} tone="warning" actions={() => <span className="text-muted small">No action needed</span>} />
       <Section
         icon="bi-exclamation-circle" title="Overdue" items={overdue} tone="danger"
-        actions={(task) => <button className="btn btn-sm btn-primary" onClick={() => complete(task)}>Complete</button>}
+        actions={completionAction}
       />
       <Section
         icon="bi-hourglass-split" title="Due within 48 hours" items={dueSoon} tone="warning"
-        actions={(task) => <button className="btn btn-sm btn-primary" onClick={() => complete(task)}>Complete</button>}
+        actions={completionAction}
       />
       <Section
         icon="bi-flag" title="High priority" items={highPriority} tone="warning"
-        actions={(task) => <button className="btn btn-sm btn-primary" onClick={() => complete(task)}>Complete</button>}
+        actions={completionAction}
       />
     </div>
   )

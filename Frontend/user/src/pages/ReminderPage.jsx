@@ -3,7 +3,8 @@ import { useOutletContext } from 'react-router-dom'
 import PageHeader from '../components/common/PageHeader'
 import NewReminderModal from '../components/reminder/NewReminderModal'
 import { useAuth } from '../context/AuthContext'
-import { listReminders, cancelReminder } from '../api/reminders'
+import { cancelReminder } from '../api/reminders'
+import { useRemindersQuery } from '../hooks/usePersonalData'
 import { getColor } from '../utils/avatar'
 import { formatDateTime } from '../utils/datetime'
 
@@ -13,18 +14,9 @@ const statusClass = { scheduled: 'primary', fired: 'success', cancelled: 'second
 export default function ReminderPage() {
   const { token } = useAuth()
   const { subscribe } = useOutletContext()
-  const [reminders, setReminders] = useState([])
-  const [loading, setLoading] = useState(true)
+  const { items: reminders, setItems: setReminders, loading, error: queryError, refresh } = useRemindersQuery(token)
   const [newOpen, setNewOpen] = useState(false)
   const [error, setError] = useState('')
-
-  const refresh = () => {
-    setLoading(true)
-    setError('')
-    listReminders(token).then(setReminders).catch(err => setError(err.detail || 'Could not load reminders.')).finally(() => setLoading(false))
-  }
-
-  useEffect(() => { refresh() }, [token])
 
   useEffect(() => subscribe((data) => {
     if (data.type !== 'reminder_fired') return
@@ -36,7 +28,7 @@ export default function ReminderPage() {
 
   return <div className="page-container">
     <PageHeader eyebrow="Stay focused" title="Reminders" description="Gentle nudges for everything that matters." action={<button className="btn btn-primary" onClick={() => setNewOpen(true)}><i className="bi bi-plus-lg me-2"/>New reminder</button>}/>
-    {error && <div className="auth-error mb-3">{error}</div>}
+    {(error || queryError) && <div className="auth-error mb-3">{error || queryError.detail || 'Could not load reminders.'}</div>}
     <div className="reminder-layout"><section className="content-card reminder-list"><div className="card-toolbar"><div><h3>Upcoming reminders</h3><span>{reminders.filter(r => r.status === 'scheduled').length} active reminders</span></div></div>
       {loading ? <p className="text-muted small p-3 mb-0">Loading...</p> : reminders.map(r => (
         <div className={`reminder-row ${r.status !== 'scheduled' ? 'disabled' : ''}`} key={r.id}>

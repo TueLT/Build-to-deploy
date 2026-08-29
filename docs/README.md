@@ -10,7 +10,12 @@ Thư mục này chỉ giữ tài liệu đang được dùng cho dự án Multi-
 | 4 | [Enterprise Workspace Foundation](ENTERPRISE_WORKSPACE_FOUNDATION.md) | Company Root, Workspace, role, membership và lifecycle hoạt động ra sao? |
 | 5 | [Multi-Agent Implementation Plan](MULTI_AGENT_IMPLEMENTATION_PLAN.md) | Bốn người chia việc, phụ thuộc, merge và release thế nào? |
 | 6 | [Multi-Agent Test Dataset](MULTI_AGENT_TEST_DATASET.md) | Golden cases, taxonomy và eval data được chuẩn hóa thế nào? |
-| 7 | [Deployment Guide](deploy.md) | Chạy và triển khai hệ thống thế nào? |
+| 7 | [Multi-Agent System Evaluation Playbook V2](MULTI_AGENT_SYSTEM_EVALUATION_PLAYBOOK_V2.md) | Kiểm thử routing, specialist DAG, memory, security, fault isolation và chấm release gate thế nào? |
+| 8 | [Multi-Agent Chat Test Script](MULTI_AGENT_CHAT_TEST_SCRIPT.md) | Copy câu hỏi nào vào UI và kỳ vọng agent/luồng/câu trả lời ra sao? |
+| 9 | [Multi-Agent Chat Robustness Test](MULTI_AGENT_CHAT_ROBUSTNESS_TEST_SCRIPT.md) | Agent có còn route và trả lời đúng khi người dùng đổi cách diễn đạt, viết tắt, typo hoặc sửa ý giữa thread không? |
+| 10 | [Workspace Agent Prompt & Guardrail V2](WORKSPACE_AGENT_PROMPT_GUARDRAIL_V2.md) | Policy nhiều lớp, deterministic workspace-only và mapping nguyên lý Deep Agents được triển khai ra sao? |
+| 11 | [Kết quả kiểm thử Multi-Agent 2026-08-29](MULTI_AGENT_EVALUATION_RESULTS_2026-08-29.md) | 26 chat case đã được cover thế nào, lỗi nào đã sửa và release gate hiện ra sao? |
+| 12 | [Deployment Guide](deploy.md) | Chạy và triển khai hệ thống thế nào? |
 
 ## Quy tắc single source of truth
 

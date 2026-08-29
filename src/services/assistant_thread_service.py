@@ -79,6 +79,8 @@ async def get_thread_messages(owner_id: str, thread_id: str) -> list[dict]:
     for why those tables can't be queried for this on their own anyway (no owner_id link).
     Tool-call-only AIMessages (empty content) and ToolMessages are dropped - only human/assistant
     text turns make sense to replay in the chat UI."""
+    if agent_graph.agent is None:
+        raise RuntimeError("Personal Agent is unavailable")
     snapshot = await agent_graph.agent.aget_state(
         {"configurable": {"thread_id": f"{owner_id}:{thread_id}"}}
     )

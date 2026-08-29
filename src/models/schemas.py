@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 class ChatMessage(BaseModel):
     role: Literal["user", "assistant", "system"] = "user"
     sender: str | None = None
-    content: str
+    content: str = Field(..., min_length=1, max_length=10_000)
     timestamp: str | None = Field(default=None, description="ISO 8601 datetime, optional")
 
 
@@ -29,12 +29,18 @@ class MessageScope(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=5000, description="Tin nhắn từ user")
-    thread_id: str | None = Field(default=None, description="Conversation thread id; generated if omitted")
-    workspace_id: str | None = Field(default=None, description="Active workspace for workspace-scoped agent tools")
+    thread_id: str | None = Field(
+        default=None, max_length=128, description="Conversation thread id; generated if omitted"
+    )
+    workspace_id: str | None = Field(
+        default=None,
+        description="Conversation workspace validation only; omit for Personal Assistant",
+    )
     context_limit: int = Field(default=20, ge=1, le=50)
     scope: MessageScope | None = None
     messages: list[ChatMessage] | None = Field(
         default=None,
+        max_length=200,
         description="Raw message history to summarize (read by summarize_conversation via state)",
     )
     conversation_id: str | None = Field(

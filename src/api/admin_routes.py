@@ -125,6 +125,7 @@ async def get_system_health(db: AsyncSession = Depends(get_db)) -> AdminSystemHe
         "google": settings.google_api_key,
         "groq": settings.groq_api_key,
         "openai": settings.openai_api_key,
+        "openrouter": settings.openrouter_api_key,
     }
     llm_configured = bool(provider_keys[settings.llm_provider])
     components.append(
@@ -173,6 +174,7 @@ async def get_ai_management(db: AsyncSession = Depends(get_db)) -> AdminAIManage
         "google": settings.google_api_key,
         "groq": settings.groq_api_key,
         "openai": settings.openai_api_key,
+        "openrouter": settings.openrouter_api_key,
     }
     granted_permissions = (
         await db.execute(select(func.count()).select_from(AIPermission).where(AIPermission.granted.is_(True)))
@@ -481,6 +483,7 @@ async def list_all_tasks(
             priority=t.priority,
             status=t.status,
             source=t.source,
+            row_version=t.row_version,
             created_at=t.created_at,
             updated_at=t.updated_at,
             owner_id=t.owner_id,

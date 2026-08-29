@@ -180,7 +180,7 @@ export default function ChatPage() {
             <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} loading={messagesLoading} firstUnreadMessageId={firstUnreadMessageId} unreadCount={unreadCount} />
           </>
         ) : (
-          <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Select a conversation or start a new one</p></div>
+          <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Chọn một cuộc trò chuyện hoặc bắt đầu cuộc trò chuyện mới.</p></div>
         )}
       </section>
       <AIPanel

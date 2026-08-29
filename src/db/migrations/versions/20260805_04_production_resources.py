@@ -125,7 +125,11 @@ def _add_resource_indexes(connection) -> None:
 def _harden_constraints(connection) -> None:
     for table in ("tasks", "memories", "reminders"):
         targets = _foreign_key_targets(connection, table)
-        with op.batch_alter_table(table) as batch_op:
+        # A fresh database is created from current metadata by revision 01.
+        # It can therefore contain a later FK whose target table has not yet
+        # been introduced by this historical revision. Reflection must not
+        # resolve that future FK while rebuilding this older table on SQLite.
+        with op.batch_alter_table(table, reflect_kwargs={"resolve_fks": False}) as batch_op:
             if ("workspace_id", "workspaces") not in targets:
                 batch_op.create_foreign_key(
                     f"fk_{table}_workspace_id_workspaces",

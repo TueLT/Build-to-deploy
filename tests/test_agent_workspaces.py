@@ -12,10 +12,14 @@ from src.agents.contracts import (
     PolicyReason,
     RequestedScope,
 )
-from src.agents.policies.resource_guard import AgentResourceDeniedError, enforce_agent_resource_access
+from src.agents.policies.resource_guard import (
+    AgentResourceDeniedError,
+    enforce_agent_resource_access,
+    enforce_agent_workspace_access,
+)
 from src.agents.policies.scope_resolver import resolve_agent_scope
 from src.config import Settings
-from src.db.models import AgentWorkspaceMembership, User, WorkspaceMembership
+from src.db.models import AgentWorkspaceConversation, AgentWorkspaceMembership, User, WorkspaceMembership
 from src.services.agent_workspace_service import add_agent_workspace_member, create_agent_workspace
 from src.services.company_service import get_or_create_company_workspace
 from src.services.workspace_service import add_workspace_member
@@ -325,22 +329,38 @@ async def test_workspace_configuration_api_is_platform_admin_only(
     )
     assert organization_summary["agent_workspace_count"] == 3
 
+    for email, display_name in (
+        ("operations-lead@example.com", "Operations Lead"),
+        ("operations-member@example.com", "Operations Member"),
+    ):
+        registered = await client.post(
+            "/api/v1/auth/register",
+            json={"email": email, "password": "password123", "display_name": display_name},
+        )
+        assert registered.status_code == 201
+        enrolled = await client.post(
+            f"/api/v1/workspaces/{seed['organization_id']}/members",
+            json={"email": email, "role": "member"},
+            headers=auth_headers,
+        )
+        assert enrolled.status_code == 201
+
     created = await client.post(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces",
         json={
             "key": "delivery-operations",
             "name": "Delivery Operations",
             "agent_profile": "product_delivery",
-            "lead_email": "quality@example.com",
+            "lead_email": "operations-lead@example.com",
         },
         headers=admin_auth_headers,
     )
     assert created.status_code == 201
-    assert created.json()["lead_email"] == "quality@example.com"
+    assert created.json()["lead_email"] == "operations-lead@example.com"
     member = await client.post(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{created.json()['id']}/members",
-        json={"email": "delivery@example.com", "business_role": "member"},
+        json={"email": "operations-member@example.com", "business_role": "member"},
         headers=admin_auth_headers,
     )
     assert member.status_code == 201
@@ -348,7 +368,7 @@ async def test_workspace_configuration_api_is_platform_admin_only(
 
     login = await client.post(
         "/api/v1/auth/login",
-        json={"email": "delivery@example.com", "password": "password123"},
+        json={"email": "operations-member@example.com", "password": "password123"},
     )
     member_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     denied = await client.get(
@@ -361,7 +381,18 @@ async def test_workspace_configuration_api_is_platform_admin_only(
         headers=member_headers,
     )
     assert available.status_code == 200
-    assert {item["current_user_business_role"] for item in available.json()} == {"lead", "member"}
+    assert [(item["id"], item["current_user_business_role"]) for item in available.json()] == [
+        (created.json()["id"], "member")
+    ]
+
+    duplicate_assignment = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{created.json()['id']}/members",
+        json={"email": "delivery@example.com", "business_role": "member"},
+        headers=admin_auth_headers,
+    )
+    assert duplicate_assignment.status_code == 409
+    assert "already assigned" in duplicate_assignment.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -522,9 +553,13 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
 
     async with db_session.async_session_maker() as db:
         await enforce_agent_resource_access(db, context=context, resource_id=conversation_id)
+        await enforce_agent_workspace_access(db, context=context, agent_workspace_id=seed["delivery_id"])
         with pytest.raises(AgentResourceDeniedError) as guessed:
             await enforce_agent_resource_access(db, context=context, resource_id="guessed-conversation")
+        with pytest.raises(AgentResourceDeniedError) as wrong_workspace:
+            await enforce_agent_workspace_access(db, context=context, agent_workspace_id=seed["quality_id"])
     assert guessed.value.reason == PolicyReason.RESOURCE_NOT_ALLOWED
+    assert wrong_workspace.value.reason == PolicyReason.WRONG_WORKSPACE
 
     revoked_consent = await client.put(
         f"/api/v1/conversations/{conversation_id}/ai-policy",
@@ -535,7 +570,129 @@ async def test_conversation_mapping_enters_scope_only_with_active_group_consent(
     async with db_session.async_session_maker() as db:
         with pytest.raises(AgentResourceDeniedError) as revoked:
             await enforce_agent_resource_access(db, context=context, resource_id=conversation_id)
+        with pytest.raises(AgentResourceDeniedError) as revoked_workspace:
+            await enforce_agent_workspace_access(db, context=context, agent_workspace_id=seed["delivery_id"])
     assert revoked.value.reason == PolicyReason.CONSENT_CHANGED
+    assert revoked_workspace.value.reason == PolicyReason.CONSENT_CHANGED
+
+
+@pytest.mark.asyncio
+async def test_member_scope_excludes_linked_group_when_the_member_is_not_an_active_participant(
+    client, auth_headers, admin_auth_headers
+):
+    seed = await _seed_agent_workspaces(client, auth_headers)
+    registered = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "delivery-member@example.com",
+            "password": "password123",
+            "display_name": "Delivery Member",
+        },
+    )
+    assert registered.status_code == 201
+    added_to_organization = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/members",
+        json={"email": "delivery-member@example.com", "role": "member"},
+        headers=auth_headers,
+    )
+    assert added_to_organization.status_code == 201
+    added_to_agent_workspace = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/{seed['delivery_id']}/members",
+        json={"email": "delivery-member@example.com", "business_role": "member"},
+        headers=admin_auth_headers,
+    )
+    assert added_to_agent_workspace.status_code == 201
+
+    group = await client.post(
+        "/api/v1/conversations",
+        json={
+            "type": "group",
+            "participant_ids": [seed["delivery_user_id"]],
+            "name": "Lead-only Delivery Group",
+            "workspace_id": seed["organization_id"],
+        },
+        headers=auth_headers,
+    )
+    assert group.status_code == 200
+    group_id = group.json()["id"]
+    linked = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/{seed['delivery_id']}/conversations",
+        json={"conversation_id": group_id, "classification": "delivery"},
+        headers=admin_auth_headers,
+    )
+    assert linked.status_code == 201
+    consent = await client.put(
+        f"/api/v1/conversations/{group_id}/ai-policy",
+        json={"enabled": True},
+        headers=auth_headers,
+    )
+    assert consent.status_code == 200
+
+    async with db_session.async_session_maker() as db:
+        member = (
+            await db.execute(select(User).where(User.email == "delivery-member@example.com"))
+        ).scalar_one()
+        resolution = await resolve_agent_scope(
+            db,
+            user_id=member.id,
+            organization_workspace_id=seed["organization_id"],
+            agent_profile=AgentProfile.PRODUCT_DELIVERY,
+            requested_scope=RequestedScope.WORKSPACE,
+            target_agent_workspace_id=seed["delivery_id"],
+        )
+
+    assert resolution.decision == PolicyDecision.ALLOW
+    assert resolution.business_role == BusinessRole.MEMBER
+    assert resolution.allowed_resource_ids == ()
+    assert resolution.consent_scope_hash is None
+
+
+@pytest.mark.asyncio
+async def test_delivery_scope_rejects_wrong_classification_even_if_mapping_is_inserted_outside_api(
+    client, auth_headers
+):
+    seed = await _seed_agent_workspaces(client, auth_headers)
+    group = await client.post(
+        "/api/v1/conversations",
+        json={
+            "type": "group",
+            "participant_ids": [seed["delivery_user_id"]],
+            "name": "Incorrectly Classified Group",
+            "workspace_id": seed["organization_id"],
+        },
+        headers=auth_headers,
+    )
+    assert group.status_code == 200
+    group_id = group.json()["id"]
+    consent = await client.put(
+        f"/api/v1/conversations/{group_id}/ai-policy",
+        json={"enabled": True},
+        headers=auth_headers,
+    )
+    assert consent.status_code == 200
+
+    async with db_session.async_session_maker() as db:
+        db.add(
+            AgentWorkspaceConversation(
+                agent_workspace_id=seed["delivery_id"],
+                conversation_id=group_id,
+                classification="quality",
+                linked_by_user_id=seed["delivery_user_id"],
+            )
+        )
+        await db.commit()
+        resolution = await resolve_agent_scope(
+            db,
+            user_id=seed["delivery_user_id"],
+            organization_workspace_id=seed["organization_id"],
+            agent_profile=AgentProfile.PRODUCT_DELIVERY,
+            requested_scope=RequestedScope.WORKSPACE,
+            target_agent_workspace_id=seed["delivery_id"],
+        )
+
+    assert resolution.decision == PolicyDecision.ALLOW
+    assert resolution.allowed_resource_ids == ()
+    assert resolution.consent_scope_hash is None
 
 
 @pytest.mark.asyncio
@@ -543,10 +700,25 @@ async def test_agent_workspace_membership_revoke_api_takes_effect_immediately(
     client, auth_headers, admin_auth_headers
 ):
     seed = await _seed_agent_workspaces(client, auth_headers)
+    registered = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "revoke-test-lead@example.com",
+            "password": "password123",
+            "display_name": "Revoke Test Lead",
+        },
+    )
+    assert registered.status_code == 201
+    enrolled = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/members",
+        json={"email": "revoke-test-lead@example.com", "role": "member"},
+        headers=auth_headers,
+    )
+    assert enrolled.status_code == 201
     reassigned = await client.patch(
         f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
         f"{seed['delivery_id']}/lead",
-        json={"email": "executive@example.com"},
+        json={"email": "revoke-test-lead@example.com"},
         headers=admin_auth_headers,
     )
     assert reassigned.status_code == 200

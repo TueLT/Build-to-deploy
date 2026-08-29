@@ -50,7 +50,7 @@ async def test_router_selects_specialist_from_trusted_workspace_profile():
         intent=AgentIntent.QUALITY_BRIEF,
     )
     assert route.profile == AgentProfile.QUALITY_ASSURANCE
-    assert route.prompt_version == "quality-assurance-v1"
+    assert route.prompt_version == "quality-assurance-v3"
     assert "build_quality_brief" in route.allowed_tools
     assert "build_delivery_brief" not in route.allowed_tools
 

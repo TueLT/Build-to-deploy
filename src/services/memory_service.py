@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
@@ -8,6 +9,22 @@ from src.db.models import Conversation, Memory, User
 from src.models.memory_schemas import MemoryCreateRequest
 from src.services import chat_service, consent_service
 from src.services.authorization_service import require_conversation_access
+
+# Persistent assistant memory must never become a secondary secret store. This check is kept
+# deterministic and runs for both direct API writes and edits; conversation provenance/consent is
+# validated separately below.
+_FORBIDDEN_MEMORY_RE = re.compile(
+    r"\b(password|mat\s*khau|passcode|otp|api[_ -]?key|secret|access[_ -]?token|"
+    r"refresh[_ -]?token|private[_ -]?key|cvv|so\s*the|cccd|cmnd|ho\s*chieu|"
+    r"social\s*security|bank\s*account|tai\s*khoan\s*ngan\s*hang|sinh\s*trac|biometric|"
+    r"ton\s*giao|religion|xu\s*huong\s*tinh\s*duc|sexual\s*orientation|"
+    r"dang\s*phai|political\s*affiliation|chan\s*doan|diagnos(?:is|ed))\b",
+    flags=re.IGNORECASE,
+)
+
+
+def contains_forbidden_sensitive_memory(text: str) -> bool:
+    return bool(_FORBIDDEN_MEMORY_RE.search(text or ""))
 
 
 def _utc(value: datetime) -> datetime:
@@ -55,6 +72,11 @@ async def create_memory_from_request(
     workspace_id: str,
     request: MemoryCreateRequest,
 ) -> Memory:
+    if contains_forbidden_sensitive_memory(f"{request.title}\n{request.detail}"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Memory must not contain credentials or sensitive personal data",
+        )
     if request.expires_at is not None and _utc(request.expires_at) <= datetime.now(UTC):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -26,7 +26,7 @@ from src.services import (
     usage_service,
 )
 from src.services.authorization_service import require_conversation_access
-from src.services.workspace_service import resolve_workspace_for_user
+from src.services.workspace_service import resolve_personal_workspace_for_user
 
 router = APIRouter()
 
@@ -80,7 +80,12 @@ async def chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
-    """Chat với AI agent."""
+    """Handle one Personal Agent chat turn."""
+    if agent_graph.agent is None or agent_graph.checkpointer is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Personal Agent is temporarily unavailable",
+        )
     if request.conversation_id is not None:
         await require_conversation_access(db, current_user, request.conversation_id, "viewer")
         conversation = await db.get(Conversation, request.conversation_id)
@@ -93,7 +98,12 @@ async def chat(
             )
         workspace_id = conversation.workspace_id
     else:
-        workspace = await resolve_workspace_for_user(db, current_user.id, request.workspace_id)
+        if request.workspace_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="workspace_id is only valid with conversation_id; Personal Assistant resolves Personal Space automatically",
+            )
+        workspace = await resolve_personal_workspace_for_user(db, current_user.id)
         workspace_id = workspace.id
     if request.conversation_id is not None:
         # Conversation membership and AI consent are separate checks.
@@ -182,7 +192,12 @@ async def resume_chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
-    """Resume an interrupted agent run with the user's confirm/reject decision."""
+    """Resume an interrupted Personal Agent run."""
+    if agent_graph.agent is None or agent_graph.checkpointer is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Personal Agent is temporarily unavailable",
+        )
     thread = await thread_memory_service.require_resumable_thread(
         db, current_user, request.thread_id
     )
@@ -224,7 +239,11 @@ async def resume_chat(
 @router.get("/status")
 async def agent_status():
     """Kiểm tra trạng thái agent."""
-    return {"status": "ready", "agent": "LangGraph Agent v1.0"}
+    ready = agent_graph.agent is not None and agent_graph.checkpointer is not None
+    return {
+        "status": "ready" if ready else "unavailable",
+        "agent": "LangGraph Agent v1.0",
+    }
 
 
 @router.get("/usage/status", response_model=UsageStatusOut)
