@@ -19,7 +19,7 @@ Script không xóa dữ liệu nghiệp vụ. Nó tạo/cập nhật namespace `
 Workspace, 13 thành viên Delivery, ba group `Apollo Platform`, `Customer Portal`, `Release 34`
 (mỗi group 5 người, 8 tin nhắn, 5 task source-bound, 3 milestone) và group kiểm soát
 `QA Internal — not linked`. UI/LLM snapshot nhận group directory, people projection, chat evidence và task
-blocked/overdue/due-soon, milestone và message evidence.
+blocked/overdue/due-soon, milestone và message evidence..
 
 | Tài khoản | Mật khẩu demo | Mục đích |
 |---|---|---|
