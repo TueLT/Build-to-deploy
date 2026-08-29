@@ -109,4 +109,4 @@ interprets that capability in the independent planning domain.
 - External Google Calendar creation remains a Personal Agent capability unless
   a future team-calendar owner and consent model is approved.
 - Natural-language mutations must produce a visible proposal, never an immediate
-  side effect. The existing approval queue is the execution boundary.
+  side effect. The existing approval queue is the execution boundary..
