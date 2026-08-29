@@ -281,6 +281,7 @@ function OrchestrationSummary({ orchestration, results = [] }) {
 }
 
 function AgentRunHistory({ result, runHistory }) {
+  const [expanded, setExpanded] = useState(false)
   const orchestration = result?.payload?.orchestration
   const specialistResults = result?.payload?.specialist_results || []
   let history = runHistory
@@ -337,7 +338,6 @@ function AgentRunHistory({ result, runHistory }) {
       steps,
     }
   }
-  if (!history?.steps?.length) return null
   const terminalState = status => (
     ['succeeded', 'success', 'completed'].includes(status)
       ? 'completed'
@@ -345,14 +345,26 @@ function AgentRunHistory({ result, runHistory }) {
         ? 'partial'
         : ['failed', 'timed_out', 'cancelled'].includes(status) ? 'failed' : 'pending'
   )
-  const completedCount = history.steps.filter(step => ['completed', 'partial'].includes(terminalState(step.status))).length
-  return <details className="agent-run-history" open>
-    <summary>
-      <span><i className="bi bi-terminal" /> Quá trình Agent thực hiện</span>
-      <small>{completedCount}/{history.steps.length} bước · {history.intent}</small>
+  const steps = history?.steps || []
+  const completedCount = steps.filter(step => ['completed', 'partial'].includes(terminalState(step.status))).length
+  const failedCount = steps.filter(step => terminalState(step.status) === 'failed').length
+  const partialCount = steps.filter(step => terminalState(step.status) === 'partial').length
+  const pendingCount = steps.filter(step => terminalState(step.status) === 'pending').length
+  const runState = failedCount > 0 ? 'failed' : partialCount > 0 ? 'attention' : pendingCount > 0 ? 'running' : 'completed'
+
+  useEffect(() => {
+    setExpanded(runState !== 'completed')
+  }, [history?.status, steps.length, completedCount, failedCount, partialCount, pendingCount])
+
+  if (!steps.length) return null
+  const stateLabel = runState === 'failed' ? 'Có lỗi' : runState === 'attention' ? 'Cần chú ý' : runState === 'running' ? 'Đang chạy' : 'Hoàn tất'
+  return <details className={`agent-run-history ${runState}`} open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)}>
+    <summary title={expanded ? 'Thu gọn quá trình thực hiện' : 'Xem chi tiết quá trình thực hiện'}>
+      <span className="agent-run-history-title"><i className="bi bi-terminal" /><span>Quá trình Agent thực hiện</span><em>{stateLabel}</em></span>
+      <span className="agent-run-history-meta"><small>{completedCount}/{steps.length} bước · {history.intent}</small><i className="bi bi-chevron-down" /></span>
     </summary>
     <div className="agent-run-timeline">
-      {history.steps.map((step, index) => {
+      {steps.map((step, index) => {
         const state = terminalState(step.status)
         const label = step.kind === 'specialist'
           ? specialistLabels[step.specialist] || step.title
@@ -362,7 +374,7 @@ function AgentRunHistory({ result, runHistory }) {
           <span className="agent-run-step-state">
             <i className={`bi ${state === 'failed' ? 'bi-x-lg' : state === 'pending' ? 'bi-three-dots' : 'bi-check-lg'}`} />
           </span>
-          <div>
+          <div className="agent-run-step-content">
             <strong>{label}</strong>
             {action && <p>{action}</p>}
             {step.depends_on?.length > 0 && <small>

@@ -22,6 +22,7 @@ export default function WorkspaceGroupsPage() {
   const conversations = conversationsQuery.data?.conversations || []
   const deliveryWorkspace = (agentsQuery.data || []).find(agent => agent.agent_profile === 'product_delivery')
   const deliveryRole = deliveryWorkspace?.current_user_business_role || null
+  const deliveryWorkspaceName = deliveryWorkspace?.name || 'Product Delivery Workspace'
   const loading = conversationsQuery.isPending || (workspace?.type === 'organization' && agentsQuery.isPending)
   const requestError = conversationsQuery.error || agentsQuery.error
   const error = requestError?.detail || (requestError ? 'Không thể tải danh sách nhóm của workspace.' : '')
@@ -44,7 +45,7 @@ export default function WorkspaceGroupsPage() {
       />
 
       <div className="group-overview-strip">
-        <div><i className="bi bi-buildings" /><span><small>Workspace</small><strong>{workspace?.name || '—'}</strong></span></div>
+        <div><i className="bi bi-buildings" /><span><small>Product Delivery Workspace</small><strong>{deliveryWorkspaceName}</strong></span></div>
         <div><i className="bi bi-person-badge" /><span><small>Vai trò Delivery</small><strong>{isLead ? 'Lead' : deliveryRole === 'member' ? 'Member' : 'Chưa được gán'}</strong></span></div>
         <div><i className="bi bi-people" /><span><small>Nhóm có quyền truy cập</small><strong>{groups.length}</strong></span></div>
         <div><i className="bi bi-chat-left-text" /><span><small>Tin chưa đọc</small><strong>{unreadCount}</strong></span></div>

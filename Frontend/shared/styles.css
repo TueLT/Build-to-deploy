@@ -116,27 +116,44 @@ html{scroll-behavior:smooth}
 .chat-layout{transition:grid-template-columns .22s ease}
 .ai-panel{min-width:0;transition:opacity .18s ease,border-color .18s ease,padding .18s ease}
 .ai-sidebar-open-btn{display:none}
-.permission-card{padding:12px}
+.ai-panel{padding:13px}
+.ai-panel-header{margin-bottom:10px}
+.ai-title-icon{width:34px;height:34px;border-radius:9px}
+.permission-card{padding:9px 10px}
 .permission-top{min-width:0}
+.permission-top>div{width:30px;height:30px;font-size:14px}
 .permission-top>span:nth-child(2){min-width:0;flex:1}
 .permission-top>span:nth-child(2) small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.permission-expand{width:27px;height:27px;display:grid;place-items:center;flex:0 0 auto;margin-left:4px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted)}
+.permission-expand{width:28px;height:28px;display:grid;place-items:center;flex:0 0 auto;margin-left:3px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted)}
 .permission-expand:hover{color:var(--primary);background:var(--primary-soft)}
 .permission-details{margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
 .permission-details>.btn{margin-top:0!important}
 .permission-details .form-select{height:36px}
-.ai-calendar-card{padding:12px!important}
+.ai-calendar-card{margin-top:10px!important;padding:10px 11px!important}
 .ai-calendar-head{align-items:center}
-.ai-history-scan{max-width:168px;padding:7px 9px;white-space:normal}
-.ai-section-title{margin-top:14px}
-.quick-grid{gap:7px}
-.quick-grid button{min-height:62px;padding:9px}
-.ask-card{margin-top:13px;padding:11px}
-.ask-card textarea{height:62px}
+.ai-history-scan{max-width:142px;padding:6px 8px;white-space:normal}
+.ai-calendar-empty{margin-top:5px;font-size:9px}
+.ai-section-title{margin:11px 2px 7px}
+.quick-grid{gap:6px}
+.quick-grid button{min-height:50px;padding:7px 8px;grid-template-columns:29px minmax(0,1fr);grid-template-rows:1fr;align-items:center;column-gap:8px}
+.quick-grid button>span{width:29px;height:29px;grid-row:1}
+.quick-grid button strong{align-self:center;line-height:1.25}
+.quick-grid button small{display:none}
+.quick-grid button:last-child:nth-child(odd){grid-column:1/-1}
+.ask-card{margin-top:10px;padding:9px 10px}
+.ask-title>span{width:29px;height:29px}
+.ask-card textarea{height:48px;margin-top:7px;padding:7px 8px}
+.ask-footer{margin-top:4px}
+.suggested-prompts{margin-top:10px}
 
 @media(min-width:1201px){
   .chat-layout.ai-panel-collapsed{grid-template-columns:280px minmax(400px,1fr) 0}
   .chat-layout.ai-panel-collapsed>.ai-panel{width:0;padding:0;border-left-color:transparent;opacity:0;overflow:hidden;pointer-events:none}
-  .ai-sidebar-open-btn.show{display:flex;width:auto;padding:0 10px;gap:6px;color:var(--primary);background:var(--primary-soft);font-size:10px;font-weight:700}
+  .conversation-header{position:relative;z-index:12;overflow:visible}
+  .ai-sidebar-open-btn.show{display:grid;position:relative;width:38px;height:38px;padding:0;color:var(--primary);background:color-mix(in srgb,var(--primary) 9%,transparent);border:1px solid color-mix(in srgb,var(--primary) 24%,var(--line));border-radius:10px;font-size:15px;transition:background-color .16s ease,border-color .16s ease,box-shadow .16s ease}
+  .ai-sidebar-open-btn.show:hover{color:var(--primary);background:color-mix(in srgb,var(--primary) 16%,transparent);border-color:color-mix(in srgb,var(--primary) 42%,var(--line));box-shadow:0 4px 12px rgba(82,111,245,.11)}
+  .ai-sidebar-open-btn.show:focus-visible{outline:0;border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 20%,transparent)}
+  .ai-sidebar-open-btn.show::after{content:attr(data-tooltip);position:absolute;z-index:100;right:0;top:calc(100% + 7px);width:max-content;max-width:150px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink);box-shadow:0 8px 22px rgba(8,12,22,.22);font-size:9px;font-weight:600;line-height:1.2;white-space:nowrap;opacity:0;pointer-events:none;transform:translateY(-3px);transition:opacity .14s ease,transform .14s ease}
+  .ai-sidebar-open-btn.show:hover::after,.ai-sidebar-open-btn.show:focus-visible::after{opacity:1;transform:translateY(0)}
   .ai-close{display:grid;margin-left:auto}
 }

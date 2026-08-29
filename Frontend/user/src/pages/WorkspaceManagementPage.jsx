@@ -28,8 +28,8 @@ const formatActivity = value => value
   ? new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
   : 'Chưa có hoạt động'
 
-function ProgressBar({ value, danger = false }) {
-  return <div className="delivery-progress-track"><span className={danger ? 'danger' : ''} style={{ width: `${value}%` }} /></div>
+function ProgressBar({ value }) {
+  return <div className="delivery-progress-track"><span style={{ width: `${value}%` }} /></div>
 }
 
 function WorkItemList({ title, items, emptyText }) {
@@ -68,7 +68,7 @@ function WorkspaceMemberTable({ members }) {
                 <td><span className="member-table-avatar" style={{ background: getColor(member.user_id) }}>{getInitials(member.display_name)}</span><div><strong>{member.display_name}</strong><small>{member.job_title || 'Chưa cập nhật chức danh'}</small></div></td>
                 <td><span className={`member-role-pill ${member.business_role || 'participant'}`}>{member.business_role === 'lead' ? 'Delivery Lead' : member.business_role === 'member' ? 'Member' : 'Group participant'}</span></td>
                 <td><div className="member-group-pills">{member.groups.map(group => <span key={group.id}>{group.name}</span>)}</div></td>
-                <td>{member.task_stats ? <div className="member-workload"><span><strong>{member.task_stats.total}</strong> task · <b>{member.task_stats.in_progress} đang làm</b> · <em>{member.task_stats.blocked} blocker</em></span><ProgressBar value={member.task_stats.completion_percent} danger={member.task_stats.blocked > 0} /><small>{member.milestone_count || 0} milestone · hoàn thành {member.task_stats.completion_percent}%</small></div> : <span className="member-private-work"><i className="bi bi-lock" /> Ẩn theo quyền</span>}</td>
+                <td>{member.task_stats ? <div className="member-workload"><span><strong>{member.task_stats.total}</strong> task · <b>{member.task_stats.in_progress} đang làm</b> · <em>{member.task_stats.blocked} blocker</em></span><ProgressBar value={member.task_stats.completion_percent} /><small>{member.milestone_count || 0} milestone · hoàn thành {member.task_stats.completion_percent}%</small></div> : <span className="member-private-work"><i className="bi bi-lock" /> Ẩn theo quyền</span>}</td>
                 <td><a href={`mailto:${member.email}`}>{member.email}</a></td>
               </tr>
             ))}
@@ -113,7 +113,7 @@ function DeliveryWorkspaceDashboard({ workspace, dashboard }) {
 
       <section className="delivery-progress-overview">
         <div><span><strong>Tiến độ công việc</strong><small>{dashboard.task_stats.completed}/{dashboard.task_stats.total} task hoàn thành</small></span><b>{dashboard.task_stats.completion_percent}%</b></div>
-        <ProgressBar value={dashboard.task_stats.completion_percent} danger={dashboard.task_stats.blocked > 0} />
+        <ProgressBar value={dashboard.task_stats.completion_percent} />
         <footer>
           <span><i className="bi bi-play-circle" /> {dashboard.task_stats.in_progress} đang làm</span>
           <span><i className="bi bi-hourglass-split" /> {dashboard.task_stats.pending} chờ xử lý</span>
@@ -133,7 +133,7 @@ function DeliveryWorkspaceDashboard({ workspace, dashboard }) {
                 <div><h3>{group.name}</h3><p>{group.member_count} thành viên · {group.message_count} tin nhắn</p></div>
                 <em className={atRisk ? 'risk' : 'healthy'}><i className={`bi ${atRisk ? 'bi-exclamation-circle' : 'bi-check-circle'}`} /> {atRisk ? 'Cần chú ý' : 'Đúng tiến độ'}</em>
               </header>
-              <div className="group-task-progress"><div><span>Task hoàn thành</span><strong>{group.task_stats.completion_percent}%</strong></div><ProgressBar value={group.task_stats.completion_percent} danger={atRisk} /></div>
+              <div className="group-task-progress"><div><span>Task hoàn thành</span><strong>{group.task_stats.completion_percent}%</strong></div><ProgressBar value={group.task_stats.completion_percent} /></div>
               <div className="group-dashboard-metrics">
                 <span><strong>{group.task_stats.total}</strong><small>Tổng task</small></span>
                 <span><strong>{group.task_stats.in_progress}</strong><small>Đang làm</small></span>

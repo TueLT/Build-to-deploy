@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useRemindersQuery } from '../../hooks/usePersonalData'
+import { useAvailableAgentsQuery } from '../../hooks/useWorkspaceData'
 import { useTheme } from '../../context/ThemeContext'
 
 const getInitials = name => (name || '?').trim().split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase()
@@ -11,12 +12,18 @@ export default function TopNavbar({ onMenu }) {
   const { user, token, logout } = useAuth()
   const { workspaces, workspaceId, selectWorkspace } = useWorkspace()
   const { resolvedTheme, toggleTheme } = useTheme()
+  const { pathname } = useLocation()
   const { items: reminders } = useRemindersQuery(token)
+  const isDeliveryGroupsRoute = pathname === '/groups' || pathname.startsWith('/groups/')
+  const agentsQuery = useAvailableAgentsQuery(token, isDeliveryGroupsRoute ? workspaceId : null)
   const [helpOpen, setHelpOpen] = useState(false)
   const navigate = useNavigate()
-  const { pathname } = useLocation()
   const organizationWorkspaces = workspaces.filter(workspace => workspace.type === 'organization')
   const organizationWorkspaceId = organizationWorkspaces.some(workspace => workspace.id === workspaceId) ? workspaceId : ''
+  const deliveryWorkspace = (agentsQuery.data || []).find(agent => agent.agent_profile === 'product_delivery')
+  const workspaceLabel = workspace => isDeliveryGroupsRoute && workspace.id === workspaceId
+    ? deliveryWorkspace?.name || 'Product Delivery Workspace'
+    : workspace.name
   const activeReminderCount = reminders.filter(reminder => reminder.status === 'scheduled').length
   const isWorkspaceRoute = ['/chat', '/relationships', '/workspaces', '/groups', '/workspace-agent', '/delivery-agent']
     .some(path => pathname === path || pathname.startsWith(`${path}/`))
@@ -30,7 +37,7 @@ export default function TopNavbar({ onMenu }) {
           <i className="bi bi-buildings" />
           <select value={organizationWorkspaceId} onChange={event => selectWorkspace(event.target.value)}>
             {!organizationWorkspaces.length && <option value="">Chưa tham gia workspace</option>}
-            {organizationWorkspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+          {organizationWorkspaces.map(workspace => <option key={workspace.id} value={workspace.id}>{workspaceLabel(workspace)}</option>)}
           </select>
         </label>
       ) : (

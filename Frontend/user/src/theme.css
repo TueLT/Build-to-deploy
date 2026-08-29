@@ -214,7 +214,7 @@
   box-shadow: 0 8px 20px rgba(4,8,15,.2);
 }
 :root[data-theme='dark'] .quick-grid button:disabled { opacity: .55; }
-:root[data-theme='dark'] .quick-grid button { min-height: 68px; padding: 11px; }
+:root[data-theme='dark'] .quick-grid button { min-height: 50px; padding: 7px 8px; }
 :root[data-theme='dark'] .quick-grid button strong,
 :root[data-theme='dark'] .ask-title strong { color: #e7ebf2; font-size: 11px; }
 :root[data-theme='dark'] .quick-grid button small,
@@ -387,6 +387,31 @@
   margin: 12px 0;
   padding: 9px 12px;
 }
+:root[data-theme='dark'] .agent-run-history {
+  color: #cfd6e1;
+  background: #1c2430;
+  border-color: #354255;
+  box-shadow: 0 8px 22px rgba(4,8,15,.14);
+}
+:root[data-theme='dark'] .agent-run-history>summary:hover { background: #252e3b; }
+:root[data-theme='dark'] .agent-run-history-title { color: #e5eaf2; }
+:root[data-theme='dark'] .agent-run-history-title>i:first-child { background: #2b3553; color: #aab5ff; }
+:root[data-theme='dark'] .agent-run-history-title em { background: #203b32; color: #9bd8bd; }
+:root[data-theme='dark'] .agent-run-history.running .agent-run-history-title em,
+:root[data-theme='dark'] .agent-run-history.attention .agent-run-history-title em { background: #3a3120; color: #e5bd66; }
+:root[data-theme='dark'] .agent-run-history.failed .agent-run-history-title em { background: #40252b; color: #f3a0b0; }
+:root[data-theme='dark'] .agent-run-history-meta small,
+:root[data-theme='dark'] .agent-run-history-meta>i { color: #9da8b9; }
+:root[data-theme='dark'] .agent-run-timeline { background: #202833; border-color: #354255; }
+:root[data-theme='dark'] .agent-run-step:not(:last-child)::before { background: #3b4759; }
+:root[data-theme='dark'] .agent-run-step strong { color: #e4e9f1; }
+:root[data-theme='dark'] .agent-run-step p { color: #b8c1cf; }
+:root[data-theme='dark'] .agent-run-step small { color: #aeb8c8; background: #293341; }
+:root[data-theme='dark'] .agent-run-step-state { background: #293341; border-color: #465266; color: #aab4c4; }
+:root[data-theme='dark'] .agent-run-step.completed .agent-run-step-state { background: #203b32; border-color: #39634f; color: #9bd8bd; }
+:root[data-theme='dark'] .agent-run-step.partial .agent-run-step-state,
+:root[data-theme='dark'] .agent-run-step.running .agent-run-step-state { background: #3a3120; border-color: #66552d; color: #e5bd66; }
+:root[data-theme='dark'] .agent-run-step.failed .agent-run-step-state { background: #40252b; border-color: #6c3c48; color: #f3a0b0; }
 :root[data-theme='dark'] .workspace-agent-metrics>span,
 :root[data-theme='dark'] .group-dashboard-metrics>span,
 :root[data-theme='dark'] .group-dashboard-activity { background: #293240; }
@@ -404,6 +429,38 @@
 :root[data-theme='dark'] .delivery-members-panel>header,
 :root[data-theme='dark'] .group-dashboard-members,
 :root[data-theme='dark'] .delivery-group-dashboard-card>footer { border-color: var(--line); }
+:root[data-theme='dark'] .delivery-member-table td small,
+:root[data-theme='dark'] .member-workload>span,
+:root[data-theme='dark'] .member-workload>small { color: #9faabc; }
+:root[data-theme='dark'] .delivery-member-table td>a { color: #91a4ff; }
+:root[data-theme='dark'] .member-role-pill {
+  color: #c5ceff;
+  background: #2b3453;
+  border: 1px solid #3a466b;
+}
+:root[data-theme='dark'] .member-role-pill.lead {
+  color: #e8c474;
+  background: #3a3120;
+  border-color: #5d4c28;
+}
+:root[data-theme='dark'] .member-role-pill.participant {
+  color: #c1cad8;
+  background: #2b3441;
+  border-color: #414c5d;
+}
+:root[data-theme='dark'] .member-group-pills span {
+  color: #c5cedb;
+  background: #2a3340;
+  border: 1px solid #3d4859;
+}
+:root[data-theme='dark'] .member-workload>span strong { color: #e3e8f0; }
+:root[data-theme='dark'] .member-workload>span b { color: #98a7ff; }
+:root[data-theme='dark'] .member-workload>span em { color: #ff8299; }
+:root[data-theme='dark'] .member-workload .delivery-progress-track { background: #394354; }
+:root[data-theme='dark'] .delivery-members-panel>header>strong {
+  color: #c4cdff;
+  background: #2b3453;
+}
 
 /* Authentication and transient UI */
 :root[data-theme='dark'] .auth-page,
