@@ -805,7 +805,11 @@ export default function DeliveryAgentPage({ assignedAgent }) {
     setHistoryLoading(true)
     const load = async () => {
       try {
-        const availableThreads = await listDeliveryThreads(token, company.id, agentWorkspaceId)
+        const availableThreads = await queryClient.fetchQuery({
+          queryKey: queryKeys.deliveryThreads(company.id, agentWorkspaceId),
+          queryFn: () => listDeliveryThreads(token, company.id, agentWorkspaceId),
+          staleTime: 60_000,
+        })
         if (cancelled) return
         setThreads(availableThreads)
         let cachedThreadId = null
@@ -818,7 +822,11 @@ export default function DeliveryAgentPage({ assignedAgent }) {
           setMessages([createWelcomeMessage(businessRole)])
           return
         }
-        const history = await getDeliveryThreadMessages(token, company.id, agentWorkspaceId, targetThreadId)
+        const history = await queryClient.fetchQuery({
+          queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, targetThreadId),
+          queryFn: () => getDeliveryThreadMessages(token, company.id, agentWorkspaceId, targetThreadId),
+          staleTime: 60_000,
+        })
         if (cancelled) return
         setThreadId(targetThreadId)
         setMessages(history.map(item => ({
@@ -903,8 +911,14 @@ export default function DeliveryAgentPage({ assignedAgent }) {
         createdAt: new Date().toISOString(),
         result: response,
       }])
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, nextThreadId),
+      })
       listDeliveryThreads(token, company.id, agentWorkspaceId)
-        .then(setThreads)
+        .then(nextThreads => {
+          queryClient.setQueryData(queryKeys.deliveryThreads(company.id, agentWorkspaceId), nextThreads)
+          setThreads(nextThreads)
+        })
         .catch(() => { /* the completed chat remains usable even if the list refresh fails */ })
     } catch (requestError) {
       const detail = requestError.detail || 'Workspace Agent hiện không khả dụng.'
@@ -941,7 +955,11 @@ export default function DeliveryAgentPage({ assignedAgent }) {
     setLiveProgress(null)
     shouldStickToBottomRef.current = true
     try {
-      const history = await getDeliveryThreadMessages(token, company.id, agentWorkspaceId, nextThreadId)
+      const history = await queryClient.fetchQuery({
+        queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, nextThreadId),
+        queryFn: () => getDeliveryThreadMessages(token, company.id, agentWorkspaceId, nextThreadId),
+        staleTime: 60_000,
+      })
       setThreadId(nextThreadId)
       setMessages(history.map(item => ({
         id: item.id,

@@ -27,10 +27,12 @@ export function useAvailableAgentsQuery(token, workspaceId) {
     queryKey: queryKeys.availableAgents(workspaceId),
     queryFn: () => listAvailableAgentWorkspaces(token, workspaceId),
     enabled: Boolean(token && workspaceId),
-    // Agent assignment is an authorization signal, not ordinary catalog data.
-    staleTime: 30_000,
-    refetchOnMount: 'always',
-    refetchOnWindowFocus: 'always',
+    // Keep this short-lived because assignment is an authorization signal. The protected
+    // backend endpoints still enforce current membership on every request, so the cached value
+    // only avoids a redundant UI lookup when a user switches tabs or revisits a route.
+    staleTime: 60_000,
+    refetchOnMount: true,
+    refetchOnWindowFocus: false,
   })
 }
 
