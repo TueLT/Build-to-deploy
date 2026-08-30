@@ -252,7 +252,7 @@ async def test_delivery_dashboard_returns_detailed_role_scoped_workspace_data(
     assert member_capabilities.json() == {
         "current_user_business_role": "member",
         "view_scope": "member",
-        "can_select_group": False,
+        "can_select_group": True,
         "can_manage_control_plane": False,
         "can_manage_release_handoffs": False,
             "can_update_own_tasks": True,

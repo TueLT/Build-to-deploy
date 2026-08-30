@@ -26,6 +26,7 @@ import Markdown from '../components/common/Markdown'
 import { useAuth } from '../context/AuthContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { queryClient, queryKeys } from '../query/queryClient'
+import { getAgentWorkspaceDisplayName } from '../utils/workspaceLabels'
 
 const leadPrompts = [
   'Tổng hợp các task và đánh giá tiến độ theo checkpoint của kế hoạch.',
@@ -742,6 +743,7 @@ export default function DeliveryAgentPage({ assignedAgent }) {
   const threadStorageKey = storageKey ? `${storageKey}:thread` : null
   const promptSuggestions = businessRole === 'lead' ? leadPrompts : memberPrompts
   const selectedGroupName = groups.find(group => group.id === selectedConversationId)?.name || ''
+  const defaultScopeName = businessRole === 'lead' ? 'Toàn bộ workspace' : 'Task của tôi'
   const visibleThreads = threads.filter(thread => (
     `${thread.title} ${thread.preview}`.toLocaleLowerCase('vi-VN')
       .includes(threadSearch.trim().toLocaleLowerCase('vi-VN'))
@@ -806,8 +808,8 @@ export default function DeliveryAgentPage({ assignedAgent }) {
     const load = async () => {
       try {
         const availableThreads = await queryClient.fetchQuery({
-          queryKey: queryKeys.deliveryThreads(company.id, agentWorkspaceId),
-          queryFn: () => listDeliveryThreads(token, company.id, agentWorkspaceId),
+          queryKey: queryKeys.deliveryThreads(company.id, agentWorkspaceId, analysisScopeKey),
+          queryFn: () => listDeliveryThreads(token, company.id, agentWorkspaceId, selectedConversationId),
           staleTime: 60_000,
         })
         if (cancelled) return
@@ -823,8 +825,8 @@ export default function DeliveryAgentPage({ assignedAgent }) {
           return
         }
         const history = await queryClient.fetchQuery({
-          queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, targetThreadId),
-          queryFn: () => getDeliveryThreadMessages(token, company.id, agentWorkspaceId, targetThreadId),
+          queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, targetThreadId, analysisScopeKey),
+          queryFn: () => getDeliveryThreadMessages(token, company.id, agentWorkspaceId, targetThreadId, selectedConversationId),
           staleTime: 60_000,
         })
         if (cancelled) return
@@ -912,11 +914,11 @@ export default function DeliveryAgentPage({ assignedAgent }) {
         result: response,
       }])
       queryClient.invalidateQueries({
-        queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, nextThreadId),
+        queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, nextThreadId, analysisScopeKey),
       })
-      listDeliveryThreads(token, company.id, agentWorkspaceId)
+      listDeliveryThreads(token, company.id, agentWorkspaceId, selectedConversationId)
         .then(nextThreads => {
-          queryClient.setQueryData(queryKeys.deliveryThreads(company.id, agentWorkspaceId), nextThreads)
+          queryClient.setQueryData(queryKeys.deliveryThreads(company.id, agentWorkspaceId, analysisScopeKey), nextThreads)
           setThreads(nextThreads)
         })
         .catch(() => { /* the completed chat remains usable even if the list refresh fails */ })
@@ -956,8 +958,8 @@ export default function DeliveryAgentPage({ assignedAgent }) {
     shouldStickToBottomRef.current = true
     try {
       const history = await queryClient.fetchQuery({
-        queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, nextThreadId),
-        queryFn: () => getDeliveryThreadMessages(token, company.id, agentWorkspaceId, nextThreadId),
+        queryKey: queryKeys.deliveryThreadMessages(company.id, agentWorkspaceId, nextThreadId, analysisScopeKey),
+        queryFn: () => getDeliveryThreadMessages(token, company.id, agentWorkspaceId, nextThreadId, selectedConversationId),
         staleTime: 60_000,
       })
       setThreadId(nextThreadId)
@@ -1018,8 +1020,25 @@ export default function DeliveryAgentPage({ assignedAgent }) {
 
       <main className="workspace-agent-chat">
         <header>
-          <div><h1>{activeAgent?.name || 'Product Delivery Agent'}</h1><p><span /> Trực tuyến · Phạm vi: {selectedGroupName || (canSelectGroup ? 'Toàn bộ workspace' : 'Công việc được cấp quyền')}</p></div>
+          <div><h1>{getAgentWorkspaceDisplayName(activeAgent) || 'Product Delivery'}</h1><p><span /> Trực tuyến · Phạm vi: {selectedGroupName || (canSelectGroup ? defaultScopeName : 'Công việc được cấp quyền')}</p></div>
           <div className="workspace-agent-header-actions">
+            {canSelectGroup && <label className="workspace-agent-scope-selector">
+              <span>Phạm vi task</span>
+              <select
+                value={selectedConversationId}
+                onChange={event => {
+                  setSelectedConversationId(event.target.value)
+                  setThreadId(null)
+                  setMessages([createWelcomeMessage(businessRole)])
+                  setLiveProgress(null)
+                  setError('')
+                }}
+                disabled={loading || historyLoading}
+              >
+                <option value="">{businessRole === 'lead' ? 'Toàn bộ workspace' : 'Task của tôi'}</option>
+                {groups.map(group => <option key={group.id} value={group.id}>{group.name}</option>)}
+              </select>
+            </label>}
             {businessRole === 'lead' && <button
               type="button"
               className={`btn btn-sm ${showLeadTools ? 'btn-primary' : 'btn-light'}`}

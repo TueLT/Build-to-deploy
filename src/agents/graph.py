@@ -5,6 +5,10 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from src.agents.nodes.compact_node import compact_thread_node
 from src.agents.nodes.guardrail_node import input_guardrail_node, output_guardrail_node
+from src.agents.nodes.personal_query_router_node import (
+    personal_query_router_node,
+    save_explicit_personal_memory_node,
+)
 from src.agents.nodes.planner_node import planner_node
 from src.agents.state import AgentState
 from src.agents.tools import ALL_TOOLS
@@ -15,7 +19,7 @@ from src.config import get_settings
 # pass, which some models handle poorly (observed: hallucinating a bogus repeat tool-call instead
 # of plain text). Calendar/reminder tools still go back through planner - their raw output isn't
 # user-facing prose, and human-in-the-loop confirmation flows need that turn.
-TERMINAL_TOOLS = {"summarize_conversation", "extract_tasks"}
+TERMINAL_TOOLS = {"summarize_conversation", "extract_tasks", "save_personal_memory"}
 
 
 def route_after_planner(state: AgentState) -> str:
@@ -29,6 +33,13 @@ def route_after_input_guardrail(state: AgentState) -> str:
     """Stop blocked/unclear requests before they can consume LLM tokens or call a tool."""
     if state.get("guardrail_blocked") or state.get("guardrail_requires_clarification"):
         return "compact_thread"
+    return "personal_query_router"
+
+
+def route_after_personal_query_router(state: AgentState) -> str:
+    """Execute explicit Memory writes deterministically; plan every other allowed intent."""
+    if state.get("personal_intent") == "memory_write":
+        return "save_personal_memory"
     return "planner"
 
 
@@ -45,6 +56,8 @@ def build_graph(checkpointer):
     graph = StateGraph(AgentState)
 
     graph.add_node("input_guardrail", input_guardrail_node)
+    graph.add_node("personal_query_router", personal_query_router_node)
+    graph.add_node("save_personal_memory", save_explicit_personal_memory_node)
     graph.add_node("planner", planner_node)
     graph.add_node("tools", ToolNode(ALL_TOOLS))
     graph.add_node("output_guardrail", output_guardrail_node)
@@ -54,8 +67,17 @@ def build_graph(checkpointer):
     graph.add_conditional_edges(
         "input_guardrail",
         route_after_input_guardrail,
-        {"planner": "planner", "compact_thread": "compact_thread"},
+        {"personal_query_router": "personal_query_router", "compact_thread": "compact_thread"},
     )
+    graph.add_conditional_edges(
+        "personal_query_router",
+        route_after_personal_query_router,
+        {
+            "save_personal_memory": "save_personal_memory",
+            "planner": "planner",
+        },
+    )
+    graph.add_edge("save_personal_memory", "output_guardrail")
     graph.add_conditional_edges(
         "planner",
         route_after_planner,

@@ -66,6 +66,10 @@ async def create_memory(
     db: AsyncSession = Depends(get_db),
 ) -> MemoryOut:
     workspace = await resolve_workspace_for_user(db, current_user.id, request.workspace_id)
+    if "memory_type" not in request.model_fields_set:
+        request = request.model_copy(
+            update={"memory_type": memory_service.inferred_memory_type(request.category)}
+        )
     memory = await memory_service.create_memory_from_request(
         db, current_user, workspace.id, request
     )
@@ -81,6 +85,8 @@ async def update_memory(
 ) -> MemoryOut:
     memory = await _get_own_memory_or_404(memory_id, current_user, db)
     updates = request.model_dump(exclude_unset=True)
+    if "category" in updates and "memory_type" not in updates:
+        updates["memory_type"] = memory_service.inferred_memory_type(updates["category"])
     prospective_title = updates.get("title", memory.title)
     prospective_detail = updates.get("detail", memory.detail)
     if memory_service.contains_forbidden_sensitive_memory(f"{prospective_title}\n{prospective_detail}"):

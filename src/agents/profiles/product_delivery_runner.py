@@ -124,7 +124,7 @@ async def resolve_prepared_delivery_read_scope(
     prepared: PreparedProductDeliveryInvocation,
     requested_conversation_id: str | None,
 ) -> DeliveryReadScope:
-    """Resolve a lead overview/group or member My Work scope from prepared context.
+    """Resolve Lead overview/group, Member My Work, or Member channel scope.
 
     The selector remains untrusted until the platform resource guard checks it.
     This supplies the concrete server-side composition required by A-DLV-07;

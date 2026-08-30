@@ -25,6 +25,11 @@ class TaskOut(BaseModel):
     owner_id: str
     conversation_id: str | None
     agent_workspace_id: str | None = None
+    workspace_type: Literal["personal", "organization"] | None = None
+    workspace_name: str | None = None
+    agent_workspace_name: str | None = None
+    agent_profile: Literal["product_delivery", "quality_assurance", "executive"] | None = None
+    conversation_name: str | None = None
     title: str
     due_at: datetime | None
     priority: TaskPriority

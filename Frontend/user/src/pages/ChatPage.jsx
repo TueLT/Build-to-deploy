@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useLocation, useOutletContext } from 'react-router-dom'
+import { useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import ConversationList from '../components/chat/ConversationList'
 import ConversationHeader from '../components/chat/ConversationHeader'
 import MessageArea from '../components/chat/MessageArea'
@@ -12,12 +12,18 @@ import { useMessages } from '../hooks/useMessages'
 import { getAiPermission, hideConversation, leaveConversation, markRead, setAiPermission, setGroupAiPolicy } from '../api/chat'
 import { useWorkspace } from '../context/WorkspaceContext'
 
-export default function ChatPage() {
+export default function ChatPage({ mode = 'personal' }) {
   const { token, user } = useAuth()
   const { pushToast } = useToast()
-  const { workspaceId } = useWorkspace()
+  const { workspaceId, workspaces } = useWorkspace()
   const location = useLocation()
+  const navigate = useNavigate()
+  const { conversationId: channelConversationId } = useParams()
+  const organizationWorkspace = workspaces.find(item => item.id === workspaceId && item.type === 'organization')
+    || workspaces.find(item => item.type === 'organization')
+  const conversationWorkspaceId = organizationWorkspace?.id || workspaceId
   const { sendJson, subscribe } = useOutletContext()
+  const isSingleChannel = mode === 'channel' && Boolean(channelConversationId)
   const [mobileChat, setMobileChat] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const [aiPanelCollapsed, setAiPanelCollapsed] = useState(() => {
@@ -25,13 +31,16 @@ export default function ChatPage() {
     catch { return false }
   })
   const [newConvoOpen, setNewConvoOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState(() => location.state?.conversationId || null)
+  const [selectedId, setSelectedId] = useState(() => channelConversationId || location.state?.conversationId || null)
   const [aiGranted, setAiGranted] = useState(false)
   const [aiContributionAllowed, setAiContributionAllowed] = useState(false)
   const [aiMode, setAiMode] = useState('individual')
   const [canManageAi, setCanManageAi] = useState(false)
   const [unreadHint, setUnreadHint] = useState(0)
-  const { conversations, setConversations } = useConversations(token, workspaceId)
+  const { conversations, setConversations } = useConversations(token, conversationWorkspaceId)
+  const scopedConversations = conversations.filter(conversation => mode === 'channel'
+    ? conversation.scope === 'channel'
+    : conversation.scope !== 'channel')
   const { messages, setMessages, loading: messagesLoading, firstUnreadMessageId, unreadCount } = useMessages(token, selectedId, unreadHint)
 
   // AI permission is per (conversation, user) on the backend - shared here so the header badge
@@ -87,23 +96,30 @@ export default function ChatPage() {
   stateRef.current = { selectedId, userId: user?.id }
 
   useEffect(() => {
+    if (channelConversationId) {
+      setSelectedId(channelConversationId)
+      setMobileChat(true)
+      return
+    }
     if (location.state?.conversationId) {
       setSelectedId(location.state.conversationId)
       setMobileChat(true)
     }
-  }, [location.state?.conversationId])
+  }, [channelConversationId, location.state?.conversationId])
 
   useEffect(() => {
-    if (!conversations.length) return
-    if (selectedId && conversations.some(conversation => conversation.id === selectedId)) return
+    if (!scopedConversations.length) return
+    const selected = scopedConversations.find(conversation => conversation.id === selectedId)
+    if (selected) return
     // Mobile uses separate list/thread screens, so do not skip the list by auto-opening row one.
     if (typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches) return
 
-    const fallbackId = conversations[0].id
+    const fallback = scopedConversations[0]
+    const fallbackId = fallback.id
     setSelectedId(fallbackId)
-    setUnreadHint(conversations[0].unread_count || 0)
+    setUnreadHint(fallback.unread_count || 0)
     setConversations(prev => prev.map(c => c.id === fallbackId ? { ...c, unread_count: 0 } : c))
-  }, [conversations, selectedId, setConversations])
+  }, [scopedConversations, selectedId, setConversations])
 
   useEffect(() => subscribe((data) => {
     if (data.type === 'group_ai_policy_changed') {
@@ -133,12 +149,13 @@ export default function ChatPage() {
     })
   }), [subscribe, setMessages, setConversations])
 
-  const selectedConversation = conversations.find(c => c.id === selectedId) || null
+  const selectedConversation = scopedConversations.find(conversation => conversation.id === selectedId) || null
 
   const onSelect = (id) => {
     setSelectedId(id)
+    if (mode === 'channel' && id !== channelConversationId) navigate(`/channels/${id}`)
     setMobileChat(true)
-    setUnreadHint(conversations.find(conversation => conversation.id === id)?.unread_count || 0)
+    setUnreadHint(scopedConversations.find(conversation => conversation.id === id)?.unread_count || 0)
     setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c))
   }
 
@@ -155,6 +172,7 @@ export default function ChatPage() {
     setAiPanelCollapsed(collapsed)
     try { window.localStorage.setItem('orbit-chat-ai-panel-collapsed', String(collapsed)) } catch { /* Keep the in-session state. */ }
   }
+
   const openAiPanel = () => {
     setDesktopAiPanelCollapsed(false)
     setAiOpen(true)
@@ -190,16 +208,16 @@ export default function ChatPage() {
   }
 
   return (
-    <div className={`chat-layout ${mobileChat ? 'show-chat' : ''} ${aiPanelCollapsed ? 'ai-panel-collapsed' : ''}`}>
-      <ConversationList conversations={conversations} selectedId={selectedId} onSelect={onSelect} onNewConversation={() => setNewConvoOpen(true)} onToggleAi={onToggleAiInList} />
+    <div className={`chat-layout ${mobileChat ? 'show-chat' : ''} ${aiPanelCollapsed ? 'ai-panel-collapsed' : ''} ${isSingleChannel ? 'single-channel' : ''}`}>
+      {!isSingleChannel && <ConversationList mode={mode} conversations={scopedConversations} selectedId={selectedId} onSelect={onSelect} onNewConversation={mode === 'personal' ? () => setNewConvoOpen(true) : null} onToggleAi={onToggleAiInList} />}
       <section className="conversation-pane">
         {selectedConversation ? (
           <>
-            <ConversationHeader conversation={selectedConversation} onBack={() => setMobileChat(false)} onAI={openAiPanel} onHide={onHide} onLeave={onLeave} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} aiPanelCollapsed={aiPanelCollapsed} />
+            <ConversationHeader conversation={selectedConversation} onBack={() => isSingleChannel ? navigate('/channels') : setMobileChat(false)} onAI={openAiPanel} onHide={onHide} onLeave={onLeave} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} aiPanelCollapsed={aiPanelCollapsed} />
             <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} loading={messagesLoading} firstUnreadMessageId={firstUnreadMessageId} unreadCount={unreadCount} />
           </>
         ) : (
-          <div className="chat-empty-state"><i className="bi bi-chat-dots" /><p>Chọn một cuộc trò chuyện hoặc bắt đầu cuộc trò chuyện mới.</p></div>
+          <div className="chat-empty-state"><i className={`bi ${mode === 'channel' ? 'bi-hash' : 'bi-chat-dots'}`} /><p>{mode === 'channel' ? 'Chọn một channel trong workspace.' : 'Chọn một cuộc trò chuyện hoặc bắt đầu cuộc trò chuyện mới.'}</p></div>
         )}
       </section>
       <AIPanel
@@ -207,7 +225,7 @@ export default function ChatPage() {
         onClose={closeAiPanel}
         messages={messages}
         conversationId={selectedId}
-        workspaceId={workspaceId}
+        workspaceId={conversationWorkspaceId}
         granted={aiGranted}
         contributionAllowed={aiContributionAllowed}
         onToggleGrant={onToggleAi}
@@ -215,7 +233,7 @@ export default function ChatPage() {
         aiMode={aiMode}
         canManageAi={canManageAi}
       />
-      <NewConversationModal open={newConvoOpen} onClose={() => setNewConvoOpen(false)} onCreated={onCreated} />
+      {mode === 'personal' && <NewConversationModal open={newConvoOpen} workspaceId={conversationWorkspaceId} onClose={() => setNewConvoOpen(false)} onCreated={onCreated} />}
     </div>
   )
 }

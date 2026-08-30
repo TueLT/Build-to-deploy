@@ -34,6 +34,15 @@ export function AuthProvider({ children }) {
     return data
   }
 
+  const loginDemo = async (accountKey) => {
+    const data = await authApi.demoLogin(accountKey)
+    queryClient.clear()
+    localStorage.setItem(TOKEN_KEY, data.access_token)
+    setUser(data.user)
+    setToken(data.access_token)
+    return data
+  }
+
   const register = async (email, password, display_name) => {
     const data = await authApi.register({ email, password, display_name })
     queryClient.clear()
@@ -96,7 +105,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, isAdmin, login, loginAdmin, register, registerAdmin, loginWithGoogle, logout, updateProfile, changePassword }}
+      value={{ user, token, loading, isAdmin, login, loginDemo, loginAdmin, register, registerAdmin, loginWithGoogle, logout, updateProfile, changePassword }}
     >
       {children}
     </AuthContext.Provider>

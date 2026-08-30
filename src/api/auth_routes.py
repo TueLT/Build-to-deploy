@@ -9,11 +9,13 @@ from src.auth import google_oauth
 from src.auth.dependencies import get_current_user
 from src.auth.security import create_access_token, hash_password, verify_password
 from src.config import get_settings
-from src.db.models import GoogleIdentity, User
+from src.db.models import AgentWorkspace, AgentWorkspaceMembership, GoogleIdentity, User
 from src.db.session import get_db
 from src.models.auth_schemas import (
     AuthResponse,
     ChangePasswordRequest,
+    DemoAccountPublic,
+    DemoLoginRequest,
     GoogleAuthRequest,
     LoginRequest,
     RegisterRequest,
@@ -23,6 +25,105 @@ from src.models.auth_schemas import (
 from src.services.workspace_service import ensure_personal_workspace
 
 router = APIRouter()
+
+
+_DEMO_ACCOUNTS = {
+    "delivery_lead": {
+        "email": "delivery-demo-lead@example.com",
+        "business_role": "lead",
+        "channel_name": None,
+    },
+    "apollo_member": {
+        "email": "delivery-demo-member@example.com",
+        "business_role": "member",
+        "channel_name": "Apollo Platform",
+    },
+    "release_member": {
+        "email": "delivery-demo-mai@example.com",
+        "business_role": "member",
+        "channel_name": "Release 34",
+    },
+    "portal_member": {
+        "email": "delivery-demo-an@example.com",
+        "business_role": "member",
+        "channel_name": "Customer Portal",
+    },
+}
+
+
+def _require_demo_login_enabled() -> None:
+    settings = get_settings()
+    if not settings.demo_login_enabled or settings.app_env == "production":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo login is unavailable")
+
+
+async def _resolve_demo_user(
+    db: AsyncSession,
+    account_key: str,
+) -> tuple[User, dict[str, str | None]] | None:
+    spec = _DEMO_ACCOUNTS.get(account_key)
+    if spec is None:
+        return None
+    user = (
+        await db.execute(select(User).where(User.email == str(spec["email"])))
+    ).scalar_one_or_none()
+    if user is None or not user.is_active or (user.preferences or {}).get("fixture_namespace") != "delivery-demo":
+        return None
+    membership = (
+        await db.execute(
+            select(AgentWorkspaceMembership)
+            .join(AgentWorkspace, AgentWorkspace.id == AgentWorkspaceMembership.agent_workspace_id)
+            .where(
+                AgentWorkspace.key == "delivery-demo",
+                AgentWorkspace.agent_profile == "product_delivery",
+                AgentWorkspace.status == "active",
+                AgentWorkspaceMembership.user_id == user.id,
+                AgentWorkspaceMembership.status == "active",
+                AgentWorkspaceMembership.business_role == spec["business_role"],
+            )
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        return None
+    return user, spec
+
+
+@router.get("/demo-accounts", response_model=list[DemoAccountPublic])
+async def list_demo_accounts(db: AsyncSession = Depends(get_db)) -> list[DemoAccountPublic]:
+    """List deliberately public Product Delivery test identities, never their credentials."""
+
+    _require_demo_login_enabled()
+    accounts: list[DemoAccountPublic] = []
+    for account_key in _DEMO_ACCOUNTS:
+        resolved = await _resolve_demo_user(db, account_key)
+        if resolved is None:
+            continue
+        user, spec = resolved
+        accounts.append(
+            DemoAccountPublic(
+                account_key=account_key,
+                display_name=user.display_name,
+                email=user.email,
+                business_role=str(spec["business_role"]),
+                channel_name=spec["channel_name"],
+                job_title=user.job_title,
+            )
+        )
+    return accounts
+
+
+@router.post("/demo-login", response_model=AuthResponse)
+async def demo_login(request: DemoLoginRequest, db: AsyncSession = Depends(get_db)) -> AuthResponse:
+    """Issue a normal user token for one explicitly allow-listed synthetic account."""
+
+    _require_demo_login_enabled()
+    resolved = await _resolve_demo_user(db, request.account_key)
+    if resolved is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo account is unavailable")
+    user, _ = resolved
+    await ensure_personal_workspace(db, user)
+    await db.commit()
+    return AuthResponse(access_token=create_access_token(user.id), user=_to_public(user))
 
 
 def _to_public(user: User) -> UserPublic:

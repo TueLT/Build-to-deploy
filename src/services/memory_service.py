@@ -2,13 +2,17 @@ import re
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import Conversation, Memory, User
 from src.models.memory_schemas import MemoryCreateRequest
 from src.services import chat_service, consent_service
 from src.services.authorization_service import require_conversation_access
+from src.services.personal_query_router_service import (
+    extract_explicit_memory_drafts,
+    normalize_for_routing,
+)
 
 # Persistent assistant memory must never become a secondary secret store. This check is kept
 # deterministic and runs for both direct API writes and edits; conversation provenance/consent is
@@ -35,6 +39,58 @@ def is_expired(memory: Memory, now: datetime | None = None) -> bool:
     if memory.expires_at is None:
         return False
     return _utc(memory.expires_at) <= (now or datetime.now(UTC))
+
+
+_PREFERENCE_CATEGORIES = {"preference", "language", "routine"}
+
+
+def inferred_memory_type(category: str) -> str:
+    """Map the user-facing category to the governed backend memory type."""
+
+    normalized = (category or "").strip().casefold()
+    if normalized in _PREFERENCE_CATEGORIES:
+        return "preference"
+    if normalized == "people":
+        return "relationship"
+    return "semantic"
+
+
+def compile_personal_preference_directives(memories: list[Memory]) -> tuple[str, ...]:
+    """Compile allow-listed preferences into trusted, non-user-authored directives.
+
+    Raw memory remains untrusted. Only recognized values are converted into fixed server-owned
+    sentences, preventing a manually entered prompt injection from becoming a system instruction.
+    """
+
+    directives: list[str] = []
+    for memory in memories:
+        if (
+            memory.memory_type != "preference"
+            and (memory.category or "").strip().casefold() not in _PREFERENCE_CATEGORIES
+        ):
+            continue
+        combined = " ".join(part.strip() for part in (memory.title, memory.detail) if part.strip())
+        normalized = normalize_for_routing(combined)
+
+        for draft in extract_explicit_memory_drafts(combined):
+            if draft.title != "Cách xưng hô":
+                continue
+            alias = draft.detail.removeprefix("Gọi người dùng là “").removesuffix("”.").strip()
+            if re.fullmatch(r"[\wÀ-ỹ .'-]{1,40}", alias, flags=re.UNICODE):
+                directives.append(f'Address the user as "{alias}" naturally in responses.')
+
+        if "can than" in normalized and "cach lam viec" in normalized:
+            directives.append("The user values careful, accuracy-focused work.")
+        if any(phrase in normalized for phrase in ("tra loi ngan gon", "phan hoi ngan gon", "concise responses")):
+            directives.append("Keep responses concise unless more detail is requested.")
+        if any(phrase in normalized for phrase in ("tra loi chi tiet", "phan hoi chi tiet", "detailed responses")):
+            directives.append("Prefer detailed responses unless the user asks for brevity.")
+        if any(phrase in normalized for phrase in ("tieng viet", "vietnamese")):
+            directives.append("Use Vietnamese for responses.")
+        elif any(phrase in normalized for phrase in ("tieng anh", "english")):
+            directives.append("Use English for responses.")
+
+    return tuple(dict.fromkeys(directives))
 
 
 async def validate_memory_source(
@@ -111,6 +167,47 @@ async def create_memory_from_request(
     return memory
 
 
+async def upsert_personal_memory(
+    db: AsyncSession,
+    user: User,
+    workspace_id: str,
+    request: MemoryCreateRequest,
+    *,
+    replace_by_title: bool = True,
+) -> Memory:
+    """Idempotently persist an explicit Personal Agent memory.
+
+    Stable preference titles such as "Cách xưng hô" are replaced when the user changes them.
+    Generic memories are de-duplicated by exact detail so unrelated facts are not overwritten.
+    """
+
+    if contains_forbidden_sensitive_memory(f"{request.title}\n{request.detail}"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Memory must not contain credentials or sensitive personal data",
+        )
+    stmt = select(Memory).where(
+        Memory.owner_id == user.id,
+        Memory.workspace_id == workspace_id,
+        Memory.memory_type == request.memory_type,
+        Memory.category == request.category,
+        Memory.title == request.title,
+    )
+    if not replace_by_title:
+        stmt = stmt.where(Memory.detail == request.detail)
+    existing = (await db.execute(stmt.order_by(Memory.updated_at.desc()).limit(1))).scalar_one_or_none()
+    if existing is None:
+        return await create_memory_from_request(db, user, workspace_id, request)
+
+    existing.detail = request.detail
+    existing.sensitivity = request.sensitivity
+    existing.confidence = request.confidence
+    existing.expires_at = request.expires_at
+    await db.commit()
+    await db.refresh(existing)
+    return existing
+
+
 async def search_active_memories(
     db: AsyncSession,
     *,
@@ -130,14 +227,43 @@ async def search_active_memories(
         or_(Memory.expires_at.is_(None), Memory.expires_at > now),
     )
     if memory_types:
-        stmt = stmt.where(Memory.memory_type.in_(memory_types))
+        if memory_types == {"preference"}:
+            # Include records created by the legacy UI, which displayed category=Preference but
+            # omitted memory_type and therefore persisted them as semantic.
+            stmt = stmt.where(
+                or_(
+                    Memory.memory_type == "preference",
+                    func.lower(Memory.category).in_(_PREFERENCE_CATEGORIES),
+                )
+            )
+        else:
+            stmt = stmt.where(Memory.memory_type.in_(memory_types))
     if query.strip():
-        pattern = f"%{query.strip()}%"
+        # Durable preferences influence every Personal Agent response, so they must not disappear
+        # merely because the current query does not repeat the wording used when saved. Other
+        # memory types use bounded token matching instead of requiring the entire query verbatim.
+        terms = list(
+            dict.fromkeys(
+                term.casefold()
+                for term in re.findall(r"[\wÀ-ỹ-]{3,}", query, flags=re.UNICODE)
+                if term.casefold()
+                not in {
+                    "của", "cho", "với", "tôi", "bạn", "những", "các", "một", "the", "and",
+                    "for", "with", "this", "that", "what", "please", "hãy", "giúp",
+                }
+            )
+        )[:8]
+        lexical_filters = []
+        for term in terms:
+            pattern = f"%{term}%"
+            lexical_filters.extend(
+                (Memory.title.ilike(pattern), Memory.detail.ilike(pattern), Memory.category.ilike(pattern))
+            )
         stmt = stmt.where(
             or_(
-                Memory.title.ilike(pattern),
-                Memory.detail.ilike(pattern),
-                Memory.category.ilike(pattern),
+                Memory.memory_type == "preference",
+                func.lower(Memory.category).in_(_PREFERENCE_CATEGORIES),
+                *lexical_filters,
             )
         )
     candidates = list(

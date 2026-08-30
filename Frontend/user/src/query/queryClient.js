@@ -20,7 +20,7 @@ export const queryClient = new QueryClient({
 
 export const queryKeys = {
   workspaces: ['workspaces'],
-  tasks: ['tasks'],
+  tasks: ['tasks', 'all'],
   reminders: ['reminders'],
   memories: ['memories'],
   calendarConnection: ['calendar-connection'],
@@ -30,8 +30,8 @@ export const queryKeys = {
   availableAgents: workspaceId => ['available-agent-workspaces', workspaceId],
   deliveryDashboard: (workspaceId, agentWorkspaceId) => ['delivery-dashboard', workspaceId, agentWorkspaceId],
   deliveryCapabilities: (workspaceId, agentWorkspaceId) => ['delivery-capabilities', workspaceId, agentWorkspaceId],
-  deliveryThreads: (workspaceId, agentWorkspaceId) => ['delivery-threads', workspaceId, agentWorkspaceId],
-  deliveryThreadMessages: (workspaceId, agentWorkspaceId, threadId) => ['delivery-thread-messages', workspaceId, agentWorkspaceId, threadId],
+  deliveryThreads: (workspaceId, agentWorkspaceId, scopeId = '') => ['delivery-threads', workspaceId, agentWorkspaceId, scopeId],
+  deliveryThreadMessages: (workspaceId, agentWorkspaceId, threadId, scopeId = '') => ['delivery-thread-messages', workspaceId, agentWorkspaceId, threadId, scopeId],
   deliveryReleaseTargets: (workspaceId, agentWorkspaceId) => ['delivery-release-targets', workspaceId, agentWorkspaceId],
   deliveryReleaseCandidates: (workspaceId, agentWorkspaceId) => ['delivery-release-candidates', workspaceId, agentWorkspaceId],
   qualityCapabilities: (workspaceId, agentWorkspaceId) => ['quality-capabilities', workspaceId, agentWorkspaceId],

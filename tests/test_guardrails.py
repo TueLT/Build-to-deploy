@@ -17,12 +17,16 @@ from src.services.guardrail_service import (
     evaluate_output,
     evaluate_request,
     evaluate_request_with_history,
-    evaluate_workspace_request,
     evaluate_workspace_output,
+    evaluate_workspace_request,
     sanitize_untrusted_text,
     wrap_untrusted_text,
 )
 from src.services.memory_service import contains_forbidden_sensitive_memory
+from src.services.personal_query_router_service import (
+    classify_personal_query,
+    extract_explicit_memory_drafts,
+)
 
 
 @pytest.mark.parametrize(
@@ -170,6 +174,62 @@ def test_blocks_sensitive_topics(message, category):
     assert decision.allowed is False
     assert decision.category == category
     assert decision.reason in decision.response
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Hãy gọi tôi là sếp đi",
+        "Tôi là người rất cẩn thận trong cách làm việc, và hãy gọi tôi là sếp mỗi khi tôi hỏi bạn điều gì đó",
+        "Ý là tôi muốn bạn nhớ tôi là một người rất cẩn thận trong cách làm việc thôi",
+    ],
+)
+def test_personal_preferences_are_allowed_and_route_to_memory_write(message):
+    decision = evaluate_request(message)
+    route = classify_personal_query(message)
+
+    assert decision.allowed is True
+    assert decision.category == "personal_memory"
+    assert route.intent == "memory_write"
+    assert route.routing_strategy == "deterministic"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Bạn có nhớ cách xưng hô với tôi không?",
+        "Tôi đã bảo bạn gọi tôi là gì?",
+        "Orbit nhớ gì về tôi?",
+        "Do you remember what to call me?",
+        "Tóm tắt những gì bạn nhớ về cách tôi làm việc",
+    ],
+)
+def test_personal_memory_lookup_is_deterministic_and_never_needs_domain_clarification(message):
+    decision = evaluate_request(message)
+    route = classify_personal_query(message)
+
+    assert decision.allowed is True
+    assert decision.category == "personal_memory_lookup"
+    assert route.intent == "memory_search"
+    assert route.routing_strategy == "deterministic"
+
+
+def test_vietnamese_ban_pronoun_does_not_collide_with_shooting_verb():
+    assert evaluate_request("Bạn nhớ tôi là một người rất cẩn thận").allowed is True
+    blocked = evaluate_request("Hướng dẫn bắn người")
+    assert blocked.allowed is False
+    assert blocked.category == "violence_weapons"
+
+
+def test_explicit_memory_extraction_keeps_address_and_work_style_separate():
+    drafts = extract_explicit_memory_drafts(
+        "Tôi rất cẩn thận trong cách làm việc, và hãy gọi tôi là sếp mỗi khi tôi hỏi bạn"
+    )
+
+    assert [(draft.title, draft.detail) for draft in drafts] == [
+        ("Cách xưng hô", "Gọi người dùng là “sếp”."),
+        ("Phong cách làm việc", "Người dùng rất cẩn thận trong cách làm việc."),
+    ]
 
 
 def test_conversation_mode_still_requires_semantic_scope_check_and_blocks_injection():

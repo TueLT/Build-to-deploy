@@ -5,6 +5,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.models import (
+    AgentWorkspaceConversation,
     AIPermission,
     Conversation,
     ConversationParticipant,
@@ -404,6 +405,8 @@ async def create_group_conversation(
     member_ids: list[str],
     name: str,
     workspace_id: str | None = None,
+    *,
+    commit: bool = True,
 ) -> Conversation:
     if workspace_id is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace_id is required")
@@ -430,8 +433,11 @@ async def create_group_conversation(
             for member_id in all_member_ids
         ]
     )
-    await db.commit()
-    await db.refresh(conversation)
+    if commit:
+        await db.commit()
+        await db.refresh(conversation)
+    else:
+        await db.flush()
     return conversation
 
 
@@ -495,6 +501,14 @@ async def build_conversation_summary(
         permission = await get_ai_permission(db, conversation.id, current_user_id)
         ai_permission_granted = permission.granted if permission is not None else False
 
+    channel_mapping = (
+        await db.execute(
+            select(AgentWorkspaceConversation).where(
+                AgentWorkspaceConversation.conversation_id == conversation.id,
+            )
+        )
+    ).scalar_one_or_none()
+
     return ConversationSummary(
         id=conversation.id,
         workspace_id=conversation.workspace_id,
@@ -507,4 +521,8 @@ async def build_conversation_summary(
         updated_at=_iso(conversation.updated_at),
         my_resource_role=my_participant.resource_role if my_participant else None,
         ai_enabled=conversation.ai_enabled,
+        scope="channel" if channel_mapping is not None else "personal",
+        agent_workspace_id=channel_mapping.agent_workspace_id if channel_mapping is not None else None,
+        channel_classification=channel_mapping.classification if channel_mapping is not None else None,
+        channel_kind=channel_mapping.channel_kind if channel_mapping is not None else None,
     )

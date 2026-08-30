@@ -1,10 +1,22 @@
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import select
 
 import src.db.session as db_session
-from src.db.models import AgentWorkspaceConversation, Conversation, ConversationParticipant, User
+from src.agents.tools.context_tool import list_my_tasks
+from src.db.models import (
+    AgentWorkspaceConversation,
+    AgentWorkspaceMembership,
+    Conversation,
+    ConversationParticipant,
+    Message,
+    Task,
+    User,
+)
+from src.services import consent_service, proactive_service
 from src.services.agent_workspace_service import add_agent_workspace_member
 from src.services.workspace_service import add_workspace_member
 from tests.test_agent_workspaces import _seed_agent_workspaces
@@ -76,6 +88,209 @@ async def _setup_review_flow(client, auth_headers):
         "lead_headers": {"Authorization": f"Bearer {lead_login.json()['access_token']}"},
         "member_headers": {"Authorization": f"Bearer {member_login.json()['access_token']}"},
     }
+
+
+@pytest.mark.asyncio
+async def test_my_tasks_all_combines_personal_and_current_delivery_assignments(client, auth_headers):
+    seed = await _setup_review_flow(client, auth_headers)
+    root = (
+        f"/api/v1/workspaces/{seed['organization_id']}"
+        f"/agent-workspaces/{seed['delivery_id']}/delivery"
+    )
+    personal = await client.post(
+        "/api/v1/tasks",
+        headers=seed["member_headers"],
+        json={"title": "Renew personal certificate", "priority": "Low"},
+    )
+    assert personal.status_code == 201, personal.text
+    delivery = await client.post(
+        f"{root}/tasks",
+        headers=seed["lead_headers"],
+        json={
+            "source_conversation_id": seed["group_id"],
+            "owner_id": seed["member_id"],
+            "title": "Implement delivery callback",
+            "priority": "High",
+            "requires_review": False,
+        },
+    )
+    assert delivery.status_code == 201, delivery.text
+
+    personal_only = await client.get("/api/v1/tasks", headers=seed["member_headers"])
+    assert personal_only.status_code == 200
+    assert [item["title"] for item in personal_only.json()] == ["Renew personal certificate"]
+
+    all_tasks = await client.get("/api/v1/tasks?scope=all", headers=seed["member_headers"])
+    assert all_tasks.status_code == 200, all_tasks.text
+    tasks_by_title = {item["title"]: item for item in all_tasks.json()}
+    assert set(tasks_by_title) == {"Renew personal certificate", "Implement delivery callback"}
+    assert tasks_by_title["Renew personal certificate"]["workspace_type"] == "personal"
+    delivery_task = tasks_by_title["Implement delivery callback"]
+    assert delivery_task["workspace_type"] == "organization"
+    assert delivery_task["agent_profile"] == "product_delivery"
+    assert delivery_task["agent_workspace_name"] == "Product Delivery"
+    assert delivery_task["conversation_name"] == "Review Flow"
+
+    async with db_session.async_session_maker() as db:
+        membership = await db.scalar(
+            select(AgentWorkspaceMembership).where(
+                AgentWorkspaceMembership.agent_workspace_id == seed["delivery_id"],
+                AgentWorkspaceMembership.user_id == seed["member_id"],
+            )
+        )
+        membership.status = "revoked"
+        await db.commit()
+
+    after_revoke = await client.get("/api/v1/tasks?scope=all", headers=seed["member_headers"])
+    assert after_revoke.status_code == 200
+    assert [item["title"] for item in after_revoke.json()] == ["Renew personal certificate"]
+    assigned_after_revoke = await list_my_tasks.coroutine(
+        include_completed=False,
+        scope="all_assigned",
+        state={"user_id": seed["member_id"], "workspace_id": seed["organization_id"]},
+    )
+    assert "Renew personal certificate" in assigned_after_revoke
+    assert "Implement delivery callback" not in assigned_after_revoke
+    stale_update = await client.patch(
+        f"/api/v1/tasks/{delivery.json()['id']}/status",
+        headers=seed["member_headers"],
+        json={"status": "in_progress", "expected_row_version": delivery.json()["row_version"]},
+    )
+    assert stale_update.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_personal_extraction_from_delivery_channel_stays_private_and_unbound(
+    client, auth_headers
+):
+    seed = await _setup_review_flow(client, auth_headers)
+    async with db_session.async_session_maker() as db:
+        source = Message(
+            conversation_id=seed["group_id"],
+            sender_id=seed["member_id"],
+            content="Tôi sẽ chuẩn bị tài liệu trước thứ Sáu.",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+        scope_hash = await consent_service.get_consent_scope_hash(db, seed["group_id"])
+
+    extracted = await client.post(
+        "/api/v1/tasks",
+        headers=seed["member_headers"],
+        json={
+            "workspace_id": seed["organization_id"],
+            "conversation_id": seed["group_id"],
+            "title": "Chuẩn bị tài liệu cá nhân",
+            "priority": "Medium",
+            "source": "ai_extracted",
+            "source_message_ids": [source.id],
+            "consent_scope_hash": scope_hash,
+        },
+    )
+    assert extracted.status_code == 201, extracted.text
+    assert extracted.json()["agent_workspace_id"] is None
+
+    delivery = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{seed['delivery_id']}/delivery/tasks",
+        headers=seed["lead_headers"],
+        json={
+            "source_conversation_id": seed["group_id"],
+            "owner_id": seed["member_id"],
+            "title": "Workspace delivery task",
+            "priority": "High",
+            "requires_review": False,
+        },
+    )
+    assert delivery.status_code == 201, delivery.text
+
+    personal_result = await list_my_tasks.coroutine(
+        include_completed=False,
+        state={
+            "user_id": seed["member_id"],
+            "workspace_id": seed["organization_id"],
+            "conversation_id": seed["group_id"],
+        },
+    )
+    assert "Chuẩn bị tài liệu cá nhân" in personal_result
+    assert "Workspace delivery task" not in personal_result
+
+    assigned_result = await list_my_tasks.coroutine(
+        include_completed=False,
+        scope="all_assigned",
+        state={
+            "user_id": seed["member_id"],
+            "workspace_id": seed["organization_id"],
+            "conversation_id": seed["group_id"],
+        },
+    )
+    assert "Chuẩn bị tài liệu cá nhân" in assigned_result
+    assert "Workspace delivery task" in assigned_result
+
+    async with db_session.async_session_maker() as db:
+        rows = list(
+            (
+                await db.execute(
+                    select(Task).where(Task.owner_id == seed["member_id"]).order_by(Task.title)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert {row.title: row.agent_workspace_id for row in rows} == {
+        "Chuẩn bị tài liệu cá nhân": None,
+        "Workspace delivery task": seed["delivery_id"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_channel_commitment_is_bound_to_delivery_workspace(
+    client, auth_headers, monkeypatch
+):
+    seed = await _setup_review_flow(client, auth_headers)
+    async with db_session.async_session_maker() as db:
+        source = Message(
+            conversation_id=seed["group_id"],
+            sender_id=seed["member_id"],
+            content="Tôi sẽ hoàn thành API vào thứ Sáu.",
+        )
+        db.add(source)
+        await db.commit()
+        await db.refresh(source)
+    member = (await client.get("/api/v1/auth/me", headers=seed["member_headers"])).json()
+    llm = AsyncMock()
+    llm.ainvoke.side_effect = [
+        SimpleNamespace(content='{"relevant":true}', usage_metadata={}),
+        SimpleNamespace(
+            content=(
+                '{"commitments":[{"title":"Hoàn thành API","due_at":null,'
+                '"proposal_message_index":1,"cancelled":false,"owners":['
+                f'{{"name":"{member["display_name"]}","evidence":"self","message_index":1}}]}}]}}'
+            ),
+            usage_metadata={},
+        ),
+    ]
+    monkeypatch.setattr(proactive_service, "get_llm", lambda: llm)
+
+    await proactive_service.maybe_suggest_task(
+        conversation_id=seed["group_id"],
+        sender_id=seed["member_id"],
+        content=source.content,
+        message_id=source.id,
+    )
+
+    async with db_session.async_session_maker() as db:
+        task = await db.scalar(
+            select(Task).where(
+                Task.owner_id == seed["member_id"],
+                Task.source == "proactive",
+            )
+        )
+    assert task is not None
+    assert task.agent_workspace_id == seed["delivery_id"]
+    assert task.conversation_id == seed["group_id"]
+    assert task.source_message_ids == [source.id]
 
 
 @pytest.mark.asyncio

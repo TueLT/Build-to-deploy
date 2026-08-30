@@ -190,3 +190,15 @@
   .context-source-grid>div{padding:9px 8px;grid-template-columns:31px minmax(0,1fr);column-gap:7px}
   .context-source-grid>div>span{width:31px;height:31px}
 }
+
+/* Constrain every assistant column to the viewport. Long session history scrolls by itself,
+   so it can never push the chat composer below the screen. */
+.personal-assistant-layout{grid-template-rows:minmax(0,1fr)}
+.assistant-sessions{min-height:0;overflow:hidden}
+.assistant-session-head,.session-search,.session-caption{flex-shrink:0}
+.session-items{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:2px;scrollbar-width:thin;scrollbar-color:#d4d9e3 transparent}
+.session-item{flex-shrink:0}
+.assistant-private{flex-shrink:0;margin-top:10px}
+.personal-chat{height:100%;min-height:0;overflow:hidden}
+.personal-messages{flex:1 1 auto;min-height:0;overscroll-behavior:contain}
+.personal-composer-wrap{flex:0 0 auto;border-top:1px solid #f0f1f4}

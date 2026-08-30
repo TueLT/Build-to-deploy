@@ -626,7 +626,7 @@ async def _upsert_participant(
 
 
 async def _upsert_agent_conversation(
-    session, *, agent_workspace_id: str, conversation_id: str, lead_user_id: str
+    session, *, agent_workspace_id: str, conversation_id: str, lead_user_id: str, channel_kind: str
 ) -> None:
     identity = stable_id(f"delivery-link:{conversation_id}")
     row = await session.get(AgentWorkspaceConversation, identity)
@@ -634,6 +634,7 @@ async def _upsert_agent_conversation(
         "agent_workspace_id": agent_workspace_id,
         "conversation_id": conversation_id,
         "classification": "delivery",
+        "channel_kind": channel_kind,
         "linked_by_user_id": lead_user_id,
     }
     if row is None:
@@ -721,7 +722,7 @@ async def seed_demo() -> dict[str, str | int]:
                 id=stable_id("agent-workspace"),
                 organization_workspace_id=company.id,
                 key="delivery-demo",
-                name="Product Delivery Demo",
+                name="Product Delivery",
                 agent_profile="product_delivery",
                 status="active",
             )
@@ -729,7 +730,7 @@ async def seed_demo() -> dict[str, str | int]:
         elif delivery.agent_profile != "product_delivery":
             raise RuntimeError("Agent workspace key 'delivery-demo' belongs to a different profile")
         else:
-            delivery.name = "Product Delivery Demo"
+            delivery.name = "Product Delivery"
             delivery.status = "active"
         await session.flush()
 
@@ -811,6 +812,7 @@ async def seed_demo() -> dict[str, str | int]:
                 agent_workspace_id=delivery.id,
                 conversation_id=conversations[key].id,
                 lead_user_id=users["lead"].id,
+                channel_kind="release" if key == "release34" else "project",
             )
 
         message_rows: dict[str, Message] = {}

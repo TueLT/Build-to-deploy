@@ -5,6 +5,7 @@ import { getDeliveryDashboard } from '../api/agent'
 import PageHeader from '../components/common/PageHeader'
 import { useAuth } from '../context/AuthContext'
 import { useWorkspace } from '../context/WorkspaceContext'
+import { getAgentWorkspaceDisplayName } from '../utils/workspaceLabels'
 import { useAvailableAgentsQuery } from '../hooks/useWorkspaceData'
 import { queryKeys } from '../query/queryClient'
 import { getColor, getInitials } from '../utils/avatar'
@@ -96,7 +97,7 @@ function DeliveryWorkspaceDashboard({ workspace, dashboard }) {
       <section className="delivery-workspace-hero">
         <div className="delivery-workspace-title">
           <span className="delivery-workspace-logo"><i className="bi bi-boxes" /></span>
-          <div><span className="eyebrow">Product Delivery Workspace</span><h2>{workspace.name}</h2><p>{workspace.key} · {profileName(workspace.agent_profile)} · Lead: {workspace.lead_display_name || workspace.lead_email}</p></div>
+          <div><span className="eyebrow">Product Delivery Workspace</span><h2>{getAgentWorkspaceDisplayName(workspace)}</h2><p>{profileName(workspace.agent_profile)} · Lead: {workspace.lead_display_name || workspace.lead_email}</p></div>
         </div>
         <div className="delivery-workspace-actions">
           <span className={`workspace-role ${isLead ? 'lead' : 'member'}`}><i className="bi bi-shield-check" /> {isLead ? 'Delivery Lead' : 'Member'}</span>
@@ -191,7 +192,7 @@ export default function WorkspaceManagementPage() {
       {!loading && company && !assignedWorkspaces.length && <div className="workspace-panel mt-4"><h3>Chưa được phân quyền</h3><p className="text-secondary mb-0">Tài khoản chưa phải Lead hoặc Member của agent workspace nào.</p></div>}
       {!loading && assignedWorkspaces.map(workspace => workspace.agent_profile === 'product_delivery' && dashboards[workspace.id]
         ? <DeliveryWorkspaceDashboard key={workspace.id} workspace={workspace} dashboard={dashboards[workspace.id]} />
-        : <article className="workspace-card mt-4" key={workspace.id}><div className="workspace-card-head"><div><h3>{workspace.name}</h3><small>{workspace.key} · {profileName(workspace.agent_profile)}</small></div><span className="workspace-role">{workspace.current_user_business_role}</span></div></article>)}
+        : <article className="workspace-card mt-4" key={workspace.id}><div className="workspace-card-head"><div><h3>{getAgentWorkspaceDisplayName(workspace)}</h3><small>{profileName(workspace.agent_profile)}</small></div><span className="workspace-role">{workspace.current_user_business_role}</span></div></article>)}
     </div>
   )
 }

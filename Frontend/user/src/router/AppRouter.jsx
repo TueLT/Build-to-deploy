@@ -17,7 +17,7 @@ const PersonalAssistantPage = lazy(importRoute('/assistant'))
 const RelationshipsPage = lazy(importRoute('/relationships'))
 const WorkspaceManagementPage = lazy(importRoute('/workspaces'))
 const WorkspaceAgentPage = lazy(importRoute('/workspace-agent'))
-const WorkspaceGroupsPage = lazy(importRoute('/groups'))
+const WorkspaceGroupsPage = lazy(importRoute('/channels'))
 
 function RouteFallback() {
   return (
@@ -41,7 +41,9 @@ export default function AppRouter() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/relationships" element={<RelationshipsPage />} />
               <Route path="/workspaces" element={<WorkspaceManagementPage />} />
-              <Route path="/groups" element={<WorkspaceGroupsPage />} />
+              <Route path="/channels" element={<WorkspaceGroupsPage />} />
+              <Route path="/channels/:conversationId" element={<ChatPage mode="channel" />} />
+              <Route path="/groups" element={<Navigate to="/channels" replace />} />
               <Route path="/workspace-agent" element={<WorkspaceAgentPage />} />
               <Route path="/delivery-agent" element={<Navigate to="/workspace-agent" replace />} />
               <Route path="/quality-agent" element={<Navigate to="/workspace-agent" replace />} />

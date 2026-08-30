@@ -241,7 +241,7 @@ def test_alembic_upgrade_builds_fresh_database(tmp_path):
             "delivery_checkpoint_tasks",
             "delivery_group_schedules",
         }.issubset(tables)
-    assert revision == "20260829_30"
+    assert revision == "20260830_31"
     assert "workflow_id" in workspace_agent_message_columns
     assert "ix_workspace_agent_messages_workflow_id" in workspace_agent_message_indexes
     assert "row_version" in task_columns
@@ -301,7 +301,7 @@ def test_audit_log_repair_migration_handles_existing_legacy_table(tmp_path):
         "ix_audit_logs_actor_user_id",
         "ix_audit_logs_created_at",
     }.issubset(indexes)
-    assert revision == "20260829_30"
+    assert revision == "20260830_31"
 
 
 def test_personal_space_repair_migration_backfills_post_foundation_users_idempotently(tmp_path):
@@ -335,7 +335,7 @@ def test_personal_space_repair_migration_backfills_post_foundation_users_idempot
     connection.close()
 
     assert rows == [("personal", "active", "direct-user")]
-    assert revision == "20260829_30"
+    assert revision == "20260830_31"
 
 
 def test_agent_workspace_migration_downgrades_cleanly(tmp_path):

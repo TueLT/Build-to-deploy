@@ -112,6 +112,9 @@ class Settings(BaseSettings):
     # Enterprise default: organizations are provisioned by platform operations.
     # Keep this switch only for local/demo compatibility and isolated tests.
     allow_self_service_organization_creation: bool = False
+    # Public click-to-login accounts for local/staging usability tests. The auth route also
+    # refuses this feature in production even if the environment variable is set accidentally.
+    demo_login_enabled: bool = False
 
     # Database
     database_url: str = "sqlite:///./data/app.db"

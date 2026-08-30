@@ -162,17 +162,40 @@ async def test_server_resolver_issues_a_lead_group_capability_only_after_revalid
 
 
 @pytest.mark.asyncio
-async def test_server_resolver_never_turns_a_member_group_selector_into_a_group_snapshot():
+async def test_server_resolver_allows_member_to_read_an_authorized_group_snapshot():
+    resource_checks: list[str] = []
+
+    async def revalidate_workspace(_: str) -> None:
+        return None
+
+    async def revalidate_resource(resource_id: str) -> None:
+        resource_checks.append(resource_id)
+
+    scope = await resolve_delivery_read_scope(
+        context=_context(role=BusinessRole.MEMBER, resources=("group-apollo",)),
+        requested_conversation_id="group-apollo",
+        revalidate_workspace=revalidate_workspace,
+        revalidate_resource=revalidate_resource,
+    )
+
+    assert resource_checks == ["group-apollo"]
+    assert scope.view_scope == DeliveryViewScope.GROUP
+    assert scope.effective_group_ids == ("group-apollo",)
+    assert scope.selected_conversation_id == "group-apollo"
+
+
+@pytest.mark.asyncio
+async def test_server_resolver_rejects_member_group_outside_authorized_channels():
     async def revalidate_workspace(_: str) -> None:
         return None
 
     async def revalidate_resource(_: str) -> None:
-        raise AssertionError("Member selector must be rejected before a resource revalidation")
+        raise DeliveryScopeError("Delivery resource is outside the authorized scope")
 
-    with pytest.raises(DeliveryScopeError, match="cannot select"):
+    with pytest.raises(DeliveryScopeError, match="outside"):
         await resolve_delivery_read_scope(
             context=_context(role=BusinessRole.MEMBER, resources=("group-apollo",)),
-            requested_conversation_id="group-apollo",
+            requested_conversation_id="group-release",
             revalidate_workspace=revalidate_workspace,
             revalidate_resource=revalidate_resource,
         )

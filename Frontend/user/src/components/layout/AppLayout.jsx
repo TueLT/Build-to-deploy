@@ -20,6 +20,9 @@ function ContentFallback() {
 
 export default function AppLayout() {
   const [open, setOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => window.localStorage.getItem('orbit-sidebar-collapsed') === 'true',
+  )
   const { token, user } = useAuth()
   const { pushToast } = useToast()
   const navigate = useNavigate()
@@ -46,9 +49,17 @@ export default function AppLayout() {
     if (data.type === 'usage_budget_alert') pushToast(data.message || 'AI usage budget alert')
   })
 
+  const toggleSidebar = () => {
+    setSidebarCollapsed(current => {
+      const next = !current
+      window.localStorage.setItem('orbit-sidebar-collapsed', String(next))
+      return next
+    })
+  }
+
   return (
-    <div className="app-shell">
-      <Sidebar open={open} onClose={() => setOpen(false)} />
+    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+      <Sidebar open={open} onClose={() => setOpen(false)} collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebar} />
       <div className="app-column"><TopNavbar onMenu={() => setOpen(true)} /><main className="app-main"><Suspense fallback={<ContentFallback />}><Outlet context={{ sendJson, subscribe }} /></Suspense></main></div>
       {toastReminder && <ReminderToast reminder={toastReminder} onClose={() => setToastReminder(null)} />}
       {toastTask && <TaskSuggestedToast task={toastTask} onClose={() => setToastTask(null)} />}

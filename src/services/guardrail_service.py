@@ -12,6 +12,11 @@ import re
 import unicodedata
 from dataclasses import dataclass
 
+from src.services.personal_query_router_service import (
+    is_explicit_personal_memory_request,
+    is_personal_memory_lookup_request,
+)
+
 MAX_UNTRUSTED_TEXT_CHARS = 100_000
 
 
@@ -113,7 +118,10 @@ _SENSITIVE_CATEGORIES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "hướng dẫn bạo lực, vũ khí hoặc chất nổ",
         (
             r"\b(cach|huong dan|che tao|lam|mua|su dung).{0,45}\b(bom|sung|vu khi|thuoc no)\b",
-            r"\b(giet|sat hai|tan cong|danh|dam|chem|ban).{0,35}\b(nguoi|dong nghiep|nan nhan|muc tieu)\b",
+            r"\b(giet|sat hai|tan cong|danh|dam|chem).{0,35}\b(nguoi|dong nghiep|nan nhan|muc tieu)\b",
+            # Accent stripping turns both "bạn" and "bắn" into "ban". Require the shooting
+            # verb to be immediately action-shaped instead of matching any later word "người".
+            r"\bban\s+(?:vao\s+|trung\s+|chet\s+|ha\s+)?(nguoi|dong nghiep|nan nhan|muc tieu)\b",
             r"\b(build|make|buy|use).{0,35}\b(bomb|gun|weapon|explosive)\b",
             r"\b(kill|murder|attack|assault|shoot|stab).{0,30}\b(person|coworker|victim|target|someone)\b",
             r"\b(dau doc|bo thuoc doc|am sat|tra tan).{0,30}\b(nguoi|dong nghiep|nan nhan|muc tieu)?\b",
@@ -124,7 +132,8 @@ _SENSITIVE_CATEGORIES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "illegal_drugs",
         "hướng dẫn liên quan đến ma túy hoặc chất cấm",
         (
-            r"\b(cach|huong dan|che|nau|mua|ban|su dung|van chuyen).{0,45}\b(ma tuy|meth|cocaine|fentanyl|heroin)\b",
+            r"\b(cach|huong dan|che|nau|mua|su dung|van chuyen).{0,45}\b(ma tuy|meth|cocaine|fentanyl|heroin)\b",
+            r"\bban\s+(ma tuy|meth|cocaine|fentanyl|heroin)\b",
             r"\b(make|cook|buy|sell|transport|smuggle).{0,35}\b(meth|cocaine|fentanyl|heroin|illegal drug)\b",
         ),
     ),
@@ -474,6 +483,22 @@ def evaluate_request(text: str, *, conversation_mode: bool = False) -> Guardrail
     if sensitive is not None:
         return sensitive
 
+    # Lookup questions can contain write-shaped fragments (for example "tôi đã bảo bạn gọi tôi
+    # là gì?"). Resolve reads first so asking what was remembered never overwrites Memory.
+    if is_personal_memory_lookup_request(text):
+        return GuardrailDecision(
+            True,
+            "personal_memory_lookup",
+            "Người dùng đang truy vấn hoặc kiểm tra Personal Memory của chính mình.",
+            "",
+        )
+    if is_explicit_personal_memory_request(text):
+        return GuardrailDecision(
+            True,
+            "personal_memory",
+            "Người dùng yêu cầu rõ ràng lưu một sở thích hoặc cách tương tác cá nhân.",
+            "",
+        )
     if _matches_any(text, _WORK_DOMAIN_PATTERNS):
         return GuardrailDecision(True, "work", "Yêu cầu thuộc domain công việc của Orbit.", "")
     if _matches_any(text, _SMALL_TALK_PATTERNS):

@@ -1,19 +1,22 @@
 from datetime import UTC, datetime
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import case, select
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user
 from src.config import get_settings
 from src.db.models import (
     AgentWorkspace,
-    AgentWorkspaceConversation,
     AgentWorkspaceMembership,
     Conversation,
+    ConversationParticipant,
     Task,
     User,
+    Workspace,
+    WorkspaceMembership,
 )
 from src.db.session import get_db
 from src.models.task_schemas import TaskCreateRequest, TaskOut, TaskSubmissionRequest, UpdateTaskStatusRequest
@@ -39,7 +42,14 @@ _OWNER_TRANSITIONS = {
 }
 
 
-def _to_out(task: Task, *, due_at_override=None) -> TaskOut:
+def _to_out(
+    task: Task,
+    *,
+    due_at_override=None,
+    workspace: Workspace | None = None,
+    agent_workspace: AgentWorkspace | None = None,
+    conversation: Conversation | None = None,
+) -> TaskOut:
     due_at = due_at_override if due_at_override is not None else task.due_at
     if due_at is not None and due_at.tzinfo is None:
         due_at = due_at.replace(tzinfo=ZoneInfo(get_settings().calendar_timezone))
@@ -49,6 +59,11 @@ def _to_out(task: Task, *, due_at_override=None) -> TaskOut:
         owner_id=task.owner_id,
         conversation_id=task.conversation_id,
         agent_workspace_id=task.agent_workspace_id,
+        workspace_type=workspace.type if workspace is not None else None,
+        workspace_name=workspace.name if workspace is not None else None,
+        agent_workspace_name=agent_workspace.name if agent_workspace is not None else None,
+        agent_profile=agent_workspace.agent_profile if agent_workspace is not None else None,
+        conversation_name=conversation.name if conversation is not None else None,
         title=task.title,
         due_at=due_at,
         priority=task.priority,
@@ -81,6 +96,22 @@ async def _get_own_task_or_404(task_id: str, current_user: User, db: AsyncSessio
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     await resolve_workspace_for_user(db, current_user.id, task.workspace_id)
+    if task.agent_workspace_id is not None:
+        active_agent_membership = await db.scalar(
+            select(AgentWorkspaceMembership.id)
+            .join(AgentWorkspace, AgentWorkspace.id == AgentWorkspaceMembership.agent_workspace_id)
+            .where(
+                AgentWorkspaceMembership.agent_workspace_id == task.agent_workspace_id,
+                AgentWorkspaceMembership.user_id == current_user.id,
+                AgentWorkspaceMembership.status == "active",
+                AgentWorkspace.organization_workspace_id == task.workspace_id,
+                AgentWorkspace.status == "active",
+            )
+        )
+        if active_agent_membership is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    if task.conversation_id is not None:
+        await require_conversation_access(db, current_user, task.conversation_id, "participant")
     return task
 
 
@@ -121,62 +152,109 @@ async def _require_current_ai_provenance(task: Task, db: AsyncSession) -> None:
         )
 
 
-async def _resolve_task_agent_workspace_binding(
-    db: AsyncSession, *, workspace_id: str, conversation_id: str | None
-) -> str | None:
-    """Bind a new task only when its source proves one active specialist workspace.
-
-    Personal/direct tasks remain unbound.  Delivery retrieval never treats an
-    unbound task as a workspace fact, preventing a broad Company Root scan.
-    """
-
-    if conversation_id is None:
-        return None
-    binding = (
-        await db.execute(
-            select(AgentWorkspaceConversation.agent_workspace_id)
-            .join(
-                AgentWorkspace,
-                AgentWorkspace.id == AgentWorkspaceConversation.agent_workspace_id,
-            )
-            .where(
-                AgentWorkspaceConversation.conversation_id == conversation_id,
-                AgentWorkspace.organization_workspace_id == workspace_id,
-                AgentWorkspace.status == "active",
-            )
-        )
-    ).scalar_one_or_none()
-    return binding
-
-
 @router.get("/tasks", response_model=list[TaskOut])
 async def list_tasks(
     workspace_id: str | None = Query(default=None),
+    scope: Literal["personal", "all"] = Query(default="personal"),
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[TaskOut]:
-    workspace = await resolve_workspace_for_user(db, current_user.id, workspace_id)
-    tasks = (
-        (
-            await db.execute(
-                select(Task)
-                .where(Task.owner_id == current_user.id, Task.workspace_id == workspace.id)
-                .order_by(
-                    Task.due_at.is_(None),
-                    Task.due_at.asc(),
-                    case((Task.priority == "High", 0), (Task.priority == "Medium", 1), else_=2),
-                    Task.created_at.desc(),
-                )
-                .offset(offset)
-                .limit(limit)
+    if scope == "all" and workspace_id is not None:
+        raise HTTPException(status_code=422, detail="workspace_id cannot be combined with scope=all")
+
+    statement = (
+        select(Task, Workspace, AgentWorkspace, Conversation)
+        .join(Workspace, Workspace.id == Task.workspace_id)
+        .outerjoin(
+            AgentWorkspace,
+            and_(
+                AgentWorkspace.id == Task.agent_workspace_id,
+                AgentWorkspace.organization_workspace_id == Workspace.id,
+            ),
+        )
+        .outerjoin(Conversation, Conversation.id == Task.conversation_id)
+    )
+    if scope == "all":
+        statement = (
+            statement
+            .outerjoin(
+                WorkspaceMembership,
+                and_(
+                    WorkspaceMembership.workspace_id == Workspace.id,
+                    WorkspaceMembership.user_id == current_user.id,
+                    WorkspaceMembership.status == "active",
+                ),
+            )
+            .outerjoin(
+                AgentWorkspaceMembership,
+                and_(
+                    AgentWorkspaceMembership.agent_workspace_id == Task.agent_workspace_id,
+                    AgentWorkspaceMembership.user_id == current_user.id,
+                    AgentWorkspaceMembership.status == "active",
+                ),
+            )
+            .outerjoin(
+                ConversationParticipant,
+                and_(
+                    ConversationParticipant.conversation_id == Task.conversation_id,
+                    ConversationParticipant.user_id == current_user.id,
+                    ConversationParticipant.principal_kind == "workspace_user",
+                    ConversationParticipant.revoked_at.is_(None),
+                ),
+            )
+            .where(
+                Task.owner_id == current_user.id,
+                Workspace.status == "active",
+                or_(
+                    and_(
+                        Workspace.type == "personal",
+                        Workspace.personal_owner_user_id == current_user.id,
+                    ),
+                    and_(
+                        Workspace.type == "organization",
+                        WorkspaceMembership.id.is_not(None),
+                        or_(
+                            Task.agent_workspace_id.is_(None),
+                            and_(
+                                AgentWorkspace.status == "active",
+                                AgentWorkspaceMembership.id.is_not(None),
+                            ),
+                        ),
+                        or_(
+                            Task.conversation_id.is_(None),
+                            ConversationParticipant.id.is_not(None),
+                        ),
+                    ),
+                ),
             )
         )
-        .scalars()
-        .all()
-    )
-    return [_to_out(t) for t in tasks]
+    else:
+        workspace = await resolve_workspace_for_user(db, current_user.id, workspace_id)
+        statement = statement.where(
+            Task.owner_id == current_user.id,
+            Task.workspace_id == workspace.id,
+            Task.agent_workspace_id.is_(None),
+        )
+
+    rows = (
+        await db.execute(
+            statement
+            .order_by(
+                Task.due_at.is_(None),
+                Task.due_at.asc(),
+                case((Task.priority == "High", 0), (Task.priority == "Medium", 1), else_=2),
+                Task.created_at.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+    ).all()
+    return [
+        _to_out(task, workspace=workspace, agent_workspace=agent_workspace, conversation=conversation)
+        for task, workspace, agent_workspace, conversation in rows
+    ]
 
 
 @router.post("/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
@@ -243,9 +321,11 @@ async def create_task(
         workspace_id=workspace.id,
         owner_id=current_user.id,
         conversation_id=request.conversation_id,
-        agent_workspace_id=await _resolve_task_agent_workspace_binding(
-            db, workspace_id=workspace.id, conversation_id=request.conversation_id
-        ),
+        # This general endpoint is owned by Personal Agent/manual personal
+        # task flows.  A source conversation is provenance, not authority to
+        # promote the task into a shared Agent Workspace. Workspace work items
+        # are created only by the specialist Delivery/Quality boundaries.
+        agent_workspace_id=None,
         title=request.title,
         due_at=due_at,
         priority=request.priority,

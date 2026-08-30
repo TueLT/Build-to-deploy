@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.models import Conversation, ConversationParticipant, Message, Reminder, Task, User
 from src.models.schemas import MessageScope
 from src.models.timeline_schemas import PersonalTimelineOut, TimelineItem, TimelineSourceStatus
-from src.services import calendar_service, chat_service, consent_service
+from src.services import calendar_service, chat_service, consent_service, task_visibility_service
 from src.services.google_credentials import CalendarNotConnectedError
 
 
@@ -107,6 +107,7 @@ async def get_personal_timeline(
     from_at: datetime | None = None,
     to_at: datetime | None = None,
     include_messages: bool = False,
+    include_assigned_tasks: bool = False,
     conversation_id: str | None = None,
     limit: int = 200,
 ) -> PersonalTimelineOut:
@@ -123,12 +124,18 @@ async def get_personal_timeline(
         raise ValueError("timeline range cannot exceed 90 days")
     start_utc, end_utc = _as_utc(local_start, timezone), _as_utc(local_end, timezone)
 
+    task_statement = (
+        task_visibility_service.visible_assigned_tasks_statement(user.id)
+        if include_assigned_tasks
+        else select(Task).where(
+            Task.owner_id == user.id,
+            Task.workspace_id == workspace_id,
+        )
+    )
     tasks = list(
         (
             await db.execute(
-                select(Task).where(
-                    Task.owner_id == user.id,
-                    Task.workspace_id == workspace_id,
+                task_statement.where(
                     Task.due_at.is_not(None),
                     Task.due_at >= start_utc,
                     Task.due_at <= end_utc,

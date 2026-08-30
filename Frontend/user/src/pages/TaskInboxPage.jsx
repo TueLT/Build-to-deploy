@@ -6,6 +6,7 @@ import { formatDue } from '../components/task/TaskTable'
 import { useAuth } from '../context/AuthContext'
 import { updateTaskStatus } from '../api/tasks'
 import { useTasksQuery } from '../hooks/usePersonalData'
+import { getTaskScopeLabel, upsertTaskWithContext } from '../utils/taskScope'
 
 const sourceLabel = { manual: 'Manual', proactive: 'AI suggestion' }
 const priorityClass = { High: 'danger', Medium: 'warning', Low: 'info' }
@@ -26,7 +27,7 @@ export default function TaskInboxPage() {
   const { subscribe } = useOutletContext()
   const { items: tasks, setItems: setTasks, loading } = useTasksQuery(token)
 
-  const upsertTask = (task) => setTasks(prev => [...prev.filter(t => t.id !== task.id), task])
+  const upsertTask = (task) => setTasks(prev => upsertTaskWithContext(prev, task))
 
   useEffect(() => subscribe((data) => {
     if (['task_suggested', 'task_created', 'task_updated', 'task_submitted', 'task_reviewed'].includes(data.type)) upsertTask(data.task)
@@ -73,6 +74,8 @@ export default function TaskInboxPage() {
               <div className="flex-grow-1">
                 <h4>{task.title}</h4>
                 <div className="suggestion-meta">
+                  <span><i className="bi bi-diagram-3" />{getTaskScopeLabel(task)}</span>
+                  {task.conversation_name && <span><i className="bi bi-people" />{task.conversation_name}</span>}
                   <span><i className="bi bi-chat-left-text" />{sourceLabel[task.source] || task.source}</span>
                   <span><i className="bi bi-calendar3" />{formatDue(task.due_at)}</span>
                   <span><span className={`soft-badge ${priorityClass[task.priority]}`}><i />{task.priority}</span></span>
@@ -89,9 +92,9 @@ export default function TaskInboxPage() {
   return (
     <div className="page-container">
       <PageHeader
-        eyebrow="Personal"
+        eyebrow="My Work"
         title="Task Inbox"
-        description="What needs your attention first — ranked, not just listed."
+        description="What needs your attention first across personal and workspace assignments."
         action={<Link to="/tasks" className="btn btn-light rounded-3"><i className="bi bi-list-task me-2" />All tasks</Link>}
       />
       <div className="stats-grid">

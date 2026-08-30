@@ -44,6 +44,9 @@
 :root[data-theme='dark'] .side-link { color: #aab4c8; }
 :root[data-theme='dark'] .side-link:hover { color: var(--ink); background: #242c39; }
 :root[data-theme='dark'] .side-link.active { color: #bdc5ff; background: #2a3352; }
+:root[data-theme='dark'] .side-channel-link { color: #909caf; }
+:root[data-theme='dark'] .side-channel-link:hover { color: var(--ink); background: #242c39; }
+:root[data-theme='dark'] .side-channel-link.active { color: #bdc5ff; background: #252e48; }
 :root[data-theme='dark'] .nav-caption { color: #748198; }
 :root[data-theme='dark'] .user-mini { color: var(--ink); }
 :root[data-theme='dark'] .user-mini:hover,
@@ -194,6 +197,23 @@
 :root[data-theme='dark'] .permission-card { background: #252e3b; border-color: var(--line); color: var(--ink); }
 :root[data-theme='dark'] .chat-item:hover { background: #293240; }
 :root[data-theme='dark'] .chat-item.active { background: #303a55; }
+:root[data-theme='dark'] .conversation-sections > button,
+:root[data-theme='dark'] .new-conversation-types > button { background: #252e3b; border-color: var(--line); color: var(--muted); }
+:root[data-theme='dark'] .conversation-sections > button:hover,
+:root[data-theme='dark'] .conversation-sections > button.active,
+:root[data-theme='dark'] .new-conversation-types > button.active,
+:root[data-theme='dark'] .conversation-member-list > label:hover,
+:root[data-theme='dark'] .conversation-member-list > label.selected { background: #303a55; }
+:root[data-theme='dark'] .conversation-section-icon,
+:root[data-theme='dark'] .new-conversation-types > button > i:first-child,
+:root[data-theme='dark'] .conversation-privacy-note { background: #202836; }
+:root[data-theme='dark'] .conversation-list-heading { border-color: var(--line); }
+:root[data-theme='dark'] .conversation-list-heading > span,
+:root[data-theme='dark'] .conversation-list-empty strong,
+:root[data-theme='dark'] .new-conversation-types strong,
+:root[data-theme='dark'] .conversation-member-list strong { color: var(--ink); }
+:root[data-theme='dark'] .conversation-member-search input { background: transparent; color: var(--ink); }
+:root[data-theme='dark'] .workspace-channel-section-heading > b { background: #252e3b; color: var(--muted); }
 :root[data-theme='dark'] .chat-item-top strong,
 :root[data-theme='dark'] .conversation-meta h3 { color: var(--ink); }
 :root[data-theme='dark'] .message-bubble { background: #293240; border-color: var(--line); color: #dce3ed; }
@@ -300,6 +320,12 @@
 :root[data-theme='dark'] .reminder-tip { background: #292416; border-color: #4d4120; }
 :root[data-theme='dark'] .fc { --fc-page-bg-color: var(--card); --fc-neutral-bg-color: #182133; --fc-border-color: var(--line); --fc-list-event-hover-bg-color: #202a3d; color: var(--ink); }
 :root[data-theme='dark'] .fc .fc-button-primary { background: #27324a; border-color: #3a4660; }
+:root[data-theme='dark'] .calendar-source-filters button { background: #252d39; border-color: var(--line); color: #aeb7c5; }
+:root[data-theme='dark'] .calendar-source-filters button.active.google { background: #222f49; border-color: #3d5685; color: #9cc0ff; }
+:root[data-theme='dark'] .calendar-source-filters button.active.tasks { background: #3a3020; border-color: #65502a; color: #ffd27c; }
+:root[data-theme='dark'] .calendar-source-filters b { background: rgba(255,255,255,.08); }
+:root[data-theme='dark'] .event-modal { background: var(--card); color: var(--ink); }
+:root[data-theme='dark'] .event-detail-row { border-color: var(--line); }
 
 /* Workspace group cards */
 :root[data-theme='dark'] .group-overview-strip>div,

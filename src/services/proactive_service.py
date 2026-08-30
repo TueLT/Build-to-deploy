@@ -9,7 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
 from src.db import session as db_session
-from src.db.models import AIPermission, Conversation, Message, Task, User
+from src.db.models import (
+    AgentWorkspace,
+    AgentWorkspaceConversation,
+    AgentWorkspaceMembership,
+    AIPermission,
+    Conversation,
+    Message,
+    Task,
+    User,
+)
 from src.models.chat_content import text_only_chat_content
 from src.services import chat_service, consent_service, usage_service
 from src.services.llm import get_llm
@@ -271,11 +280,48 @@ async def _task_exists(
     return any(task.source_message_ids and task.source_message_ids[0] == proposal_message_id for task in tasks)
 
 
+async def _resolve_delivery_workspace_binding(
+    db: AsyncSession,
+    *,
+    conversation_id: str,
+    owner_id: str,
+) -> str | None:
+    """Resolve an explicit Delivery binding for a channel-owned work item.
+
+    A conversation reference alone is not enough: the channel must be mapped
+    to one active Product Delivery Agent Workspace and the assignee must still
+    be an active member there. Direct/personal conversations therefore remain
+    private and unbound.
+    """
+
+    return await db.scalar(
+        select(AgentWorkspaceConversation.agent_workspace_id)
+        .join(
+            AgentWorkspace,
+            AgentWorkspace.id == AgentWorkspaceConversation.agent_workspace_id,
+        )
+        .join(
+            AgentWorkspaceMembership,
+            AgentWorkspaceMembership.agent_workspace_id == AgentWorkspace.id,
+        )
+        .where(
+            AgentWorkspaceConversation.conversation_id == conversation_id,
+            AgentWorkspaceConversation.classification == "delivery",
+            AgentWorkspace.agent_profile == "product_delivery",
+            AgentWorkspace.status == "active",
+            AgentWorkspaceMembership.user_id == owner_id,
+            AgentWorkspaceMembership.status == "active",
+            AgentWorkspaceMembership.business_role.in_(("lead", "member")),
+        )
+    )
+
+
 def _task_payload(task: Task) -> dict:
     return {
         "id": task.id,
         "workspace_id": task.workspace_id,
         "conversation_id": task.conversation_id,
+        "agent_workspace_id": task.agent_workspace_id,
         "title": task.title,
         "due_at": task.due_at.isoformat() if task.due_at else None,
         "priority": task.priority,
@@ -456,6 +502,11 @@ async def maybe_suggest_task(
                         workspace_id=workspace_id,
                         owner_id=owner_id,
                         conversation_id=conversation_id,
+                        agent_workspace_id=await _resolve_delivery_workspace_binding(
+                            db,
+                            conversation_id=conversation_id,
+                            owner_id=owner_id,
+                        ),
                         title=owner_title,
                         due_at=due_at,
                         priority="Medium",

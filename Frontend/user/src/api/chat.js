@@ -16,6 +16,14 @@ export const listConversations = (token, workspaceId) => {
 export const createConversation = (token, { type, participant_ids, name, workspace_id }) =>
   apiFetch('/conversations', { method: 'POST', token, body: { type, participant_ids, name, workspace_id } })
 
+export const listChannelMembers = (token, workspaceId, agentWorkspaceId) =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/channel-members`, { token })
+
+export const createChannel = (token, workspaceId, agentWorkspaceId, body) =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/channels`, {
+    method: 'POST', token, body,
+  })
+
 export const getMessages = (token, conversationId, { before, limit = 50 } = {}) => {
   const params = new URLSearchParams({ limit: String(limit) })
   if (before) params.set('before', before)

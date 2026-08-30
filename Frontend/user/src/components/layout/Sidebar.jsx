@@ -1,9 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { useAvailableAgentsQuery } from '../../hooks/useWorkspaceData'
+import { useAvailableAgentsQuery, useConversationsQuery } from '../../hooks/useWorkspaceData'
 import { preloadPrimaryRoutes, preloadRoute } from '../../router/routeModules'
 import { listConversations } from '../../api/chat'
 import { listMemories } from '../../api/memories'
@@ -14,24 +14,28 @@ import { getAIUsageStatus } from '../../api/agent'
 import { queryClient, queryKeys } from '../../query/queryClient'
 
 const personalNav = [
-  ['assistant', 'bi-stars', 'AI Assistant'], ['chat', 'bi-chat-dots', 'Chats'], ['tasks', 'bi-check2-square', 'Tasks'],
-  ['tasks/inbox', 'bi-inbox', 'Inbox'],
+  ['assistant', 'bi-stars', 'AI Assistant'], ['chat', 'bi-chat-dots', 'Chats'],
   ['calendar', 'bi-calendar4-week', 'Calendar'], ['reminders', 'bi-bell', 'Reminders'],
   ['memory', 'bi-stars', 'Memory'], ['profile', 'bi-person', 'Profile'],
 ]
 
-const workspaceNav = [
-  ['groups', 'bi-people', 'Nhóm của tôi'],
-  ['workspaces', 'bi-diagram-3', 'Workspaces'],
+const myWorkNav = [
+  ['tasks', 'bi-check2-square', 'My Tasks'],
+  ['tasks/inbox', 'bi-inbox', 'Inbox'],
 ]
 
 const getInitials = (name) => (name || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase()
 
-export default function Sidebar({ open, onClose }) {
+export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) {
   const { user, token, isAdmin } = useAuth()
-  const { workspace, workspaceId } = useWorkspace()
-  const agentOrganizationId = workspace?.type === 'organization' ? workspaceId : null
-  const assignedAgentsQuery = useAvailableAgentsQuery(token, agentOrganizationId)
+  const { workspace, workspaceId, workspaces } = useWorkspace()
+  const location = useLocation()
+  const [channelsOpen, setChannelsOpen] = useState(() => location.pathname.startsWith('/channels'))
+  const organizationWorkspaceId = workspace?.type === 'organization'
+    ? workspaceId
+    : workspaces.find(item => item.type === 'organization')?.id
+  const assignedAgentsQuery = useAvailableAgentsQuery(token, organizationWorkspaceId)
+  const conversationsQuery = useConversationsQuery(token, organizationWorkspaceId)
   const usageQuery = useQuery({
     queryKey: queryKeys.aiUsage,
     queryFn: () => getAIUsageStatus(token),
@@ -39,6 +43,13 @@ export default function Sidebar({ open, onClose }) {
     staleTime: 30_000,
     refetchInterval: 60_000,
   })
+  const deliveryWorkspace = (assignedAgentsQuery.data || []).find(agent => agent.agent_profile === 'product_delivery')
+  const sidebarChannels = deliveryWorkspace
+    ? (conversationsQuery.data?.conversations || [])
+      .filter(conversation => conversation.scope === 'channel' && conversation.agent_workspace_id === deliveryWorkspace.id)
+      .sort((left, right) => (left.name || '').localeCompare(right.name || '', 'vi'))
+    : []
+  const channelsExpanded = !collapsed && channelsOpen
   const hasAssignedAgent = (assignedAgentsQuery.data || []).length === 1
   const usage = usageQuery.data
   const usagePct = Math.max(0, Number(usage?.used_pct || 0))
@@ -63,17 +74,20 @@ export default function Sidebar({ open, onClose }) {
     const id = window.setTimeout(preload, 1200)
     return () => window.clearTimeout(id)
   }, [])
+  useEffect(() => {
+    if (location.pathname === '/channels') setChannelsOpen(true)
+  }, [location.pathname])
   const preloadDestination = path => {
     preloadRoute(path)
     if (!token) return
     if (path === '/tasks' || path === '/tasks/inbox') {
-      queryClient.prefetchQuery({ queryKey: queryKeys.tasks, queryFn: () => listTasks(token), staleTime: 30_000 })
+      queryClient.prefetchQuery({ queryKey: queryKeys.tasks, queryFn: () => listTasks(token, { scope: 'all' }), staleTime: 30_000 })
     } else if (path === '/reminders') {
       queryClient.prefetchQuery({ queryKey: queryKeys.reminders, queryFn: () => listReminders(token), staleTime: 30_000 })
     } else if (path === '/memory') {
       queryClient.prefetchQuery({ queryKey: queryKeys.memories, queryFn: () => listMemories(token), staleTime: 60_000 })
-    } else if (path === '/chat' || path === '/groups') {
-      if (workspaceId) queryClient.prefetchQuery({ queryKey: queryKeys.conversations(workspaceId), queryFn: () => listConversations(token, workspaceId), staleTime: 30_000 })
+    } else if (path === '/chat' || path === '/channels') {
+      if (organizationWorkspaceId) queryClient.prefetchQuery({ queryKey: queryKeys.conversations(organizationWorkspaceId), queryFn: () => listConversations(token, organizationWorkspaceId), staleTime: 30_000 })
     } else if ((path === '/workspace-agent' || path === '/workspaces') && workspaceId) {
       queryClient.prefetchQuery({ queryKey: queryKeys.availableAgents(workspaceId), queryFn: () => listAvailableAgentWorkspaces(token, workspaceId), staleTime: 2 * 60_000 })
     }
@@ -82,27 +96,58 @@ export default function Sidebar({ open, onClose }) {
     <>
       <div className={`sidebar-backdrop ${open ? 'show' : ''}`} onClick={onClose} />
       <aside className={`app-sidebar ${open ? 'open' : ''}`}>
-        <div className="brand"><span className="brand-mark"><i className="bi bi-command" /></span><span>Orbit</span></div>
+        <div className="brand">
+          <span className="brand-mark" title="Orbit"><i className="bi bi-command" /></span>
+          <span className="brand-name">Orbit</span>
+          <button type="button" className="sidebar-collapse-btn" onClick={onToggleCollapse} aria-label={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'} title={collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'}>
+            <i className={`bi ${collapsed ? 'bi-chevron-right' : 'bi-chevron-left'}`} />
+          </button>
+        </div>
         <nav className="sidebar-nav">
           <div className="nav-caption">Personal</div>
           {personalNav.map(([path, icon, label]) => (
             // `end` matters here: without it, `/tasks` would also read as "active" while on
             // `/tasks/inbox` (NavLink prefix-matches by default), highlighting both at once.
-            <NavLink key={path} to={`/${path}`} end onMouseEnter={() => preloadDestination(`/${path}`)} onFocus={() => preloadDestination(`/${path}`)} onClick={onClose} className={({ isActive }) => `side-link ${label === 'AI Assistant' ? 'assistant-link' : ''} ${isActive ? 'active' : ''}`}>
-              <i className={`bi ${icon}`} /><span>{label}</span>{label === 'AI Assistant' && <span className="new-pill">New</span>}
+            <NavLink key={path} to={`/${path}`} end title={collapsed ? label : undefined} onMouseEnter={() => preloadDestination(`/${path}`)} onFocus={() => preloadDestination(`/${path}`)} onClick={onClose} className={({ isActive }) => `side-link ${label === 'AI Assistant' ? 'assistant-link' : ''} ${isActive ? 'active' : ''}`}>
+              <i className={`bi ${icon}`} /><span>{label}</span>
+            </NavLink>
+          ))}
+          <div className="nav-caption workspace-caption">My Work</div>
+          {myWorkNav.map(([path, icon, label]) => (
+            <NavLink key={path} to={`/${path}`} end title={collapsed ? label : undefined} onMouseEnter={() => preloadDestination(`/${path}`)} onFocus={() => preloadDestination(`/${path}`)} onClick={onClose} className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>
+              <i className={`bi ${icon}`} /><span>{label}</span>
             </NavLink>
           ))}
           <div className="nav-caption workspace-caption">Workspace</div>
           {hasAssignedAgent && (
-            <NavLink to="/workspace-agent" end onMouseEnter={() => preloadDestination('/workspace-agent')} onFocus={() => preloadDestination('/workspace-agent')} onClick={onClose} className={({ isActive }) => `side-link assistant-link ${isActive ? 'active' : ''}`}>
+            <NavLink to="/workspace-agent" end title={collapsed ? 'Workspace Agent' : undefined} onMouseEnter={() => preloadDestination('/workspace-agent')} onFocus={() => preloadDestination('/workspace-agent')} onClick={onClose} className={({ isActive }) => `side-link assistant-link ${isActive ? 'active' : ''}`}>
               <i className="bi bi-robot" /><span>Workspace Agent</span><span className="new-pill">AI</span>
             </NavLink>
           )}
-          {workspaceNav.map(([path, icon, label]) => (
-            <NavLink key={path} to={`/${path}`} end onMouseEnter={() => preloadDestination(`/${path}`)} onFocus={() => preloadDestination(`/${path}`)} onClick={onClose} className={({ isActive }) => `side-link ${label === 'Workspace Agent' ? 'assistant-link' : ''} ${isActive ? 'active' : ''}`}>
-              <i className={`bi ${icon}`} /><span>{label}</span>{label === 'Workspace Agent' && <span className="new-pill">AI</span>}
+          <div className="side-channel-nav">
+            <NavLink to="/channels" title={collapsed ? 'Channels' : undefined} onMouseEnter={() => preloadDestination('/channels')} onFocus={() => preloadDestination('/channels')} onClick={() => { setChannelsOpen(true); onClose() }} className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>
+              <i className="bi bi-hash" /><span>Channels</span>
             </NavLink>
-          ))}
+            {!collapsed && (
+              <button type="button" className="side-channel-toggle" onClick={() => setChannelsOpen(current => !current)} aria-label={channelsExpanded ? 'Thu gọn danh sách channel' : 'Mở danh sách channel'} aria-expanded={channelsExpanded}>
+                <i className={`bi ${channelsExpanded ? 'bi-chevron-down' : 'bi-chevron-right'}`} />
+              </button>
+            )}
+          </div>
+          {channelsExpanded && (
+            <div className="side-channel-list" aria-label="Workspace channels">
+              {sidebarChannels.map(channel => (
+                <NavLink key={channel.id} to={`/channels/${channel.id}`} end onClick={onClose} className={({ isActive }) => `side-channel-link ${isActive ? 'active' : ''}`}>
+                  <i className="bi bi-hash" />
+                  <span title={channel.name}>{channel.name}</span>
+                  {channel.unread_count > 0 && <b>{channel.unread_count > 99 ? '99+' : channel.unread_count}</b>}
+                </NavLink>
+              ))}
+            </div>
+          )}
+          <NavLink to="/workspaces" end title={collapsed ? 'Workspaces' : undefined} onMouseEnter={() => preloadDestination('/workspaces')} onFocus={() => preloadDestination('/workspaces')} onClick={onClose} className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>
+            <i className="bi bi-diagram-3" /><span>Workspaces</span>
+          </NavLink>
           {isAdmin && <><div className="nav-caption">Administration</div><a className="side-link" href={adminUrl}><i className="bi bi-box-arrow-up-right" /><span>Open Admin</span></a></>}
         </nav>
         <div className="sidebar-bottom">

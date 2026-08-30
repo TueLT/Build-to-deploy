@@ -1,4 +1,8 @@
 import pytest
+from sqlalchemy import select
+
+import src.db.session as db_session
+from src.db.models import AgentWorkspace, AgentWorkspaceMembership, User
 
 
 async def _other_user(client, other_auth_headers):
@@ -67,8 +71,89 @@ async def test_group_conversation_with_name(client, auth_headers, other_auth_hea
     assert resp.status_code == 200
     body = resp.json()
     assert body["type"] == "group"
+    assert body["scope"] == "personal"
+    assert body["agent_workspace_id"] is None
     assert body["name"] == "Team"
     assert len(body["participants"]) == 2
+
+
+async def _seed_delivery_workspace(workspace_id: str) -> tuple[str, str, str]:
+    async with db_session.async_session_maker() as session:
+        alice = (await session.execute(select(User).where(User.email == "alice@example.com"))).scalar_one()
+        bob = (await session.execute(select(User).where(User.email == "bob@example.com"))).scalar_one()
+        delivery = AgentWorkspace(
+            organization_workspace_id=workspace_id,
+            key="product-delivery",
+            name="Product Delivery",
+            agent_profile="product_delivery",
+        )
+        session.add(delivery)
+        await session.flush()
+        session.add_all(
+            [
+                AgentWorkspaceMembership(
+                    agent_workspace_id=delivery.id,
+                    user_id=alice.id,
+                    business_role="lead",
+                ),
+                AgentWorkspaceMembership(
+                    agent_workspace_id=delivery.id,
+                    user_id=bob.id,
+                    business_role="member",
+                ),
+            ]
+        )
+        await session.commit()
+        return delivery.id, alice.id, bob.id
+
+
+@pytest.mark.asyncio
+async def test_workspace_member_cannot_create_channel(client, auth_headers, other_auth_headers):
+    workspace, _ = await _team_workspace(client, auth_headers, other_auth_headers)
+    delivery_id, alice_id, _ = await _seed_delivery_workspace(workspace["id"])
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/agent-workspaces/{delivery_id}/channels",
+        json={"name": "member-created", "participant_ids": [alice_id]},
+        headers=other_auth_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only the workspace Lead can create channels"
+
+
+@pytest.mark.asyncio
+async def test_lead_creates_linked_workspace_channel(client, auth_headers, other_auth_headers):
+    workspace, _ = await _team_workspace(client, auth_headers, other_auth_headers)
+    delivery_id, _, bob_id = await _seed_delivery_workspace(workspace["id"])
+
+    members = await client.get(
+        f"/api/v1/workspaces/{workspace['id']}/agent-workspaces/{delivery_id}/channel-members",
+        headers=auth_headers,
+    )
+    assert members.status_code == 200
+    assert [member["id"] for member in members.json()] == [bob_id]
+
+    created = await client.post(
+        f"/api/v1/workspaces/{workspace['id']}/agent-workspaces/{delivery_id}/channels",
+        json={"name": "release-34", "participant_ids": [bob_id], "channel_kind": "release"},
+        headers=auth_headers,
+    )
+
+    assert created.status_code == 201
+    channel = created.json()
+    assert channel["type"] == "group"
+    assert channel["scope"] == "channel"
+    assert channel["agent_workspace_id"] == delivery_id
+    assert channel["channel_classification"] == "delivery"
+    assert channel["channel_kind"] == "release"
+
+    listed = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace['id']}",
+        headers=other_auth_headers,
+    )
+    listed_channel = next(item for item in listed.json()["conversations"] if item["id"] == channel["id"])
+    assert listed_channel["scope"] == "channel"
 
 
 @pytest.mark.asyncio

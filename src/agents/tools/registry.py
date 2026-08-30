@@ -50,6 +50,7 @@ _PROFILE_REGISTRY = {
             "list_reminders",
             "list_my_tasks",
             "search_my_memories",
+            "save_personal_memory",
             "search_people_context",
             "search_messages",
             "get_personal_timeline",

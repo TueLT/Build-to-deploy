@@ -21,6 +21,10 @@ function useCachedList(token, queryKey, queryFn, staleTime = 30_000) {
   }
 }
 
-export const useTasksQuery = token => useCachedList(token, queryKeys.tasks, listTasks)
+export const useTasksQuery = token => useCachedList(
+  token,
+  queryKeys.tasks,
+  currentToken => listTasks(currentToken, { scope: 'all' }),
+)
 export const useRemindersQuery = token => useCachedList(token, queryKeys.reminders, listReminders)
 export const useMemoriesQuery = token => useCachedList(token, queryKeys.memories, listMemories, 60_000)

@@ -4,7 +4,12 @@ from src.agents.tools.calendar_tool import (
     list_calendar_events,
     update_calendar_event,
 )
-from src.agents.tools.context_tool import get_personal_timeline, list_my_tasks, search_my_memories
+from src.agents.tools.context_tool import (
+    get_personal_timeline,
+    list_my_tasks,
+    save_personal_memory,
+    search_my_memories,
+)
 from src.agents.tools.people_tool import search_people_context
 from src.agents.tools.policy_tool import check_request_policy
 from src.agents.tools.reminder_tool import create_reminder, list_reminders
@@ -25,6 +30,7 @@ ALL_TOOLS = [
     list_reminders,
     list_my_tasks,
     search_my_memories,
+    save_personal_memory,
     search_people_context,
     search_messages,
     get_personal_timeline,
@@ -43,6 +49,7 @@ __all__ = [
     "list_reminders",
     "list_my_tasks",
     "search_my_memories",
+    "save_personal_memory",
     "search_people_context",
     "search_messages",
     "get_personal_timeline",

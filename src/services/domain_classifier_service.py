@@ -41,7 +41,8 @@ user message. Hard safety was already checked separately and cannot be weakened 
 Allowed scope:
 - work productivity, tasks, deadlines, projects and professional planning;
 - calendar/reminders and professional communication;
-- explicit user requests to save/find/forget work memory;
+- explicit user requests to save/find/forget personal memory, including preferred name or form of
+  address, response style, communication preferences and work habits;
 - technical work context: code/build/test identifiers, tickets, repositories, releases;
 - analysis/search/summarization of the currently authorized chat when conversation_mode=true;
 - brief greetings and questions about Orbit itself.
@@ -51,7 +52,10 @@ Decision rules:
 - clarify when the message could reasonably be work-related but its referent, objective, or
   relationship to work/chat is genuinely unclear. Ask exactly one short, specific question in
   Vietnamese naming the missing detail. Never use a generic refusal for ambiguity;
-- deny when it is clearly general knowledge, entertainment, personal lifestyle, or otherwise
+- a direct preference such as "call me boss", "remember that I work carefully", or "answer more
+  concisely" is allowed memory/personalization, not an unrelated lifestyle request;
+- deny when it is clearly general knowledge, entertainment, personal lifestyle unrelated to how
+  Orbit should assist the user, or otherwise
   unrelated to the allowed scope;
 - conversation_mode means the user may ask about that chat; it does not make unrelated general
   questions automatically allowed;
@@ -112,4 +116,3 @@ async def classify_domain_request(
     if parsed.decision == "clarify" and not parsed.clarification_question.strip():
         parsed.clarification_question = _DEFAULT_QUESTION
     return parsed
-

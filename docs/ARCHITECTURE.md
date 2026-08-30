@@ -291,6 +291,18 @@ Registry đã khai báo tool name cho ba Workspace Agent. Product Delivery và Q
 tool/runtime vertical slice; Executive chưa có implementation đầy đủ. Registry vẫn chỉ là contract/allowlist,
 không tự chứng minh một profile đã đạt release gate.
 
+### 6.4 Task ownership boundary
+
+- Personal task có `agent_workspace_id = NULL`. Personal Agent chỉ trích từ message scope đang chọn và chỉ đọc
+  private task của actor; source conversation được giữ để kiểm chứng provenance, không phải để tự động nâng task
+  thành workspace fact.
+- Product Delivery work item phải có cả `agent_workspace_id` và source `conversation_id` đã được map. Cam kết
+  phát hiện chủ động chỉ được bind khi assignee vẫn là thành viên active của Delivery Agent Workspace.
+- Member không chọn channel nhận `member` scope và chỉ đọc task của mình trên các channel được cấp quyền.
+  Member chọn một channel hợp lệ nhận `group` read scope và được tổng hợp toàn bộ task của channel đó. Read scope
+  này không cấp quyền assign/review/update task của người khác; write authorization được kiểm tra riêng.
+- Lead không chọn channel nhận toàn bộ Delivery Workspace; khi chọn channel thì cùng dùng `group` scope.
+
 ## 7. Routing architecture
 
 ```mermaid

@@ -14,11 +14,11 @@ export const getDeliveryBrief = (token, workspaceId, agentWorkspaceId, payload) 
     method: 'POST', token, body: payload,
   })
 
-export const listDeliveryThreads = (token, workspaceId, agentWorkspaceId) =>
-  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/threads`, { token })
+export const listDeliveryThreads = (token, workspaceId, agentWorkspaceId, conversationId = '') =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/threads${conversationId ? `?selected_conversation_id=${encodeURIComponent(conversationId)}` : ''}`, { token })
 
-export const getDeliveryThreadMessages = (token, workspaceId, agentWorkspaceId, threadId) =>
-  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/threads/${threadId}/messages`, { token })
+export const getDeliveryThreadMessages = (token, workspaceId, agentWorkspaceId, threadId, conversationId = '') =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/threads/${threadId}/messages${conversationId ? `?selected_conversation_id=${encodeURIComponent(conversationId)}` : ''}`, { token })
 
 export const getDeliveryCapabilities = (token, workspaceId, agentWorkspaceId) =>
   apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/capabilities`, { token })

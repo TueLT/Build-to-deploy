@@ -3,12 +3,21 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.dependencies import get_current_user
-from src.db.models import Conversation, ConversationParticipant, Message, User, WorkspaceMembership
+from src.db.models import (
+    AgentWorkspace,
+    AgentWorkspaceMembership,
+    Conversation,
+    ConversationParticipant,
+    Message,
+    User,
+    WorkspaceMembership,
+)
 from src.db.session import get_db
 from src.models.auth_schemas import UserPublic
 from src.models.chat_schemas import (
     AIPermissionOut,
     AIPermissionUpdateRequest,
+    ChannelCreateRequest,
     ConversationCreateRequest,
     ConversationListResponse,
     ConversationSummary,
@@ -17,12 +26,69 @@ from src.models.chat_schemas import (
     MessageOut,
     SendMessageRequest,
 )
-from src.services import chat_service, event_extraction_service, proactive_service
+from src.services import agent_workspace_service, chat_service, event_extraction_service, proactive_service
+from src.services.audit_service import record_audit_event
 from src.services.authorization_service import require_conversation_access
 from src.services.workspace_service import resolve_workspace_for_user
 from src.websocket.manager import manager
 
 router = APIRouter()
+
+
+async def _require_channel_lead(
+    db: AsyncSession,
+    current_user: User,
+    workspace_id: str,
+    agent_workspace_id: str,
+) -> AgentWorkspace:
+    agent_workspace = (
+        await db.execute(
+            select(AgentWorkspace).where(
+                AgentWorkspace.id == agent_workspace_id,
+                AgentWorkspace.organization_workspace_id == workspace_id,
+                AgentWorkspace.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+    if agent_workspace is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace not found")
+    lead_membership = (
+        await db.execute(
+            select(AgentWorkspaceMembership.id).where(
+                AgentWorkspaceMembership.agent_workspace_id == agent_workspace_id,
+                AgentWorkspaceMembership.user_id == current_user.id,
+                AgentWorkspaceMembership.business_role == "lead",
+                AgentWorkspaceMembership.status == "active",
+            )
+        )
+    ).scalar_one_or_none()
+    if lead_membership is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the workspace Lead can create channels",
+        )
+    return agent_workspace
+
+
+async def _channel_member_rows(
+    db: AsyncSession,
+    agent_workspace_id: str,
+) -> list[tuple[AgentWorkspaceMembership, User]]:
+    return list(
+        (
+            await db.execute(
+                select(AgentWorkspaceMembership, User)
+                .join(User, User.id == AgentWorkspaceMembership.user_id)
+                .where(
+                    AgentWorkspaceMembership.agent_workspace_id == agent_workspace_id,
+                    AgentWorkspaceMembership.status == "active",
+                    AgentWorkspaceMembership.business_role.in_(("lead", "member")),
+                    User.is_active.is_(True),
+                )
+                .order_by(AgentWorkspaceMembership.business_role.desc(), User.display_name.asc())
+            )
+        ).all()
+    )
 
 
 @router.get("/users", response_model=list[UserPublic])
@@ -67,6 +133,104 @@ async def list_users(
         )
         for u in users
     ]
+
+
+@router.get(
+    "/workspaces/{workspace_id}/agent-workspaces/{agent_workspace_id}/channel-members",
+    response_model=list[UserPublic],
+)
+async def list_channel_members(
+    workspace_id: str,
+    agent_workspace_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[UserPublic]:
+    await _require_channel_lead(db, current_user, workspace_id, agent_workspace_id)
+    rows = await _channel_member_rows(db, agent_workspace_id)
+    return [
+        UserPublic(
+            id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            role=user.role,
+            platform_role=user.platform_role,
+        )
+        for _, user in rows
+        if user.id != current_user.id
+    ]
+
+
+@router.post(
+    "/workspaces/{workspace_id}/agent-workspaces/{agent_workspace_id}/channels",
+    response_model=ConversationSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workspace_channel(
+    workspace_id: str,
+    agent_workspace_id: str,
+    request: ChannelCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ConversationSummary:
+    agent_workspace = await _require_channel_lead(db, current_user, workspace_id, agent_workspace_id)
+    normalized_name = request.name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Channel name is required")
+
+    member_rows = await _channel_member_rows(db, agent_workspace_id)
+    allowed_member_ids = {user.id for _, user in member_rows}
+    requested_member_ids = {current_user.id, *request.participant_ids}
+    if not requested_member_ids.issubset(allowed_member_ids):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Channel participants must be active members of this workspace",
+        )
+
+    classification_by_profile = {
+        "product_delivery": "delivery",
+        "quality_assurance": "quality",
+    }
+    classification = classification_by_profile.get(agent_workspace.agent_profile)
+    if classification is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="This workspace does not support chat channels",
+        )
+
+    conversation = await chat_service.create_group_conversation(
+        db,
+        current_user.id,
+        request.participant_ids,
+        normalized_name,
+        workspace_id,
+        commit=False,
+    )
+    mapping = await agent_workspace_service.link_agent_workspace_conversation(
+        db,
+        organization_workspace_id=workspace_id,
+        agent_workspace_id=agent_workspace_id,
+        conversation_id=conversation.id,
+        classification=classification,
+        linked_by_user_id=current_user.id,
+        channel_kind=request.channel_kind,
+    )
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="workspace_channel.created",
+        target_type="conversation",
+        target_id=conversation.id,
+        workspace_id=workspace_id,
+        metadata={
+            "agent_workspace_id": agent_workspace_id,
+            "mapping_id": mapping.id,
+            "participant_count": len(requested_member_ids),
+            "channel_kind": request.channel_kind,
+        },
+    )
+    await db.commit()
+    await db.refresh(conversation)
+    return await chat_service.build_conversation_summary(db, conversation, current_user.id)
 
 
 @router.get("/conversations", response_model=ConversationListResponse)

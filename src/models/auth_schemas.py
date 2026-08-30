@@ -14,6 +14,19 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class DemoLoginRequest(BaseModel):
+    account_key: Literal["delivery_lead", "apollo_member", "release_member", "portal_member"]
+
+
+class DemoAccountPublic(BaseModel):
+    account_key: str
+    display_name: str
+    email: EmailStr
+    business_role: Literal["lead", "member"]
+    channel_name: str | None = None
+    job_title: str = ""
+
+
 class GoogleAuthRequest(BaseModel):
     id_token: str
 

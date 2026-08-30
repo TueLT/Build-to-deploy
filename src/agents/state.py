@@ -26,6 +26,8 @@ class AgentState(TypedDict, total=False):
     # without allowing it to reach the planner or any tool.
     guardrail_blocked: bool
     guardrail_requires_clarification: bool
+    personal_intent: str
+    routing_strategy: str
     user_id: str | None  # id of the user driving this run, for tools that push WS updates to them
     workspace_id: str | None  # active workspace for tenant-scoped tools
     trace_id: str | None

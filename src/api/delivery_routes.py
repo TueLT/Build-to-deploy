@@ -549,6 +549,7 @@ def _delivery_thread_scope_hash(*, consent_scope_hash: str | None, scope) -> str
 async def list_delivery_threads(
     workspace_id: str,
     agent_workspace_id: str,
+    selected_conversation_id: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceAgentThreadSummaryOut]:
@@ -560,7 +561,7 @@ async def list_delivery_threads(
         workspace_id=workspace_id,
         agent_workspace_id=agent_workspace_id,
         message="Mở lịch sử trò chuyện Product Delivery.",
-        selected_conversation_id=None,
+        selected_conversation_id=selected_conversation_id,
     )
     scope_hash = _delivery_thread_scope_hash(
         consent_scope_hash=prepared.context.authorization.consent_scope_hash,
@@ -585,6 +586,7 @@ async def read_delivery_thread_messages(
     workspace_id: str,
     agent_workspace_id: str,
     thread_id: str,
+    selected_conversation_id: str | None = Query(default=None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceAgentMessageOut]:
@@ -596,7 +598,7 @@ async def read_delivery_thread_messages(
         workspace_id=workspace_id,
         agent_workspace_id=agent_workspace_id,
         message="Mở lại cuộc trò chuyện Product Delivery.",
-        selected_conversation_id=None,
+        selected_conversation_id=selected_conversation_id,
     )
     scope_hash = _delivery_thread_scope_hash(
         consent_scope_hash=prepared.context.authorization.consent_scope_hash,
@@ -1032,7 +1034,7 @@ async def get_delivery_capabilities(
     return DeliveryCapabilitiesOut(
         current_user_business_role="lead" if is_lead else "member",
         view_scope="workspace" if is_lead else "member",
-        can_select_group=is_lead,
+        can_select_group=bool(scope.effective_group_ids),
         can_manage_control_plane=is_lead,
         can_manage_release_handoffs=is_lead,
         can_update_own_tasks=True,

@@ -497,8 +497,11 @@ async def resolve_delivery_read_scope(
     ``requested_conversation_id`` is untrusted selector input, never a direct
     query predicate.  The resource revalidator proves that it remains inside
     the current Delivery allowlist before a single-group capability is issued.
-    Members intentionally receive only ``member`` scope; they cannot turn a
-    selected group into an overview of group data.
+    A member's unselected view remains limited to their own work. When a
+    member explicitly selects one authorized channel, the channel itself is
+    the read boundary and the agent may aggregate all work items visible in
+    that channel. Mutation authorization remains separate and owner/Lead
+    constrained.
 
     Production composition must pass callbacks backed by
     ``enforce_agent_workspace_access`` and ``enforce_agent_resource_access``.
@@ -534,7 +537,16 @@ async def resolve_delivery_read_scope(
 
     if context.actor.business_role == BusinessRole.MEMBER:
         if requested_conversation_id is not None:
-            raise DeliveryScopeError("Members cannot select a Delivery group snapshot")
+            await revalidate_resource(requested_conversation_id)
+            return DeliveryReadScope(
+                context=context,
+                view_scope=DeliveryViewScope.GROUP,
+                effective_group_ids=(requested_conversation_id,),
+                selected_conversation_id=requested_conversation_id,
+                allowed_task_ids=allowed_task_ids,
+                allowed_decision_ids=allowed_decision_ids,
+                allowed_person_ids=allowed_person_ids,
+            )
         return DeliveryReadScope(
             context=context,
             view_scope=DeliveryViewScope.MEMBER,

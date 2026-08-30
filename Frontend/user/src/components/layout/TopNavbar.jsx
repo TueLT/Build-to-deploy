@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { useRemindersQuery } from '../../hooks/usePersonalData'
 import { useAvailableAgentsQuery } from '../../hooks/useWorkspaceData'
 import { useTheme } from '../../context/ThemeContext'
+import { getAgentWorkspaceDisplayName } from '../../utils/workspaceLabels'
 
 const getInitials = name => (name || '?').trim().split(/\s+/).map(word => word[0]).slice(0, 2).join('').toUpperCase()
 
@@ -14,20 +15,29 @@ export default function TopNavbar({ onMenu }) {
   const { resolvedTheme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
   const { items: reminders } = useRemindersQuery(token)
-  const isDeliveryGroupsRoute = pathname === '/groups' || pathname.startsWith('/groups/')
-  const agentsQuery = useAvailableAgentsQuery(token, isDeliveryGroupsRoute ? workspaceId : null)
   const [helpOpen, setHelpOpen] = useState(false)
   const navigate = useNavigate()
   const organizationWorkspaces = workspaces.filter(workspace => workspace.type === 'organization')
-  const organizationWorkspaceId = organizationWorkspaces.some(workspace => workspace.id === workspaceId) ? workspaceId : ''
+  const selectedOrganization = organizationWorkspaces.find(workspace => workspace.id === workspaceId)
+    || organizationWorkspaces[0]
+  const organizationWorkspaceId = selectedOrganization?.id || ''
+  const isWorkspaceRoute = ['/chat', '/channels', '/relationships', '/workspaces', '/workspace-agent', '/delivery-agent']
+    .some(path => pathname === path || pathname.startsWith(`${path}/`))
+  const isProductDeliveryRoute = ['/workspaces', '/channels', '/workspace-agent', '/delivery-agent']
+    .some(path => pathname === path || pathname.startsWith(`${path}/`))
+  const agentsQuery = useAvailableAgentsQuery(token, isProductDeliveryRoute ? organizationWorkspaceId : null)
   const deliveryWorkspace = (agentsQuery.data || []).find(agent => agent.agent_profile === 'product_delivery')
-  const workspaceLabel = workspace => isDeliveryGroupsRoute && workspace.id === workspaceId
-    ? deliveryWorkspace?.name || 'Product Delivery Workspace'
+  const workspaceLabel = workspace => isProductDeliveryRoute && workspace.id === organizationWorkspaceId
+    ? getAgentWorkspaceDisplayName(deliveryWorkspace) || 'Product Delivery'
     : workspace.name
   const activeReminderCount = reminders.filter(reminder => reminder.status === 'scheduled').length
-  const isWorkspaceRoute = ['/chat', '/relationships', '/workspaces', '/groups', '/workspace-agent', '/delivery-agent']
-    .some(path => pathname === path || pathname.startsWith(`${path}/`))
   const onLogout = () => { logout(); navigate('/login', { replace: true }) }
+
+  useEffect(() => {
+    if (isWorkspaceRoute && organizationWorkspaceId && workspaceId !== organizationWorkspaceId) {
+      selectWorkspace(organizationWorkspaceId)
+    }
+  }, [isWorkspaceRoute, organizationWorkspaceId, selectWorkspace, workspaceId])
 
   return (
     <header className="top-navbar">

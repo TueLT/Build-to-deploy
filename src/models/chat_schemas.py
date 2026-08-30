@@ -13,6 +13,12 @@ class ConversationCreateRequest(BaseModel):
     workspace_id: str | None = None
 
 
+class ChannelCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    participant_ids: list[str] = Field(..., min_length=1)
+    channel_kind: Literal["announcement", "team", "project", "release"] = "project"
+
+
 class MessageOut(BaseModel):
     id: str
     conversation_id: str
@@ -34,6 +40,10 @@ class ConversationSummary(BaseModel):
     updated_at: str
     my_resource_role: Literal["manager", "participant", "viewer"] | None = None
     ai_enabled: bool = False
+    scope: Literal["personal", "channel"] = "personal"
+    agent_workspace_id: str | None = None
+    channel_classification: Literal["delivery", "quality"] | None = None
+    channel_kind: Literal["announcement", "team", "project", "release"] | None = None
 
 
 class ConversationListResponse(BaseModel):

@@ -11,6 +11,11 @@ export const registerAdmin = ({ email, password, display_name, bootstrap_key }) 
 
 export const login = ({ email, password }) => apiFetch('/auth/login', { method: 'POST', body: { email, password } })
 
+export const listDemoAccounts = () => apiFetch('/auth/demo-accounts')
+
+export const demoLogin = (account_key) =>
+  apiFetch('/auth/demo-login', { method: 'POST', body: { account_key } })
+
 export const adminLogin = ({ email, password }) =>
   apiFetch('/auth/admin/login', { method: 'POST', body: { email, password } })
 

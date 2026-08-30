@@ -729,12 +729,17 @@ class AgentWorkspaceConversation(Base):
             "classification IN ('delivery', 'quality')",
             name="ck_agent_workspace_conversation_classification",
         ),
+        CheckConstraint(
+            "channel_kind IN ('announcement', 'team', 'project', 'release')",
+            name="ck_agent_workspace_conversation_channel_kind",
+        ),
     )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
     agent_workspace_id: Mapped[str] = mapped_column(ForeignKey("agent_workspaces.id"), index=True)
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"), index=True)
     classification: Mapped[str]
+    channel_kind: Mapped[str] = mapped_column(default="project")
     linked_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 

@@ -9,7 +9,7 @@ const routeModules = {
   '/profile': () => import('../pages/ProfilePage'),
   '/relationships': () => import('../pages/RelationshipsPage'),
   '/workspaces': () => import('../pages/WorkspaceManagementPage'),
-  '/groups': () => import('../pages/WorkspaceGroupsPage'),
+  '/channels': () => import('../pages/WorkspaceGroupsPage'),
   '/workspace-agent': () => import('../pages/WorkspaceAgentPage'),
 }
 
@@ -17,5 +17,5 @@ export const importRoute = path => routeModules[path]
 export const preloadRoute = path => routeModules[path]?.()
 export const preloadPrimaryRoutes = () => Promise.allSettled([
   '/assistant', '/chat', '/tasks', '/tasks/inbox', '/calendar', '/reminders', '/memory',
-  '/profile', '/relationships', '/groups', '/workspaces', '/workspace-agent',
+  '/profile', '/relationships', '/channels', '/workspaces', '/workspace-agent',
 ].map(preloadRoute))

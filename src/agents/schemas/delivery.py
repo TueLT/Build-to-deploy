@@ -125,6 +125,8 @@ class DeliveryReadScope(FrozenContract):
             if self.effective_group_ids != self.context.authorization.allowed_resource_ids:
                 raise ValueError("A workspace overview must use the full resolved group allowlist")
         elif self.view_scope == DeliveryViewScope.GROUP:
+            # Both Lead and Member may read a single explicitly authorized
+            # channel. Write capabilities are enforced independently.
             if len(self.effective_group_ids) != 1 or self.selected_conversation_id is None:
                 raise ValueError("A group snapshot requires exactly one selected authorized group")
             if self.effective_group_ids != (self.selected_conversation_id,):

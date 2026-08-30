@@ -361,7 +361,13 @@ async def link_agent_workspace_conversation(
     conversation_id: str,
     classification: str,
     linked_by_user_id: str,
+    channel_kind: str = "project",
 ) -> AgentWorkspaceConversation:
+    if channel_kind not in {"announcement", "team", "project", "release"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid workspace channel kind",
+        )
     agent_workspace = await require_agent_workspace(db, organization_workspace_id, agent_workspace_id)
     expected_classification = PROFILE_CLASSIFICATION.get(AgentProfile(agent_workspace.agent_profile))
     if expected_classification is None:
@@ -402,6 +408,7 @@ async def link_agent_workspace_conversation(
         agent_workspace_id=agent_workspace_id,
         conversation_id=conversation_id,
         classification=classification,
+        channel_kind=channel_kind,
         linked_by_user_id=linked_by_user_id,
     )
     db.add(mapping)
