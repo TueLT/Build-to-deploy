@@ -28,7 +28,14 @@ def test_default_render_blueprint_uses_only_free_demo_resources():
     assert services[0]["plan"] == "free"
     assert "preDeployCommand" not in services[0]
     assert "maxShutdownDelaySeconds" not in services[0]
-    assert services[0]["dockerCommand"].startswith("alembic upgrade head && exec uvicorn")
+    assert "dockerCommand" not in services[0]
+    start_script = (ROOT / "scripts" / "start_web.sh").read_text(encoding="utf-8")
+    assert "alembic upgrade head" in start_script
+    assert 'exec uvicorn src.main:app' in start_script
+    assert '--port "${PORT:-8000}"' in start_script
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    assert 'CMD ["/bin/sh", "scripts/start_web.sh"]' in dockerfile
+    assert "WORKSPACE_AGENT_RUNTIME_WORKSPACE_ID" in dockerfile
     assert environment["WORKSPACE_AGENT_RUNTIME_MODE"] == "embedded"
     assert environment["ALLOW_EMBEDDED_WORKSPACE_AGENTS_IN_PRODUCTION"] == "true"
     assert environment["WORKSPACE_AGENT_MAX_CONCURRENCY"] == "1"
@@ -41,4 +48,5 @@ def test_paid_render_blueprint_preserves_isolated_agent_topology():
 
     assert blueprint["databases"][0]["plan"] != "free"
     assert [service["type"] for service in services] == ["web", "pserv", "pserv"]
+    assert "dockerCommand" not in services[0]
     assert environment["WORKSPACE_AGENT_RUNTIME_MODE"] == "remote"

@@ -113,9 +113,8 @@ services:
     plan: free
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    # Free services do not use a pre-deploy command. Running migrations before
-    # Uvicorn keeps a fresh or restored database at the expected schema head.
-    dockerCommand: alembic upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'
+    # Free services do not support a pre-deploy command. The Dockerfile's
+    # scripts/start_web.sh runs migrations and then starts Uvicorn on $PORT.
     healthCheckPath: /health
     autoDeployTrigger: checksPass
     envVars:

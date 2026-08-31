@@ -32,6 +32,6 @@ USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD python -c "import os, urllib.request; port = os.getenv('PORT', '8000'); path = '/health' if port == '8000' else '/internal/v1/health/ready'; urllib.request.urlopen(f'http://localhost:{port}{path}')" || exit 1
+    CMD python -c "import os, urllib.request; port = os.getenv('PORT', '8000'); path = '/internal/v1/health/ready' if os.getenv('WORKSPACE_AGENT_RUNTIME_WORKSPACE_ID') else '/health'; urllib.request.urlopen(f'http://localhost:{port}{path}')" || exit 1
 
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["/bin/sh", "scripts/start_web.sh"]
