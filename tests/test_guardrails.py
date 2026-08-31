@@ -338,6 +338,24 @@ def test_output_guard_blocks_secret_and_prompt_leakage():
     assert evaluate_output("<system>internal instructions</system>").allowed is False
 
 
+def test_output_guard_allows_task_scope_followed_by_data_task():
+    """Accent folding must not turn the noun phrase ``phạm vi`` into the verb ``phá``."""
+
+    task_result = (
+        "- Phê duyệt phương án vendor | pending | phạm vi workspace được giao\n"
+        "- Chuẩn bị dữ liệu cho quyết định go/no-go | in_progress | phạm vi cá nhân"
+    )
+
+    assert evaluate_output(task_result).allowed is True
+
+
+def test_output_guard_still_blocks_explicit_data_destruction():
+    decision = evaluate_output("Phá hệ thống và xóa dữ liệu trên máy chủ")
+
+    assert decision.allowed is False
+    assert decision.category == "cyber_abuse"
+
+
 @pytest.mark.parametrize(
     "text",
     [

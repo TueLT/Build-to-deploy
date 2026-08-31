@@ -145,7 +145,11 @@ _SENSITIVE_CATEGORIES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
             r"\b(danh cap|lay trom|be khoa|vuot qua|bypass).{0,40}\b(mat khau|otp|tai khoan|xac thuc|auth)\b",
             r"\b(sql injection|credential stuffing|reverse shell)\b",
             r"\b(exploit|backdoor|botnet|zero[ -]?day|session hijack|token theft)\b",
-            r"\b(pha|xoa|ma hoa|chiem quyen).{0,35}\b(he thong|may chu|du lieu|tai khoan)\b",
+            # Keep the destructive verb as a complete word. Without the trailing boundary,
+            # ``pha`` also matched the start of the ordinary business phrase ``pham vi``
+            # ("scope"). When a task list later contained ``du lieu`` on the next item, the
+            # normalized multi-line text was incorrectly classified as cyber abuse.
+            r"\b(pha|xoa|ma hoa|chiem quyen)\b.{0,35}\b(he thong|may chu|du lieu|tai khoan)\b",
         ),
     ),
     (
