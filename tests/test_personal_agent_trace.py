@@ -43,6 +43,18 @@ def test_process_summary_describes_direct_answer_without_claiming_a_tool_call():
     assert summary == "Đã nhận diện đây là trao đổi ngắn và trả lời trực tiếp."
 
 
+def test_process_summary_describes_deterministic_capability_answer():
+    summary = build_process_summary(
+        [
+            HumanMessage(content="Bạn có thể giúp tôi những việc gì?"),
+            AIMessage(content="Mình là Orbit."),
+        ],
+        {"query_route": {"intent": "capability_help"}},
+    )
+
+    assert summary == "Đã nhận diện câu hỏi về khả năng của Orbit và trả lời trực tiếp."
+
+
 def test_clarification_trace_reports_planning_instead_of_fallback_answer():
     metadata = {
         "query_route": {"intent": "calendar", "routing_strategy": "deterministic"},

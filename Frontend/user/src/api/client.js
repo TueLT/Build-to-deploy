@@ -1,7 +1,13 @@
-// Both standalone frontends use the same API, but each app may keep its own
-// conventional VITE_API_URL/VITE_WS_URL environment file.
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1'
-export const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || import.meta.env.VITE_WS_URL || 'ws://127.0.0.1:8000/api/v1/ws'
+function configuredUrl(name, legacyName, developmentFallback) {
+  const value = import.meta.env[name] || (legacyName ? import.meta.env[legacyName] : '')
+  if (value) return value
+  if (import.meta.env.DEV) return developmentFallback
+  throw new Error(`${name} was not provided at build time`)
+}
+
+// Local fallbacks are development-only. Production builds validate these variables in vite.config.js.
+export const API_BASE_URL = configuredUrl('VITE_API_BASE_URL', 'VITE_API_URL', 'http://127.0.0.1:8000/api/v1')
+export const WS_BASE_URL = configuredUrl('VITE_WS_BASE_URL', 'VITE_WS_URL', 'ws://127.0.0.1:8000/api/v1/ws')
 
 export class ApiError extends Error {
   constructor(status, detail) {

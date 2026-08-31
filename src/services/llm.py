@@ -83,16 +83,29 @@ def _build_llm(config: LLMConfiguration) -> BaseChatModel:
     )
 
 
-def get_llm() -> BaseChatModel:
-    """Return the shared Personal Agent model (backward-compatible entrypoint)."""
+def get_llm(
+    *,
+    temperature: float | None = None,
+    max_output_tokens: int | None = None,
+) -> BaseChatModel:
+    """Return the shared Personal Agent model with optional per-call overrides.
+
+    Routing/classification should be deterministic even when conversational
+    generation uses a non-zero temperature.  Keeping the overrides here avoids
+    callers passing unsupported keyword arguments to the factory.
+    """
 
     settings = get_settings()
     return _build_llm(
         LLMConfiguration(
             provider=settings.llm_provider,
             model=settings.model_name,
-            temperature=settings.llm_temperature,
-            max_output_tokens=settings.llm_max_output_tokens,
+            temperature=settings.llm_temperature if temperature is None else temperature,
+            max_output_tokens=(
+                settings.llm_max_output_tokens
+                if max_output_tokens is None
+                else max_output_tokens
+            ),
             reasoning_effort=settings.openrouter_reasoning_effort,
         )
     )

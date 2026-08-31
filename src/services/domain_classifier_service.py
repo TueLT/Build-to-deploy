@@ -7,6 +7,7 @@ out-of-scope requests, and requests that need one concrete clarification questio
 
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -14,7 +15,9 @@ from pydantic import BaseModel, Field
 
 from src.config import get_settings
 from src.services import guardrail_service, usage_service
-from src.services.llm import get_llm
+from src.services.llm import classify_llm_failure, get_llm
+
+logger = logging.getLogger(__name__)
 
 
 class DomainAssessment(BaseModel):
@@ -102,7 +105,12 @@ async def classify_domain_request(
             usage_metadata=getattr(raw, "usage_metadata", None),
             user_id=user_id,
         )
-    except Exception:  # provider/schema failures must not turn an unknown request into permission
+    except Exception as exc:  # provider/schema failures must not turn an unknown request into permission
+        logger.warning(
+            "Domain classifier failed; requesting clarification (error_code=%s, error_type=%s)",
+            classify_llm_failure(exc),
+            type(exc).__name__,
+        )
         return DomainAssessment(
             decision="clarify", intent="unclear", confidence=0,
             reason="Không xác định chắc chắn được mục đích yêu cầu.",

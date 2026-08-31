@@ -5,6 +5,7 @@ from __future__ import annotations
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 
 _INTENT_LABELS = {
+    "capability_help": "câu hỏi về khả năng của Orbit",
     "memory_write": "yêu cầu ghi nhớ",
     "memory_search": "câu hỏi về Personal Memory",
     "task_management": "câu hỏi về công việc và deadline",
@@ -98,6 +99,8 @@ def build_process_summary(messages: list[AnyMessage], metadata: dict | None = No
         suffix = "" if len(labels) <= 3 else " cùng các nguồn liên quan"
         return f"Đã nhận diện {intent_label}, kiểm tra {sources}{suffix} rồi tổng hợp câu trả lời."
 
+    if intent == "capability_help":
+        return "Đã nhận diện câu hỏi về khả năng của Orbit và trả lời trực tiếp."
     if intent == "small_talk":
         return "Đã nhận diện đây là trao đổi ngắn và trả lời trực tiếp."
     return f"Đã nhận diện {intent_label} và trả lời trực tiếp, không cần gọi thêm công cụ."

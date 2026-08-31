@@ -104,9 +104,10 @@ services:
       - .env
     environment:
       WORKSPACE_AGENT_RUNTIME_SECRET: ${QUALITY_ASSURANCE_RUNTIME_SECRET:-local-quality-assurance-runtime-secret-32-bytes}
-      WORKSPACE_AGENT_RUNTIME_WORKSPACE_ID: ${QUALITY_ASSURANCE_AGENT_WORKSPACE_ID:-quality-assurance-demo}
+      WORKSPACE_AGENT_RUNTIME_WORKSPACE_ID: ${QUALITY_ASSURANCE_AGENT_WORKSPACE_ID:-311fe424edfa41989a495316b6925c84}
       WORKSPACE_AGENT_RUNTIME_PROFILE: quality_assurance
       WORKSPACE_AGENT_RUNTIME_VERSION: quality-assurance-v2
+      WORKSPACE_AGENT_PROGRESS_CALLBACK_URL: http://backend:8000/internal/v1/workspace-agent-progress
       WORKSPACE_AGENT_VERIFIER_ENABLED: ${WORKSPACE_AGENT_VERIFIER_ENABLED:-true}
     restart: unless-stopped
     mem_limit: 512m

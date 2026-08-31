@@ -32,6 +32,7 @@ from src.services.personal_agent_trace_service import (
     message_process_steps,
     message_process_summary,
 )
+from src.services.personal_query_router_service import is_capability_request
 from src.services.workspace_service import resolve_personal_workspace_for_user
 
 router = APIRouter()
@@ -135,7 +136,12 @@ async def chat(
     # đã chạm daily_token_budget. Chỉ áp dụng cho lượt chat MỚI - resume_chat() bên dưới cố tình
     # không chặn, vì nó hoàn tất một hành động con người đã bấm xác nhận rồi (human-in-the-loop),
     # chặn ở đó sẽ để interrupt() treo lơ lửng không cách nào hoàn tất hay huỷ.
-    if await usage_service.is_over_budget(current_user.id):
+    # Capability help is generated deterministically and consumes no model tokens, so it must
+    # remain available when the account has reached its LLM allowance. This also gives users a
+    # useful explanation of what Orbit can do instead of an unrelated budget error.
+    if await usage_service.is_over_budget(current_user.id) and not is_capability_request(
+        request.message
+    ):
         return ChatResponse(
             response=(
                 "Đã vượt hạn mức token/chi phí AI hôm nay. Vui lòng thử lại vào ngày mai hoặc "

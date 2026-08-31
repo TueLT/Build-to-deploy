@@ -98,7 +98,7 @@ cp .env.example .env
 #   - Groq: LLM_PROVIDER=groq, GROQ_API_KEY (lấy tại https://console.groq.com/keys), MODEL_NAME=openai/gpt-oss-20b.
 #   - OpenAI: LLM_PROVIDER=openai, OPENAI_API_KEY (lấy tại https://platform.openai.com/api-keys), MODEL_NAME=gpt-4o-mini.
 # Sửa DATABASE_URL trỏ vào database Postgres đã tạo ở bước 1 (postgresql://user:pass@host:5432/dbname) — bắt buộc, không có giá trị mặc định.
-# Điền ADMIN_BOOTSTRAP_KEY để tạo admin đầu tiên tại http://localhost:5174/register.
+# Điền INITIAL_ADMIN_EMAIL; tài khoản đầu tiên đăng ký đúng email đó sẽ trở thành platform admin.
 # Đăng ký ở User frontend luôn tạo tài khoản thường; không còn tự cấp role admin.
 # Muốn bật nút "Đăng nhập bằng Google": tạo 1 OAuth Client ID loại "Web application" tại
 #   https://console.cloud.google.com/apis/credentials, Authorized JavaScript origins:

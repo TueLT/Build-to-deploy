@@ -24,6 +24,31 @@ async def test_agent_basic_flow_no_tool_call(monkeypatch, fake_llm_factory):
 
 
 @pytest.mark.asyncio
+async def test_capability_help_is_answered_without_calling_llm(monkeypatch):
+    def llm_must_not_run(*args, **kwargs):
+        raise AssertionError("capability help must not call an LLM")
+
+    monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", llm_must_not_run)
+    monkeypatch.setattr(
+        "src.agents.nodes.guardrail_node.domain_classifier_service.classify_domain_request",
+        llm_must_not_run,
+    )
+
+    result = await agent_graph.agent.ainvoke(
+        {"messages": [HumanMessage(content="Bạn có thể giúp tôi những việc gì?")]},
+        _config(),
+    )
+
+    assert result["guardrail_blocked"] is False
+    assert result["personal_intent"] == "capability_help"
+    assert result["routing_strategy"] == "deterministic"
+    assert result["metadata"]["capability_response"]["source"] == "deterministic"
+    assert "task/deadline" in result["messages"][-1].content
+    assert "Google Calendar" in result["messages"][-1].content
+    assert "xác nhận" in result["messages"][-1].content
+
+
+@pytest.mark.asyncio
 async def test_typed_confirmation_continues_calendar_intent_from_short_term_history(
     monkeypatch,
     fake_llm_factory,

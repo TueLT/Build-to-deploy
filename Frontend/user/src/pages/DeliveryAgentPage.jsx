@@ -735,6 +735,7 @@ export default function DeliveryAgentPage({ assignedAgent }) {
   const [error, setError] = useState('')
   const [liveProgress, setLiveProgress] = useState(null)
   const [showLeadTools, setShowLeadTools] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const messagesContainerRef = useRef(null)
   const shouldStickToBottomRef = useRef(true)
   const activeRequestRef = useRef(null)
@@ -759,6 +760,15 @@ export default function DeliveryAgentPage({ assignedAgent }) {
     else groupsByDate.push({ label, threads: [thread] })
     return groupsByDate
   }, [])
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return undefined
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setMobileSidebarOpen(false)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [mobileSidebarOpen])
 
   useEffect(() => {
     const deliveryAgents = assignedAgent?.agent_profile === 'product_delivery' ? [assignedAgent] : []
@@ -952,10 +962,12 @@ export default function DeliveryAgentPage({ assignedAgent }) {
     if (threadStorageKey) {
       try { sessionStorage.removeItem(threadStorageKey) } catch { /* optional cache */ }
     }
+    setMobileSidebarOpen(false)
   }
 
   const openThread = async nextThreadId => {
     if (!nextThreadId || loading || historyLoading || !company?.id || !agentWorkspaceId) return
+    setMobileSidebarOpen(false)
     setHistoryLoading(true)
     setError('')
     setLiveProgress(null)
@@ -1043,10 +1055,22 @@ export default function DeliveryAgentPage({ assignedAgent }) {
         onCancel={()=>{ if (!deletingThreadId) setDeleteTarget(null) }}
         onConfirm={()=>{ if (deleteTarget && !deletingThreadId) removeThread(deleteTarget) }}
       />
-      <aside className="workspace-agent-sidebar">
+      <button
+        type="button"
+        className={`workspace-agent-sidebar-backdrop ${mobileSidebarOpen ? 'show' : ''}`}
+        aria-label="Đóng lịch sử trò chuyện"
+        tabIndex={mobileSidebarOpen ? 0 : -1}
+        onClick={() => setMobileSidebarOpen(false)}
+      />
+      <aside
+        className={`workspace-agent-sidebar ${mobileSidebarOpen ? 'mobile-open' : ''}`}
+        id="delivery-agent-sidebar"
+        aria-label="Lịch sử Workspace Agent"
+      >
         <div className="workspace-agent-identity">
           <span><i className="bi bi-robot" /></span>
           <div><small>Agentic AI · LLM enabled</small><strong>Product Delivery</strong><p>Workspace Agent</p></div>
+          <button type="button" className="workspace-agent-sidebar-close" aria-label="Đóng lịch sử trò chuyện" onClick={() => setMobileSidebarOpen(false)}><i className="bi bi-x-lg" /></button>
         </div>
 
         <section className="workspace-agent-history">
@@ -1095,7 +1119,17 @@ export default function DeliveryAgentPage({ assignedAgent }) {
 
       <main className="workspace-agent-chat">
         <header>
-          <div><h1>{getAgentWorkspaceDisplayName(activeAgent) || 'Product Delivery'}</h1><p><span /> Trực tuyến · Phạm vi: {selectedGroupName || (canSelectGroup ? defaultScopeName : 'Công việc được cấp quyền')}</p></div>
+          <div className="workspace-agent-heading">
+            <button
+              type="button"
+              className="workspace-agent-mobile-sidebar-toggle"
+              aria-label="Mở lịch sử trò chuyện"
+              aria-controls="delivery-agent-sidebar"
+              aria-expanded={mobileSidebarOpen}
+              onClick={() => setMobileSidebarOpen(true)}
+            ><i className="bi bi-layout-sidebar-inset" /></button>
+            <div><h1>{getAgentWorkspaceDisplayName(activeAgent) || 'Product Delivery'}</h1><p><span /> Trực tuyến · Phạm vi: {selectedGroupName || (canSelectGroup ? defaultScopeName : 'Công việc được cấp quyền')}</p></div>
+          </div>
           <div className="workspace-agent-header-actions">
             {canSelectGroup && <label className="workspace-agent-scope-selector">
               <span>Phạm vi task</span>

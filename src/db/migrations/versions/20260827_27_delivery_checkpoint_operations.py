@@ -48,18 +48,29 @@ def upgrade() -> None:
                 ["quality_reviewed_by_user_id"],
             )
         if bind.dialect.name != "sqlite":
-            op.create_foreign_key(
-                "fk_delivery_milestone_quality_reviewer",
-                "delivery_milestones",
-                "users",
-                ["quality_reviewed_by_user_id"],
-                ["id"],
-            )
-            op.create_check_constraint(
-                "ck_delivery_milestone_quality_review",
-                "delivery_milestones",
-                "quality_review_status IN ('pending', 'accepted', 'rejected')",
-            )
+            foreign_key_columns = {
+                tuple(foreign_key.get("constrained_columns") or ())
+                for foreign_key in inspector.get_foreign_keys("delivery_milestones")
+            }
+            if ("quality_reviewed_by_user_id",) not in foreign_key_columns:
+                op.create_foreign_key(
+                    "fk_delivery_milestone_quality_reviewer",
+                    "delivery_milestones",
+                    "users",
+                    ["quality_reviewed_by_user_id"],
+                    ["id"],
+                )
+            check_constraint_names = {
+                constraint["name"]
+                for constraint in inspector.get_check_constraints("delivery_milestones")
+                if constraint.get("name")
+            }
+            if "ck_delivery_milestone_quality_review" not in check_constraint_names:
+                op.create_check_constraint(
+                    "ck_delivery_milestone_quality_review",
+                    "delivery_milestones",
+                    "quality_review_status IN ('pending', 'accepted', 'rejected')",
+                )
 
     if "delivery_checkpoint_tasks" not in tables:
         op.create_table(

@@ -9,6 +9,7 @@ from src.agents.nodes.personal_clarification_node import personal_clarification_
 from src.agents.nodes.personal_memory_response_node import personal_memory_response_node
 from src.agents.nodes.personal_plan_node import personal_plan_node, tool_budget_exhausted_node
 from src.agents.nodes.personal_query_router_node import (
+    personal_capability_response_node,
     personal_query_router_node,
     save_explicit_personal_memory_node,
 )
@@ -42,7 +43,9 @@ def route_after_input_guardrail(state: AgentState) -> str:
 
 
 def route_after_personal_query_router(state: AgentState) -> str:
-    """Execute explicit Memory writes deterministically; plan every other allowed intent."""
+    """Handle deterministic intents directly; plan the remaining allowed requests."""
+    if state.get("personal_intent") == "capability_help":
+        return "personal_capability_response"
     if state.get("personal_intent") == "memory_write":
         return "save_personal_memory"
     return "personal_plan"
@@ -81,6 +84,7 @@ def build_graph(checkpointer):
 
     graph.add_node("input_guardrail", input_guardrail_node)
     graph.add_node("personal_query_router", personal_query_router_node)
+    graph.add_node("personal_capability_response", personal_capability_response_node)
     graph.add_node("save_personal_memory", save_explicit_personal_memory_node)
     graph.add_node("personal_memory_response", personal_memory_response_node)
     graph.add_node("personal_plan", personal_plan_node)
@@ -103,10 +107,12 @@ def build_graph(checkpointer):
         "personal_query_router",
         route_after_personal_query_router,
         {
+            "personal_capability_response": "personal_capability_response",
             "save_personal_memory": "save_personal_memory",
             "personal_plan": "personal_plan",
         },
     )
+    graph.add_edge("personal_capability_response", "output_guardrail")
     graph.add_conditional_edges(
         "personal_plan",
         route_after_personal_plan,

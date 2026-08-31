@@ -92,8 +92,11 @@ class Settings(BaseSettings):
     executive_agent_enabled: bool = False
     workspace_agent_runtime_mode: Literal["embedded", "remote"] = "embedded"
     workspace_agent_runtime_url: str = "http://workspace-agent-product-delivery:8010"
+    workspace_agent_runtime_hostport: str = ""
     workspace_agent_progress_callback_url: str = ""
+    workspace_agent_progress_callback_hostport: str = ""
     quality_assurance_runtime_url: str = "http://workspace-agent-quality-assurance:8011"
+    quality_assurance_runtime_hostport: str = ""
     workspace_agent_runtime_secret: str = "dev-runtime-secret-change-me"
     quality_assurance_runtime_secret: str = "dev-quality-runtime-secret-change-me"
     workspace_agent_runtime_timeout_seconds: float = Field(default=45.0, ge=1.0, le=120.0)
@@ -164,6 +167,23 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_settings(self) -> "Settings":
+        # Render Blueprint service references expose a private host:port value but
+        # do not support string interpolation. Turn those references into the URLs
+        # expected by the runtime adapters while retaining the explicit URL fields
+        # used by Docker Compose and other hosting platforms.
+        if self.workspace_agent_runtime_hostport.strip():
+            self.workspace_agent_runtime_url = self._private_service_url(
+                self.workspace_agent_runtime_hostport
+            )
+        if self.quality_assurance_runtime_hostport.strip():
+            self.quality_assurance_runtime_url = self._private_service_url(
+                self.quality_assurance_runtime_hostport
+            )
+        if self.workspace_agent_progress_callback_hostport.strip():
+            self.workspace_agent_progress_callback_url = self._private_service_url(
+                self.workspace_agent_progress_callback_hostport,
+                "/internal/v1/workspace-agent-progress",
+            )
         if self.app_env != "production":
             return self
         if len(self.secret_key.encode("utf-8")) < 32 or "change-me" in self.secret_key:
@@ -223,6 +243,13 @@ class Settings(BaseSettings):
         ):
             raise ValueError("Remote Quality runtime requires a strong internal secret")
         return self
+
+    @staticmethod
+    def _private_service_url(hostport: str, path: str = "") -> str:
+        address = hostport.strip().rstrip("/")
+        if not address.startswith(("http://", "https://")):
+            address = f"http://{address}"
+        return f"{address}{path}"
 
 
 @lru_cache

@@ -71,6 +71,26 @@ def test_multi_agent_feature_flags_can_be_enabled_explicitly():
     assert settings.executive_agent_enabled is True
 
 
+def test_render_private_service_references_are_converted_to_runtime_urls():
+    settings = _production_settings(
+        multi_agent_enabled=True,
+        product_delivery_agent_enabled=True,
+        quality_assurance_agent_enabled=True,
+        workspace_agent_runtime_mode="remote",
+        workspace_agent_runtime_secret="p" * 32,
+        quality_assurance_runtime_secret="q" * 32,
+        workspace_agent_runtime_hostport="delivery-agent-ab12:8010",
+        quality_assurance_runtime_hostport="quality-agent-cd34:8011",
+        workspace_agent_progress_callback_hostport="orbit-backend-ef56:8000",
+    )
+
+    assert settings.workspace_agent_runtime_url == "http://delivery-agent-ab12:8010"
+    assert settings.quality_assurance_runtime_url == "http://quality-agent-cd34:8011"
+    assert settings.workspace_agent_progress_callback_url == (
+        "http://orbit-backend-ef56:8000/internal/v1/workspace-agent-progress"
+    )
+
+
 @pytest.mark.parametrize(
     "override",
     [

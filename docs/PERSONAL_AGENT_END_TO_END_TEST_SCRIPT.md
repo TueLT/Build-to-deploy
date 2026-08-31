@@ -124,6 +124,21 @@ Chọn Request window chứa đủ ba tin nhắn, sau đó kiểm tra:
 
 ## 5. Kịch bản kiểm thử thủ công
 
+### PA-00 — Hỏi khả năng của Personal Agent
+
+Mở một Personal Agent chat mới và gửi lần lượt một trong các cách hỏi tự nhiên:
+
+> Bạn có thể giúp tôi những việc gì?
+
+> Bạn giúp được gì?
+
+Kỳ vọng:
+
+- Agent trả lời trực tiếp bằng tiếng Việt với các khả năng về task/deadline, Calendar, reminder, hội thoại được cấp quyền, Personal Memory và cộng tác.
+- Agent nêu rõ hành động thay đổi Calendar/reminder cần xác nhận.
+- Không từ chối, không hỏi lại câu chung chung về “công việc hoặc cuộc trò chuyện nào”, không gọi LLM và không rơi vào fallback.
+- Mở **Xem tiến trình** thấy intent là câu hỏi về khả năng của Orbit.
+
 ### PA-01 — Hỏi lại khi yêu cầu tạo lịch còn mơ hồ
 
 Mở một Personal Agent chat mới và gửi:

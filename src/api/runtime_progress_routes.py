@@ -15,12 +15,22 @@ router = APIRouter()
 async def receive_workspace_agent_progress(request: Request) -> dict[str, bool]:
     settings = get_settings()
     body = await request.body()
-    if not verify_runtime_signature(
-        body,
-        secret=settings.workspace_agent_runtime_secret,
-        timestamp_text=request.headers.get(TIMESTAMP_HEADER),
-        signature=request.headers.get(SIGNATURE_HEADER),
-        max_age_seconds=settings.workspace_agent_runtime_signature_max_age_seconds,
+    timestamp = request.headers.get(TIMESTAMP_HEADER)
+    signature = request.headers.get(SIGNATURE_HEADER)
+    trusted_runtime_secrets = {
+        settings.workspace_agent_runtime_secret,
+        settings.quality_assurance_runtime_secret,
+    }
+    if not any(
+        verify_runtime_signature(
+            body,
+            secret=secret,
+            timestamp_text=timestamp,
+            signature=signature,
+            max_age_seconds=settings.workspace_agent_runtime_signature_max_age_seconds,
+        )
+        for secret in trusted_runtime_secrets
+        if secret
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid runtime signature")
     try:

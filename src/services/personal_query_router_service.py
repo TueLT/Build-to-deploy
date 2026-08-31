@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 PersonalIntent = Literal[
+    "capability_help",
     "memory_write",
     "memory_search",
     "task_management",
@@ -24,7 +25,7 @@ PersonalIntent = Literal[
     "general_work",
     "unclear",
 ]
-RoutingStrategy = Literal["deterministic", "semantic", "deterministic_fallback"]
+RoutingStrategy = Literal["deterministic", "semantic"]
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,21 @@ def _matches(text: str, *patterns: str) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
 
 
+_CAPABILITY_PATTERNS = (
+    r"\b(ban|orbit)\s+(la ai|lam duoc (?:nhung )?gi|co the lam (?:nhung )?gi|"
+    r"giup (?:toi )?(?:duoc )?(?:nhung )?gi|co the giup|co (?:kha nang|chuc nang) gi)\b",
+    r"\b(nhung viec gi|viec gi|nhung gi)\s+(ban|orbit)\s+(lam duoc|co the lam|co the giup)\b",
+    r"\b(kha nang|chuc nang|pham vi ho tro)\s+(cua\s+)?(ban|orbit)\b",
+    r"\b(who are you|what can you do|how can you help|what can orbit do|your capabilities)\b",
+)
+
+
+def is_capability_request(text: str) -> bool:
+    """Recognize natural questions about Orbit itself without an LLM round trip."""
+
+    return _matches(normalize_for_routing(text), *_CAPABILITY_PATTERNS)
+
+
 def classify_personal_query(
     text: str,
     *,
@@ -94,6 +110,8 @@ def classify_personal_query(
     """Return a stable Personal intent without making an authorization decision."""
 
     normalized = normalize_for_routing(text)
+    if is_capability_request(text):
+        return PersonalQueryRoute("capability_help", "deterministic", 1.0, "CAPABILITY_HELP")
     if is_personal_memory_lookup_request(text):
         return PersonalQueryRoute("memory_search", "deterministic", 1.0, "PERSONAL_MEMORY_LOOKUP")
     if is_explicit_personal_memory_request(text):
@@ -131,7 +149,10 @@ def classify_personal_query(
             0.85,
             f"SEMANTIC_{semantic_intent.upper()}",
         )
-    return PersonalQueryRoute("general_work", "deterministic_fallback", 0.60, "ALLOWED_GENERAL_WORK")
+    # This router only runs after the guardrail has allowed the request.  A
+    # broad but valid work request is therefore a governed deterministic route,
+    # not a provider failure or an answer fallback.
+    return PersonalQueryRoute("general_work", "deterministic", 0.75, "GUARDRAIL_ALLOWED_WORK")
 
 
 def extract_explicit_memory_drafts(text: str) -> tuple[PersonalMemoryDraft, ...]:

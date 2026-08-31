@@ -21,7 +21,6 @@ from src.services.guardrail_service import (
     evaluate_workspace_request,
 )
 
-
 SAFE_PERSONAL_REQUESTS = [
     "Liệt kê task hôm nay của tôi",
     "Liệt kê các nhiệm vụ chưa hoàn thành",

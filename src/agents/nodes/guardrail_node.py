@@ -37,7 +37,12 @@ async def input_guardrail_node(state: AgentState) -> dict:
     )
     # Conversation data is also a trust boundary. Reject hard-sensitive context before even the
     # semantic domain classifier sees the request, preserving the no-LLM path for hard policy.
-    if decision.category == "out_of_domain" or decision.allowed:
+    # Capability help is a fixed product answer and never reads conversation data. Do not let
+    # unrelated content in an open chat turn a harmless "what can you do?" question into a
+    # refusal; the deterministic response path receives none of that content.
+    if decision.category != "capability_help" and (
+        decision.category == "out_of_domain" or decision.allowed
+    ):
         if state.get("context"):
             context_decision = guardrail_service.evaluate_context(state["context"])
             if not context_decision.allowed:

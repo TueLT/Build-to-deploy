@@ -13,6 +13,7 @@ import unicodedata
 from dataclasses import dataclass
 
 from src.services.personal_query_router_service import (
+    is_capability_request,
     is_explicit_personal_memory_request,
     is_personal_memory_lookup_request,
 )
@@ -272,7 +273,6 @@ _SMALL_TALK_PATTERNS = (
     r"^(xin chao|chao|hello|hi|hey)(\b|[!.?, ])",
     r"^(cam on|thanks|thank you)(\b|[!.?, ])",
     r"^(tam biet|bye|goodbye)(\b|[!.?, ])",
-    r"\b(ban la ai|ban lam duoc gi|who are you|what can you do)\b",
 )
 
 # Workspace Agents are narrow domain applications, not general assistants.  These
@@ -507,6 +507,13 @@ def evaluate_request(text: str, *, conversation_mode: bool = False) -> Guardrail
             True,
             "personal_memory",
             "Người dùng yêu cầu rõ ràng lưu một sở thích hoặc cách tương tác cá nhân.",
+            "",
+        )
+    if is_capability_request(text):
+        return GuardrailDecision(
+            True,
+            "capability_help",
+            "Người dùng đang hỏi về danh tính hoặc phạm vi hỗ trợ của Orbit.",
             "",
         )
     if _matches_any(text, _WORK_DOMAIN_PATTERNS):

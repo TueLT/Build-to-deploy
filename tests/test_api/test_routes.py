@@ -34,6 +34,28 @@ async def _team_workspace(client, owner_headers, member: dict) -> dict:
 
 
 @pytest.mark.asyncio
+async def test_chat_answers_capability_question_without_llm_fallback(
+    client,
+    auth_headers,
+    _no_live_llm,
+):
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Bạn có thể giúp tôi những việc gì?"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    assert "task/deadline" in data["response"]
+    assert "Google Calendar" in data["response"]
+    assert "xác nhận" in data["response"]
+    assert "không thể hỗ trợ" not in data["response"].casefold()
+    assert len(_no_live_llm._responses) == 1
+
+
+@pytest.mark.asyncio
 async def test_health(client):
     response = await client.get("/health")
     assert response.status_code == 200
@@ -333,6 +355,35 @@ async def test_chat_blocked_when_over_daily_token_budget(client, auth_headers, m
     data = response.json()
     assert data["status"] == "error"
     assert "hạn mức" in data["response"]
+
+
+@pytest.mark.asyncio
+async def test_capability_help_remains_available_when_over_budget(
+    client,
+    auth_headers,
+    monkeypatch,
+    _no_live_llm,
+):
+    from src.services import usage_service
+
+    async def _over_budget(user_id):
+        assert user_id
+        return True
+
+    monkeypatch.setattr(usage_service, "is_over_budget", _over_budget)
+
+    response = await client.post(
+        "/api/v1/chat",
+        json={"message": "Bạn có thể giúp tôi những việc gì?"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "completed"
+    assert "task/deadline" in data["response"]
+    assert "hạn mức" not in data["response"]
+    assert len(_no_live_llm._responses) == 1
 
 
 @pytest.mark.asyncio

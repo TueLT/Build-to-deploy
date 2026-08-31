@@ -80,7 +80,13 @@ def upgrade() -> None:
         )
     )
 
-    index_names = {index["name"] for index in sa.inspect(connection).get_indexes("memories")}
+    inspector = sa.inspect(connection)
+    index_names = {index["name"] for index in inspector.get_indexes("memories")}
+    constraint_names = {
+        constraint["name"]
+        for constraint in inspector.get_check_constraints("memories")
+        if constraint.get("name")
+    }
     with op.batch_alter_table("memories") as batch_op:
         if "ix_memories_owner_type_expiry" not in index_names:
             batch_op.create_index(
@@ -88,13 +94,15 @@ def upgrade() -> None:
                 ["owner_id", "memory_type", "expires_at"],
                 unique=False,
             )
-        batch_op.create_check_constraint(
-            "ck_memory_type",
-            "memory_type IN ('preference', 'relationship', 'episodic', 'semantic')",
-        )
-        batch_op.create_check_constraint(
-            "ck_memory_sensitivity", "sensitivity IN ('normal', 'sensitive')"
-        )
+        if "ck_memory_type" not in constraint_names:
+            batch_op.create_check_constraint(
+                "ck_memory_type",
+                "memory_type IN ('preference', 'relationship', 'episodic', 'semantic')",
+            )
+        if "ck_memory_sensitivity" not in constraint_names:
+            batch_op.create_check_constraint(
+                "ck_memory_sensitivity", "sensitivity IN ('normal', 'sensitive')"
+            )
 
 
 def downgrade() -> None:

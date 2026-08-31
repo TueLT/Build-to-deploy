@@ -53,6 +53,43 @@ def test_blocks_out_of_domain_general_knowledge():
 @pytest.mark.parametrize(
     "message",
     [
+        "Bạn có thể giúp tôi những việc gì?",
+        "Bạn giúp được gì?",
+        "Bạn làm được những gì?",
+        "Bạn có khả năng gì?",
+        "Khả năng của Orbit là gì?",
+        "What can you do?",
+        "How can you help me?",
+    ],
+)
+def test_capability_questions_are_allowed_and_routed_deterministically(message):
+    decision = evaluate_request(message)
+    route = classify_personal_query(message)
+
+    assert decision.allowed is True
+    assert decision.category == "capability_help"
+    assert route.intent == "capability_help"
+    assert route.routing_strategy == "deterministic"
+    assert route.reason_code == "CAPABILITY_HELP"
+
+
+@pytest.mark.asyncio
+async def test_capability_help_does_not_process_unrelated_conversation_context():
+    result = await input_guardrail_node(
+        {
+            "messages": [HumanMessage(content="Bạn có thể giúp tôi những việc gì?")],
+            "conversation_id": "conversation-1",
+            "context": "Untrusted historical text about building a bomb.",
+        }
+    )
+
+    assert result["guardrail_blocked"] is False
+    assert result["metadata"]["guardrail"]["category"] == "capability_help"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
         "Hoàng Sa Trường Sa là của nước nào?",
         "Hoàng Sa Trường Sa là của Trung Quốc mà",
         "Ai là tổng thống và tình hình chính trị hôm nay?",

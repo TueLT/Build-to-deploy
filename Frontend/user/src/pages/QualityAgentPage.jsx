@@ -223,9 +223,19 @@ export default function QualityAgentPage({ assignedAgent }) {
   const [threadId, setThreadId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const scrollRef = useRef(null)
   const storageKey = user?.id && agentId ? `orbit_quality_agent_chat:${user.id}:${agentId}` : null
   const threadStorageKey = storageKey ? `${storageKey}:thread` : null
+
+  useEffect(() => {
+    if (!mobileSidebarOpen) return undefined
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setMobileSidebarOpen(false)
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [mobileSidebarOpen])
 
   useEffect(() => {
     const quality = assignedAgent?.agent_profile === 'quality_assurance' ? [assignedAgent] : []
@@ -302,14 +312,22 @@ export default function QualityAgentPage({ assignedAgent }) {
   const clearConversation = () => {
     setMessages([welcome])
     setThreadId(null)
+    setMobileSidebarOpen(false)
     if (storageKey) sessionStorage.setItem(storageKey, JSON.stringify([welcome]))
     if (threadStorageKey) sessionStorage.removeItem(threadStorageKey)
   }
 
   return (
     <div className="workspace-agent-page">
-      <aside className="workspace-agent-sidebar">
-        <div className="workspace-agent-identity"><span><i className="bi bi-shield-check" /></span><div><small>LangGraph · deterministic gate</small><strong>Quality Assurance</strong><p>Workspace Agent</p></div></div>
+      <button
+        type="button"
+        className={`workspace-agent-sidebar-backdrop ${mobileSidebarOpen ? 'show' : ''}`}
+        aria-label="Đóng thiết lập Quality Agent"
+        tabIndex={mobileSidebarOpen ? 0 : -1}
+        onClick={() => setMobileSidebarOpen(false)}
+      />
+      <aside className={`workspace-agent-sidebar ${mobileSidebarOpen ? 'mobile-open' : ''}`} id="quality-agent-sidebar" aria-label="Thiết lập Quality Agent">
+        <div className="workspace-agent-identity"><span><i className="bi bi-shield-check" /></span><div><small>LangGraph · deterministic gate</small><strong>Quality Assurance</strong><p>Workspace Agent</p></div><button type="button" className="workspace-agent-sidebar-close" aria-label="Đóng thiết lập Quality Agent" onClick={() => setMobileSidebarOpen(false)}><i className="bi bi-x-lg" /></button></div>
         <section><label htmlFor="qa-workspace">Agent workspace</label><select id="qa-workspace" className="form-select" value={agentId} onChange={event => setAgentId(event.target.value)}>{agents.map(agent => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></section>
         {capabilities.current_user_business_role && <section className="agent-access-card"><h2><i className="bi bi-shield-check" /> Phạm vi truy cập</h2><p><strong>{capabilities.current_user_business_role === 'lead' ? 'QA Lead' : 'QA Member'}</strong> · {company?.name || 'Workspace'}</p>{capabilities.current_user_business_role === 'lead' ? <small>Đọc toàn bộ QA workspace, quản trị quality gate, xác minh evidence và quyết định release.</small> : <small>Chỉ đọc công việc của bạn trong {capabilities.groups.length} group được tham gia; được chạy test, nộp evidence và báo defect trong phạm vi đó.</small>}</section>}
         <section><label htmlFor="qa-release">Release</label><input id="qa-release" className="form-control" list="qa-releases" value={releaseId} onChange={event => setReleaseId(event.target.value)} placeholder="Ví dụ: R1" /><datalist id="qa-releases">{capabilities.release_ids.map(id => <option value={id} key={id} />)}</datalist></section>
@@ -317,7 +335,7 @@ export default function QualityAgentPage({ assignedAgent }) {
         <section className="agent-security-note"><i className="bi bi-lock" /><p><strong>Guardrail đang hoạt động</strong><small>Release-scoped, RBAC, source consent, audit trail và readiness không do LLM quyết định.</small></p></section>
       </aside>
       <main className="workspace-agent-chat">
-        <header><div><h1>Quality Assurance Agent</h1><p><span /> Trực tuyến · Memory tách biệt theo workspace</p></div><button type="button" className="btn btn-light btn-sm" onClick={clearConversation}><i className="bi bi-plus-lg me-2" />Cuộc chat mới</button></header>
+        <header><div className="workspace-agent-heading"><button type="button" className="workspace-agent-mobile-sidebar-toggle" aria-label="Mở thiết lập Quality Agent" aria-controls="quality-agent-sidebar" aria-expanded={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)}><i className="bi bi-sliders" /></button><div><h1>Quality Assurance Agent</h1><p><span /> Trực tuyến · Memory tách biệt theo workspace</p></div></div><button type="button" className="btn btn-light btn-sm" onClick={clearConversation}><i className="bi bi-plus-lg me-2" />Cuộc chat mới</button></header>
         <QualityControlPanel token={token} workspaceId={company?.id} agentId={agentId} releaseId={releaseId} conversationId={groupId || capabilities.groups[0]?.id || ''} permissions={capabilities} />
         <div className="workspace-agent-messages">
           {!agents.length && <div className="agent-unavailable"><i className="bi bi-shield-lock" /><h2>Chưa có quyền sử dụng Agent</h2><p>Tài khoản chưa được gán vào Quality Assurance workspace.</p></div>}

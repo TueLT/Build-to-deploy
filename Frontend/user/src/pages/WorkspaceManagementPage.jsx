@@ -66,11 +66,11 @@ function WorkspaceMemberTable({ members }) {
           <tbody>
             {members.map(member => (
               <tr key={member.user_id}>
-                <td><span className="member-table-avatar" style={{ background: getColor(member.user_id) }}>{getInitials(member.display_name)}</span><div><strong>{member.display_name}</strong><small>{member.job_title || 'Chưa cập nhật chức danh'}</small></div></td>
-                <td><span className={`member-role-pill ${member.business_role || 'participant'}`}>{member.business_role === 'lead' ? 'Delivery Lead' : member.business_role === 'member' ? 'Member' : 'Group participant'}</span></td>
-                <td><div className="member-group-pills">{member.groups.map(group => <span key={group.id}>{group.name}</span>)}</div></td>
-                <td>{member.task_stats ? <div className="member-workload"><span><strong>{member.task_stats.total}</strong> task · <b>{member.task_stats.in_progress} đang làm</b> · <em>{member.task_stats.blocked} blocker</em></span><ProgressBar value={member.task_stats.completion_percent} /><small>{member.milestone_count || 0} milestone · hoàn thành {member.task_stats.completion_percent}%</small></div> : <span className="member-private-work"><i className="bi bi-lock" /> Ẩn theo quyền</span>}</td>
-                <td><a href={`mailto:${member.email}`}>{member.email}</a></td>
+                <td data-label="Thành viên"><span className="member-table-avatar" style={{ background: getColor(member.user_id) }}>{getInitials(member.display_name)}</span><div><strong>{member.display_name}</strong><small>{member.job_title || 'Chưa cập nhật chức danh'}</small></div></td>
+                <td data-label="Vai trò"><span className={`member-role-pill ${member.business_role || 'participant'}`}>{member.business_role === 'lead' ? 'Delivery Lead' : member.business_role === 'member' ? 'Member' : 'Group participant'}</span></td>
+                <td data-label="Nhóm tham gia"><div className="member-group-pills">{member.groups.map(group => <span key={group.id}>{group.name}</span>)}</div></td>
+                <td data-label="Khối lượng công việc">{member.task_stats ? <div className="member-workload"><span><strong>{member.task_stats.total}</strong> task · <b>{member.task_stats.in_progress} đang làm</b> · <em>{member.task_stats.blocked} blocker</em></span><ProgressBar value={member.task_stats.completion_percent} /><small>{member.milestone_count || 0} milestone · hoàn thành {member.task_stats.completion_percent}%</small></div> : <span className="member-private-work"><i className="bi bi-lock" /> Ẩn theo quyền</span>}</td>
+                <td data-label="Liên hệ"><a href={`mailto:${member.email}`}>{member.email}</a></td>
               </tr>
             ))}
           </tbody>

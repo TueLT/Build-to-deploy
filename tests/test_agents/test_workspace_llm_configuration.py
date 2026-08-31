@@ -6,10 +6,27 @@ from src.agents.contracts import AgentProfile
 from src.config import Settings
 from src.services.llm import (
     LLMConfiguration,
+    get_llm,
     get_workspace_llm,
     get_workspace_llm_configuration,
     invoke_workspace_llm_with_failover,
 )
+
+
+def test_personal_llm_accepts_deterministic_temperature_override(monkeypatch):
+    captured = {}
+    sentinel = object()
+
+    def build(config):
+        captured["config"] = config
+        return sentinel
+
+    monkeypatch.setattr("src.services.llm._build_llm", build)
+
+    result = get_llm(temperature=0)
+
+    assert result is sentinel
+    assert captured["config"].temperature == 0
 
 
 def test_workspace_profiles_resolve_independent_model_configuration(monkeypatch):

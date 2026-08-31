@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 import src.db.session as db_session
 from src.agents.tools.context_tool import list_my_tasks
+from src.config import Settings
 from src.db.models import (
     AgentWorkspaceConversation,
     AgentWorkspaceMembership,
@@ -20,6 +21,18 @@ from src.services import consent_service, proactive_service
 from src.services.agent_workspace_service import add_agent_workspace_member
 from src.services.workspace_service import add_workspace_member
 from tests.test_agent_workspaces import _seed_agent_workspaces
+
+
+@pytest.fixture(autouse=True)
+def _enable_product_delivery_agent(monkeypatch):
+    """Keep this feature-specific module independent from the CI rollout matrix."""
+
+    settings = Settings(
+        _env_file=None,
+        multi_agent_enabled=True,
+        product_delivery_agent_enabled=True,
+    )
+    monkeypatch.setattr("src.api.delivery_routes.get_settings", lambda: settings)
 
 
 async def _setup_review_flow(client, auth_headers):

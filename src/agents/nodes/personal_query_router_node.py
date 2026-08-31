@@ -16,6 +16,17 @@ from src.services.personal_query_router_service import (
     extract_explicit_memory_drafts,
 )
 
+_CAPABILITY_RESPONSE = """Mình là Orbit, trợ lý công việc cá nhân. Mình có thể giúp bạn:
+
+- Xem, tổng hợp và ưu tiên task/deadline được giao cho bạn.
+- Kiểm tra Google Calendar, phát hiện xung đột và đề xuất tạo/sửa/xóa sự kiện.
+- Tạo, cập nhật, hoãn hoặc hủy reminder.
+- Tóm tắt hội thoại được cấp quyền, tìm cam kết, deadline và trích xuất action item.
+- Ghi nhớ các preference bạn nói rõ, như cách xưng hô hoặc phong cách trả lời.
+- Tìm ngữ cảnh cộng tác và người liên quan trong phạm vi dữ liệu bạn được phép truy cập.
+
+Các thao tác làm thay đổi Calendar hoặc reminder luôn cần bạn xác nhận trước. Bạn có thể bắt đầu bằng câu như: “Tổng hợp task và lịch của tôi hôm nay” hoặc “Đặt lịch họp team lúc 10 giờ sáng mai trong 30 phút”."""
+
 
 def _latest_user_text(state: AgentState) -> str:
     return next(
@@ -70,6 +81,18 @@ async def personal_query_router_node(state: AgentState) -> dict:
                 "confidence": route.confidence,
                 "reason_code": route.reason_code,
             },
+        },
+    }
+
+
+async def personal_capability_response_node(state: AgentState) -> dict:
+    """Answer product-capability questions reliably without calling a provider."""
+
+    return {
+        "messages": [AIMessage(content=_CAPABILITY_RESPONSE)],
+        "metadata": {
+            **state.get("metadata", {}),
+            "capability_response": {"source": "deterministic", "version": "personal-v1"},
         },
     }
 
