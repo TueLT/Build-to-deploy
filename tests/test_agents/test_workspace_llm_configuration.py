@@ -162,3 +162,24 @@ def test_production_rejects_embedded_runtime_when_workspace_agents_are_enabled()
             workspace_agent_runtime_secret="d" * 32,
             quality_assurance_runtime_secret="q" * 32,
         )
+
+
+def test_production_accepts_explicit_demo_embedded_runtime_opt_in():
+    settings = Settings(
+        _env_file=None,
+        app_env="production",
+        secret_key="s" * 32,
+        database_url="postgresql+asyncpg://orbit:test@db/orbit",
+        cors_origins="https://orbit.example",
+        cors_origin_regex="",
+        llm_provider="google",
+        google_api_key="test-key",
+        multi_agent_enabled=True,
+        product_delivery_agent_enabled=True,
+        quality_assurance_agent_enabled=True,
+        workspace_agent_runtime_mode="embedded",
+        allow_embedded_workspace_agents_in_production=True,
+    )
+
+    assert settings.workspace_agent_runtime_mode == "embedded"
+    assert settings.allow_embedded_workspace_agents_in_production is True

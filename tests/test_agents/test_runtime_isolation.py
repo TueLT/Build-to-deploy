@@ -19,6 +19,7 @@ from src.agents.contracts import (
 )
 from src.agents.runtime.adapters import (
     BulkheadedProductDeliveryRuntime,
+    EmbeddedProductDeliveryRuntime,
     RemoteProductDeliveryRuntime,
     WorkspaceRuntimeBusyError,
 )
@@ -250,6 +251,39 @@ async def test_remote_adapter_signs_the_exact_request_body(monkeypatch):
         signature=captured["headers"][SIGNATURE_HEADER],
         max_age_seconds=60,
     )
+
+
+@pytest.mark.asyncio
+async def test_embedded_delivery_runtime_preserves_progress_events(monkeypatch):
+    request = _runtime_request().model_copy(update={"progress_request_id": "client-request-1"})
+    expected = _runtime_response(request)
+    broadcast = AsyncMock()
+
+    async def execute(invocation, *, progress_callback):
+        assert invocation == request
+        assert progress_callback is not None
+        await progress_callback(
+            {
+                "phase": "specialist_started",
+                "specialist": "risk",
+                "step_index": 1,
+                "total_steps": 1,
+            }
+        )
+        return expected
+
+    monkeypatch.setattr("src.agents.runtime.adapters.execute_product_delivery", execute)
+    monkeypatch.setattr("src.agents.runtime.adapters.manager.broadcast_to_users", broadcast)
+
+    response = await EmbeddedProductDeliveryRuntime().run(request)
+
+    assert response == expected
+    broadcast.assert_awaited_once()
+    users, payload = broadcast.await_args.args
+    assert users == [request.actor.user_id]
+    assert payload["type"] == "workspace_agent_progress"
+    assert payload["request_id"] == "client-request-1"
+    assert payload["phase"] == "specialist_started"
 
 
 @pytest.mark.asyncio

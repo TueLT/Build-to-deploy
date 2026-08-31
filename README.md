@@ -215,6 +215,12 @@ alembic upgrade head
 
 Đặt `APP_ENV=production`, dùng PostgreSQL, tạo `SECRET_KEY` ngẫu nhiên tối thiểu 32 byte, khai báo chính xác `CORS_ORIGINS` và API key tương ứng `LLM_PROVIDER`. Ứng dụng sẽ từ chối khởi động nếu còn SQLite, secret mẫu, CORS wildcard hoặc thiếu LLM credential trong production. Luôn sao lưu database và chạy migration trên staging trước.
 
+Blueprint mặc định `render.yaml` là topology demo miễn phí: một Web Service chạy Core cùng hai
+workspace agent ở chế độ embedded và một PostgreSQL Free. Cờ
+`ALLOW_EMBEDDED_WORKSPACE_AGENTS_IN_PRODUCTION=true` chỉ được dùng cho topology demo này. Bản trả phí
+tách biệt runtime nằm tại `render.production.yaml`. Xem quy trình và giới hạn dữ liệu 30 ngày trong
+[`DEPLOYMENT.md`](DEPLOYMENT.md).
+
 ### Lint và build kiểm tra
 
 ```bash

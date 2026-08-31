@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
 
-from src.agents.runtime.contracts import AgentRuntimeRequest, AgentRuntimeResponse
+from src.agents.runtime.contracts import AgentRuntimeRequest, AgentRuntimeResponse, RuntimeProgressEvent
 from src.agents.runtime.executor import execute_product_delivery, execute_quality_assurance
 from src.agents.runtime.security import SIGNATURE_HEADER, TIMESTAMP_HEADER, sign_runtime_body
 from src.config import get_settings
+from src.websocket.manager import manager
 
 
 class ProductDeliveryRuntime(Protocol):
@@ -18,7 +20,29 @@ class ProductDeliveryRuntime(Protocol):
 
 class EmbeddedProductDeliveryRuntime:
     async def run(self, request: AgentRuntimeRequest) -> AgentRuntimeResponse:
-        return await execute_product_delivery(request)
+        progress_callback = None
+        if request.progress_request_id:
+
+            async def report(payload: dict) -> None:
+                event = RuntimeProgressEvent(
+                    request_id=request.progress_request_id,
+                    run_id=request.run_id,
+                    workflow_id=(
+                        request.orchestration.workflow_id if request.orchestration else request.run_id
+                    ),
+                    user_id=request.actor.user_id,
+                    workspace_id=request.target.organization_workspace_id,
+                    agent_workspace_id=request.target.agent_workspace_id,
+                    occurred_at=datetime.now(UTC),
+                    **payload,
+                )
+                await manager.broadcast_to_users(
+                    [event.user_id],
+                    {"type": "workspace_agent_progress", **event.model_dump(mode="json")},
+                )
+
+            progress_callback = report
+        return await execute_product_delivery(request, progress_callback=progress_callback)
 
 
 class EmbeddedQualityAssuranceRuntime:

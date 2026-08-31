@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     quality_assurance_agent_enabled: bool = False
     executive_agent_enabled: bool = False
     workspace_agent_runtime_mode: Literal["embedded", "remote"] = "embedded"
+    # Production keeps isolated runtimes as the secure default. A deliberately
+    # opted-in demo deployment may embed both runtimes in Core when the hosting
+    # platform does not provide free private services.
+    allow_embedded_workspace_agents_in_production: bool = False
     workspace_agent_runtime_url: str = "http://workspace-agent-product-delivery:8010"
     workspace_agent_runtime_hostport: str = ""
     workspace_agent_progress_callback_url: str = ""
@@ -230,8 +234,12 @@ class Settings(BaseSettings):
             self.multi_agent_enabled
             and (self.product_delivery_agent_enabled or self.quality_assurance_agent_enabled)
             and self.workspace_agent_runtime_mode != "remote"
+            and not self.allow_embedded_workspace_agents_in_production
         ):
-            raise ValueError("Production workspace agents require WORKSPACE_AGENT_RUNTIME_MODE=remote")
+            raise ValueError(
+                "Production workspace agents require WORKSPACE_AGENT_RUNTIME_MODE=remote unless "
+                "ALLOW_EMBEDDED_WORKSPACE_AGENTS_IN_PRODUCTION=true is explicitly set"
+            )
         if self.workspace_agent_runtime_mode == "remote" and (
             len(self.workspace_agent_runtime_secret.encode("utf-8")) < 32
             or "change-me" in self.workspace_agent_runtime_secret

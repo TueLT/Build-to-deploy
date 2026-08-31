@@ -1,64 +1,83 @@
 # Deploy Orbit
 
-Kiến trúc production của nhánh `deploy`:
+Nhánh `deploy` hỗ trợ hai topology:
 
-- Vercel project 1: User SPA (`Frontend/user`).
-- Vercel project 2: Admin SPA (`Frontend/admin`).
-- Render Blueprint: một backend public, hai agent runtime private và PostgreSQL 16.
+- `render.yaml`: bản demo miễn phí, một Render Web Service chạy Core API cùng Product Delivery và
+  Quality Assurance ở chế độ embedded, kèm một Render Postgres Free.
+- `render.production.yaml`: bản production tách hai agent thành private service và dùng PostgreSQL
+  trả phí có độ bền dữ liệu tốt hơn.
 
-Backend phải giữ đúng **một instance**. WebSocket manager và APScheduler hiện lưu trạng thái theo
-process, vì vậy không bật horizontal scaling trước khi chuyển hai phần này sang hạ tầng dùng chung.
+Hai frontend vẫn là hai Vercel project riêng:
 
-## 1. Đưa nhánh deploy lên GitHub
+- User SPA: `Frontend/user`
+- Admin SPA: `Frontend/admin`
 
-CI chạy trên `deploy`, gồm Ruff, hai ma trận feature flag, migration PostgreSQL sạch, toàn bộ pytest,
-frontend audit và hai production build. Render Blueprint cũng theo dõi chính nhánh này và chỉ tự
-deploy khi các check thành công.
+## 1. Giới hạn của bản miễn phí
 
-Docker và CI cài từ `requirements.lock` để cùng một commit luôn dùng đúng bộ dependency đã kiểm thử.
+Topology miễn phí giữ nguyên API, phân quyền, database schema và logic hai agent, nhưng chỉ phù hợp
+demo hoặc đồ án:
+
+- Web Service có thể ngủ sau thời gian không có request; lần mở đầu tiên sẽ chậm.
+- Core API, WebSocket, scheduler và hai agent dùng chung 512 MB RAM/0.1 CPU.
+- `WORKSPACE_AGENT_MAX_CONCURRENCY=1` để tránh quá tải instance.
+- Render Postgres Free chỉ có 1 GB, không có managed backup và hết hạn sau 30 ngày.
+- OpenRouter/Google vẫn có quota hoặc chi phí API riêng; hạ tầng miễn phí không làm LLM miễn phí.
+
+Không dùng topology này cho dữ liệu cần lưu lâu dài. Luôn giữ bản dump P132 cục bộ.
+
+## 2. Đưa nhánh deploy lên GitHub
+
+CI chạy Ruff, migration PostgreSQL, toàn bộ pytest, frontend audit và hai production build. Render chỉ
+tự deploy sau khi check của commit trên nhánh `deploy` thành công.
 
 ```powershell
 git push -u origin deploy
 ```
 
-Không commit `.env`, `.env.local`, file `*.dump` hoặc bất kỳ secret nào.
+Không commit `.env`, `.env.local`, file `*.dump` hoặc secret.
 
-## 2. Tạo Render Blueprint
+## 3. Tạo Render Blueprint miễn phí
 
-Tạo Blueprint từ `render.yaml`. Blueprint tạo bốn tài nguyên cùng region `singapore`:
+Tạo Blueprint từ `render.yaml`, branch `deploy`. Review phải chỉ có đúng hai tài nguyên và tổng compute
+price phải là `$0/month`:
 
-- `orbit-postgres`
-- `orbit-backend`
-- `orbit-agent-product-delivery`
-- `orbit-agent-quality-assurance`
+- `orbit-postgres` — Free PostgreSQL
+- `orbit-backend` — Free Web Service
 
-Điền các biến `sync: false` của backend trong lần tạo đầu tiên:
+Nếu Render hiển thị hai private agent hoặc giá `$44.50/month`, Blueprint đang đọc commit/cấu hình cũ;
+hủy flow đó và sync lại nhánh `deploy` mới nhất.
 
-| Biến | Giá trị production |
+Điền các biến `sync: false` trong lần tạo đầu tiên:
+
+| Biến | Giá trị ban đầu |
 |---|---|
 | `OPENROUTER_API_KEY` | OpenRouter key thật |
-| `CORS_ORIGINS` | Hai origin Vercel chính xác, cách nhau bằng dấu phẩy; không có `*` |
-| `OPENROUTER_SITE_URL` | Origin User Vercel |
-| `FRONTEND_ORIGIN` | Origin User Vercel |
+| `CORS_ORIGINS` | `https://orbit.invalid` cho lần tạo đầu; thay bằng hai Vercel origin sau |
+| `OPENROUTER_SITE_URL` | `https://orbit.invalid` cho lần tạo đầu |
+| `FRONTEND_ORIGIN` | `https://orbit.invalid` cho lần tạo đầu |
 | `GOOGLE_OAUTH_CLIENT_ID` | Client ID đăng nhập Google; có thể để trống nếu không dùng |
 | `GOOGLE_CALENDAR_CLIENT_ID` | Calendar OAuth client ID; có thể để trống nếu không dùng |
 | `GOOGLE_CALENDAR_CLIENT_SECRET` | Calendar OAuth secret; có thể để trống nếu không dùng |
-| `GOOGLE_CALENDAR_REDIRECT_URI` | `https://<backend>/api/v1/calendar/oauth/callback` |
-| `CREDENTIAL_ENCRYPTION_KEY` | Giữ nguyên key của database P132 nếu import dữ liệu cũ |
-| `INITIAL_ADMIN_EMAIL` | Email được phép bootstrap platform admin đầu tiên |
+| `GOOGLE_CALENDAR_REDIRECT_URI` | `https://orbit.invalid/api/v1/calendar/oauth/callback` lúc tạo đầu |
+| `CREDENTIAL_ENCRYPTION_KEY` | Phải giống key local nếu import database P132 |
+| `INITIAL_ADMIN_EMAIL` | Email admin tin cậy, ví dụ `fanbox2004@gmail.com` |
 
-`SECRET_KEY` và hai runtime secret do Render tự sinh. Database URL và private host/port được nối tự
-động, không copy tay. Hai runtime ID trong Blueprint khớp với database P132 hiện tại.
+`SECRET_KEY` và `DATABASE_URL` được Blueprint nối/tạo tự động. Không upload toàn bộ `.env` local.
 
-Sau deploy, `https://<backend>/health` phải trả HTTP 200. Không đưa URL private của agent ra Vercel.
+Sau khi Blueprint hoàn tất, lấy URL thật của backend, ví dụ
+`https://orbit-backend.onrender.com`, rồi kiểm tra:
 
-## 3. Chuyển đúng database P132 lên Render
+```text
+https://<backend>/health
+```
 
-`docker-compose.override.yml` local đang dùng volume `p-132_postgres_data`; volume này không thể được
-gắn trực tiếp lên cloud. Dùng script dưới đây để dump đúng volume đó rồi restore sang Render.
+## 4. Chuyển database P132 hiện tại lên Render
 
-1. Trong Render, suspend backend và hai private service để không có request/job ghi dữ liệu lúc restore.
-2. Trong database `orbit-postgres`, tạm whitelist IP hiện tại và lấy **External Database URL**.
+Không restore file `p132-before-delete-workspace-17db-...dump`, vì đó là backup trước khi xóa workspace
+phụ. Hãy dump trực tiếp database local hiện tại bằng script.
+
+1. Suspend `orbit-backend` để không có request hoặc scheduler ghi dữ liệu.
+2. Trong `orbit-postgres`, tạm cho phép IP hiện tại và copy **External Database URL**.
 3. Chạy:
 
 ```powershell
@@ -66,20 +85,14 @@ powershell -ExecutionPolicy Bypass -File scripts/migrate_p132_database.ps1 `
   -TargetDatabaseUrl "postgresql://<user>:<password>@<host>/<database>"
 ```
 
-Script luôn tạo `orbit-p132.dump`, sao lưu target trước, hỏi xác nhận rồi mới thay schema `public`.
-Sau khi thành công:
+Script tạo dump P132 mới, backup target và hỏi xác nhận trước khi thay schema `public`. Sau khi restore:
 
-1. Gỡ IP public khỏi database (Blueprint mặc định `ipAllowList: []`).
-2. Kiểm tra `CREDENTIAL_ENCRYPTION_KEY` trên Render giống key local; nếu khác, token Calendar đã import
-   sẽ không giải mã được.
-3. Resume/redeploy hai agent rồi backend. Pre-deploy command sẽ chạy `alembic upgrade head`.
-4. Kiểm tra log không có `Runtime target mismatch`; Product Delivery ID là
-   `9ff3ceb2b31f57238014e93e2402c0c8`, Quality Assurance ID là
-   `311fe424edfa41989a495316b6925c84`.
+1. Gỡ IP public vừa cho phép.
+2. Xác nhận `CREDENTIAL_ENCRYPTION_KEY` trên Render vẫn giống local.
+3. Resume/redeploy `orbit-backend`; startup command tự chạy `alembic upgrade head`.
+4. Kiểm tra `/health` và log migration.
 
-File dump chứa toàn bộ dữ liệu và password hash, phải giữ kín và xóa an toàn sau khi xác nhận production.
-
-## 4. Tạo hai Vercel project
+## 5. Tạo hai Vercel project
 
 Import cùng Git repository hai lần, chọn Production Branch là `deploy`.
 
@@ -88,8 +101,7 @@ Import cùng Git repository hai lần, chọn Production Branch là `deploy`.
 | Orbit User | `Frontend/user` | `npm run build` | `dist` |
 | Orbit Admin | `Frontend/admin` | `npm run build` | `dist` |
 
-Hai `vercel.json` chạy `npm ci --prefix ..` để dùng duy nhất lockfile của npm workspace tại
-`Frontend/package-lock.json`; không override Install Command trong dashboard.
+Không override Install Command vì `vercel.json` đã dùng lockfile tại `Frontend/package-lock.json`.
 
 User project:
 
@@ -107,29 +119,42 @@ VITE_API_BASE_URL=https://<backend>/api/v1
 VITE_USER_APP_URL=https://<user-vercel-domain>
 ```
 
-Khai báo các biến cho cả Production và Preview nếu dùng preview. Build production chủ động thất bại
-nếu API/WebSocket/cross-app URL bị thiếu hoặc dùng giao thức không an toàn ngoài localhost.
+## 6. Cập nhật origin thật trên Render
 
-Sau khi biết hai domain Vercel, cập nhật lại `CORS_ORIGINS`, `FRONTEND_ORIGIN`,
-`OPENROUTER_SITE_URL` trên Render rồi redeploy backend.
+Sau khi biết hai domain Vercel, mở Environment của `orbit-backend` và cập nhật:
 
-## 5. Google OAuth (nếu bật)
+```text
+CORS_ORIGINS=https://<user-domain>,https://<admin-domain>
+FRONTEND_ORIGIN=https://<user-domain>
+OPENROUTER_SITE_URL=https://<user-domain>
+GOOGLE_CALENDAR_REDIRECT_URI=https://<backend>/api/v1/calendar/oauth/callback
+```
 
-- Google Sign-In client: thêm User Vercel origin vào Authorized JavaScript origins.
-- Calendar client: thêm chính xác backend callback vào Authorized redirect URIs.
-- Nếu consent screen còn Testing, thêm tất cả Gmail thử nghiệm vào Test users.
+Chọn **Save, rebuild, and deploy**.
+
+## 7. Google OAuth nếu bật
+
+- Google Sign-In: thêm User Vercel origin vào Authorized JavaScript origins.
+- Google Calendar: thêm chính xác backend callback vào Authorized redirect URIs.
+- Nếu consent screen còn Testing, thêm các Gmail thử nghiệm vào Test users.
 - Google Sign-In và Google Calendar là hai OAuth client khác nhau.
 
-## 6. Release smoke test
+## 8. Release smoke test
 
-- Refresh trực tiếp một nested route trên cả User và Admin không được 404.
-- Đăng nhập user và admin; thử một request cần quyền admin.
-- Gửi/nhận một tin qua WebSocket.
-- Chạy một AI turn, một Product Delivery turn và một Quality Assurance turn.
-- Tạo reminder và kiểm tra scheduler thực thi đúng timezone.
-- Kết nối Google Calendar, tạo rồi xóa một event nếu OAuth được bật.
-- Xác nhận login/chat burst bị giới hạn bằng HTTP 429.
-- Xác nhận browser không gọi `localhost`, `ws://` hoặc private agent hostname.
+- Refresh nested route trên User và Admin không bị 404.
+- Đăng nhập user/admin và thử một API cần quyền admin.
+- Gửi/nhận WebSocket message.
+- Chạy personal agent, Product Delivery và Quality Assurance.
+- Xác nhận progress realtime của Product Delivery vẫn xuất hiện ở embedded mode.
+- Tạo reminder và kiểm tra scheduler.
+- Kết nối Calendar, tạo rồi xóa một event nếu OAuth được bật.
+- Browser không gọi `localhost`, `ws://` hoặc agent hostname riêng.
+- Sau cold start, thử lại khi `/health` đã trả 200.
 
-One-click demo login bị vô hiệu cưỡng chế khi `APP_ENV=production`. Dữ liệu P132 vẫn được import, nhưng
-không nên phát hành tài khoản có mật khẩu demo cố định trên một deployment chứa dữ liệu thật.
+One-click demo login luôn bị vô hiệu khi `APP_ENV=production`.
+
+## 9. Chuyển sang production trả phí
+
+Khi cần fault isolation, không giới hạn database 30 ngày và scale agent độc lập, tạo Blueprint mới với
+path `render.production.yaml`. Topology này khôi phục backend public, hai private agent runtime và
+PostgreSQL trả phí. Không quản lý cùng một resource bằng hai Blueprint khác nhau.
