@@ -40,5 +40,5 @@ export const queryKeys = {
   assistantThreads: ['assistant-threads'],
   assistantMessages: threadId => ['assistant-messages', threadId],
   assistantPending: threadId => ['assistant-pending', threadId],
-  aiUsage: ['ai-usage'],
+  aiUsage: userId => ['ai-usage', userId || 'anonymous'],
 }

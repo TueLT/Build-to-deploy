@@ -725,3 +725,40 @@ async def test_delivery_brief_endpoint_remains_disabled_without_feature_flag(cli
 
     assert response.status_code == 403
     assert response.json()["detail"] == "Delivery access is unavailable for this request"
+
+
+@pytest.mark.asyncio
+async def test_delivery_brief_rejects_only_the_account_over_its_ai_allowance(
+    client, auth_headers, monkeypatch
+):
+    seed = await _seed_agent_workspaces(client, auth_headers)
+    monkeypatch.setattr(
+        "src.api.delivery_routes.get_settings",
+        lambda: Settings(
+            _env_file=None,
+            multi_agent_enabled=True,
+            product_delivery_agent_enabled=True,
+            product_delivery_hybrid_router_enabled=True,
+        ),
+    )
+    checked_user_ids: list[str] = []
+
+    async def account_is_over_budget(user_id: str) -> bool:
+        checked_user_ids.append(user_id)
+        return True
+
+    monkeypatch.setattr(
+        "src.api.delivery_routes.usage_service.is_over_budget",
+        account_is_over_budget,
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{seed['delivery_id']}/delivery/brief",
+        headers=await _delivery_lead_headers(client),
+        json={"message": "Delivery status"},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Daily AI token allowance exceeded for this account"
+    assert checked_user_ids == [seed["delivery_user_id"]]

@@ -399,7 +399,7 @@ async def maybe_suggest_task(
                 return
             workspace_id = conversation.workspace_id
 
-        if await usage_service.is_over_budget():
+        if await usage_service.is_over_budget(sender_id):
             return
 
         settings = get_settings()

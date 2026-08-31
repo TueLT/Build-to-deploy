@@ -2214,6 +2214,12 @@ async def get_delivery_brief(
             answer_override=(None if out_of_scope else input_decision.response),
         )
 
+    if await usage_service.is_over_budget(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily AI token allowance exceeded for this account",
+        )
+
     settings = get_settings()
     if not settings.product_delivery_hybrid_router_enabled:
         raise HTTPException(

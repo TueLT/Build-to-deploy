@@ -269,6 +269,49 @@ async def test_quality_brief_is_scoped_and_survives_quality_runtime_failure(
 
 
 @pytest.mark.asyncio
+async def test_quality_brief_rejects_only_the_account_over_its_ai_allowance(
+    client, auth_headers, monkeypatch
+):
+    seed = await _seed_agent_workspaces(client, auth_headers)
+    monkeypatch.setattr(
+        "src.api.quality_routes.get_settings",
+        lambda: Settings(
+            _env_file=None,
+            multi_agent_enabled=True,
+            quality_assurance_agent_enabled=True,
+        ),
+    )
+    checked_user_ids: list[str] = []
+
+    async def account_is_over_budget(user_id: str) -> bool:
+        checked_user_ids.append(user_id)
+        return True
+
+    monkeypatch.setattr(
+        "src.api.quality_routes.usage_service.is_over_budget",
+        account_is_over_budget,
+    )
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "quality@example.com", "password": "password123"},
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-router/invoke",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        json={
+            "target_agent_workspace_id": seed["quality_id"],
+            "message": "R1 ready?",
+            "release_id": "R1",
+        },
+    )
+
+    assert response.status_code == 429
+    assert response.json()["detail"] == "Daily AI token allowance exceeded for this account"
+    assert checked_user_ids == [seed["quality_user_id"]]
+
+
+@pytest.mark.asyncio
 async def test_quality_lead_can_create_and_update_a_source_bound_work_item(
     client, auth_headers, monkeypatch
 ):

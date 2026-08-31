@@ -182,7 +182,7 @@ export default function PersonalAIChat({ onContext, contextCollapsed, threadId, 
   const handleResult = (res) => {
     if (res.thread_id) queryClient.invalidateQueries({ queryKey: queryKeys.assistantMessages(res.thread_id) })
     if (res.thread_id) queryClient.invalidateQueries({ queryKey: queryKeys.assistantPending(res.thread_id) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.aiUsage })
+    queryClient.invalidateQueries({ queryKey: queryKeys.aiUsage(user?.id) })
     if (res.thread_id && res.thread_id !== threadId) onThreadIdChange?.(res.thread_id)
     setLoadedThreadId(res.thread_id)
     if (res.status === 'interrupted') {

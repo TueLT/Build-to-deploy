@@ -74,6 +74,7 @@ async def classify_domain_request(
     previous_user_text: str = "",
     previous_assistant_text: str = "",
     conversation_mode: bool = False,
+    user_id: str | None = None,
 ) -> DomainAssessment:
     """Classify an otherwise-unresolved safe request; fail to clarification, never fail open."""
     settings = get_settings()
@@ -99,6 +100,7 @@ async def classify_domain_request(
             provider=settings.llm_provider,
             model=settings.model_name,
             usage_metadata=getattr(raw, "usage_metadata", None),
+            user_id=user_id,
         )
     except Exception:  # provider/schema failures must not turn an unknown request into permission
         return DomainAssessment(

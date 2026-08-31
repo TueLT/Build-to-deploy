@@ -21,8 +21,8 @@ from src.models.calendar_schemas import (
     CalendarEventUpdateRequest,
     EventBackfillOut,
     EventBackfillRequest,
-    EventCandidateOut,
     EventCandidateConfirmRequest,
+    EventCandidateOut,
 )
 from src.services import (
     calendar_service,
@@ -270,7 +270,13 @@ async def backfill_event_candidates(
 ) -> EventBackfillOut:
     await require_conversation_access(db, current_user, conversation_id, "manager")
     return EventBackfillOut(
-        **(await event_extraction_service.process_event_backfill_batch(conversation_id, request.batch_size))
+        **(
+            await event_extraction_service.process_event_backfill_batch(
+                conversation_id,
+                request.batch_size,
+                requested_by_user_id=current_user.id,
+            )
+        )
     )
 
 

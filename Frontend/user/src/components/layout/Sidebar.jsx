@@ -37,7 +37,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
   const assignedAgentsQuery = useAvailableAgentsQuery(token, organizationWorkspaceId)
   const conversationsQuery = useConversationsQuery(token, organizationWorkspaceId)
   const usageQuery = useQuery({
-    queryKey: queryKeys.aiUsage,
+    queryKey: queryKeys.aiUsage(user?.id),
     queryFn: () => getAIUsageStatus(token),
     enabled: Boolean(token),
     staleTime: 30_000,
@@ -63,7 +63,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
   const usageDetail = budgetDisabled
     ? 'Không đặt giới hạn token theo ngày'
     : usage
-      ? `${Number(usage.tokens_used_today || 0).toLocaleString('vi-VN')} / ${Number(usage.daily_token_budget || 0).toLocaleString('vi-VN')} token dùng chung`
+      ? `${Number(usage.tokens_used_today || 0).toLocaleString('vi-VN')} / ${Number(usage.daily_token_budget || 0).toLocaleString('vi-VN')} token của bạn`
       : 'Đang tải hạn mức AI…'
   const adminUrl = import.meta.env.VITE_ADMIN_APP_URL || 'http://localhost:5174'
   useEffect(() => {

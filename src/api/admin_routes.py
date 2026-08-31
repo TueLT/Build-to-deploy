@@ -72,7 +72,8 @@ async def get_stats(db: AsyncSession = Depends(get_db)) -> AdminStats:
 
     budget = await usage_service.get_daily_token_budget()
     usage = await usage_service.get_usage_today()
-    budget_used_pct = round(usage["total_tokens"] / budget * 100, 1) if budget else 0.0
+    peak_account_usage = await usage_service.get_peak_account_usage_today()
+    budget_used_pct = round(peak_account_usage / budget * 100, 1) if budget else 0.0
     return AdminStats(
         total_users=total_users,
         total_conversations=total_conversations,

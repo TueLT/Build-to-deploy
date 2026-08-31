@@ -87,6 +87,7 @@ async def _extract_event_candidate(
     conversation_id: str,
     message_id: str,
     force: bool = False,
+    usage_user_id: str | None = None,
 ) -> EventCandidate | None:
     """Use a bounded message neighbourhood and durable candidates instead of rescanning history."""
     settings = get_settings()
@@ -147,7 +148,7 @@ async def _extract_event_candidate(
         model=settings.model_name,
         usage_metadata=getattr(result, "usage_metadata", {}),
         workspace_id=conversation.workspace_id,
-        user_id=message.sender_id,
+        user_id=usage_user_id or message.sender_id,
     )
     try:
         data = _clean_json(str(result.content))
@@ -236,6 +237,7 @@ async def maybe_extract_event_candidate(
     message_id: str,
     force: bool = False,
     strict: bool = False,
+    usage_user_id: str | None = None,
 ) -> EventCandidate | None:
     """Best-effort wrapper for message delivery; strict mode is used by managed backfill."""
     try:
@@ -243,6 +245,7 @@ async def maybe_extract_event_candidate(
             conversation_id=conversation_id,
             message_id=message_id,
             force=force,
+            usage_user_id=usage_user_id,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Event extraction failed for message %s", message_id)
@@ -251,10 +254,15 @@ async def maybe_extract_event_candidate(
         return None
 
 
-async def process_event_backfill_batch(conversation_id: str, batch_size: int = 200) -> dict:
+async def process_event_backfill_batch(
+    conversation_id: str,
+    batch_size: int = 200,
+    *,
+    requested_by_user_id: str | None = None,
+) -> dict:
     """Process one bounded historical batch and persist a cursor for the next invocation."""
     batch_size = max(1, min(batch_size, 500))
-    if await usage_service.is_over_budget():
+    if requested_by_user_id and await usage_service.is_over_budget(requested_by_user_id):
         return {"status": "paused", "processed": 0, "extracted": 0, "has_more": True}
     async with db_session.async_session_maker() as db:
         conversation = await db.get(Conversation, conversation_id)
@@ -299,7 +307,11 @@ async def process_event_backfill_batch(conversation_id: str, batch_size: int = 2
         for message in batch:
             if looks_like_event(message.content):
                 candidate = await maybe_extract_event_candidate(
-                    conversation_id=conversation_id, message_id=message.id, force=True, strict=True
+                    conversation_id=conversation_id,
+                    message_id=message.id,
+                    force=True,
+                    strict=True,
+                    usage_user_id=requested_by_user_id,
                 )
                 extracted += int(candidate is not None)
         async with db_session.async_session_maker() as db:

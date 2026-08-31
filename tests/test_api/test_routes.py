@@ -317,7 +317,8 @@ async def test_chat_blocked_when_over_daily_token_budget(client, auth_headers, m
     from src.agents import graph as agent_graph
     from src.services import usage_service
 
-    async def _over_budget():
+    async def _over_budget(user_id):
+        assert user_id
         return True
 
     monkeypatch.setattr(usage_service, "is_over_budget", _over_budget)
@@ -384,7 +385,8 @@ async def test_chat_resume_not_blocked_by_budget(client, auth_headers, monkeypat
 
     from src.services import usage_service
 
-    async def _over_budget():
+    async def _over_budget(user_id):
+        assert user_id
         return True
 
     monkeypatch.setattr(usage_service, "is_over_budget", _over_budget)
@@ -484,6 +486,35 @@ async def test_usage_status_accessible_to_regular_user_without_cost_or_model_fie
     response = await client.get("/api/v1/usage/status", headers=auth_headers)
     assert response.status_code == 200
     assert set(response.json().keys()) == {"tokens_used_today", "daily_token_budget", "used_pct"}
+
+
+@pytest.mark.asyncio
+async def test_usage_status_is_scoped_to_authenticated_account(
+    client, auth_headers, other_auth_headers, monkeypatch
+):
+    from src.services import usage_service
+
+    monkeypatch.setattr(usage_service.manager, "broadcast_to_users", AsyncMock())
+    owner_id = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()["id"]
+    other_id = (await client.get("/api/v1/auth/me", headers=other_auth_headers)).json()["id"]
+    await usage_service.log_usage(
+        provider="openai",
+        model="gpt-4o-mini",
+        usage_metadata={"total_tokens": 11},
+        user_id=owner_id,
+    )
+    await usage_service.log_usage(
+        provider="openai",
+        model="gpt-4o-mini",
+        usage_metadata={"total_tokens": 29},
+        user_id=other_id,
+    )
+
+    owner_status = await client.get("/api/v1/usage/status", headers=auth_headers)
+    other_status = await client.get("/api/v1/usage/status", headers=other_auth_headers)
+
+    assert owner_status.json()["tokens_used_today"] == 11
+    assert other_status.json()["tokens_used_today"] == 29
 
 
 @pytest.mark.asyncio

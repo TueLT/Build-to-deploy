@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     workspace_agent_verifier_model_name: str | None = None
     workspace_agent_verifier_temperature: float = Field(default=0.0, ge=0.0, le=0.5)
     workspace_agent_verifier_max_output_tokens: int = Field(default=256, ge=64, le=2_048)
+    # Independent allowance for each authenticated account; 0 disables the daily cap.
     daily_token_budget: int = Field(default=350_000, ge=0)
     agent_max_thread_messages: int = Field(default=20, ge=6, le=100)
     agent_thread_summary_chars: int = Field(default=6000, ge=1000, le=20000)

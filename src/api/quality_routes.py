@@ -294,6 +294,11 @@ async def get_quality_brief(
                     },
                 },
             )
+        if await usage_service.is_over_budget(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Daily AI token allowance exceeded for this account",
+            )
         for resource_id in scope.effective_group_ids:
             await enforce_agent_resource_access(db, context=prepared.context, resource_id=resource_id)
         async def revalidate_resource(resource_id: str) -> None:

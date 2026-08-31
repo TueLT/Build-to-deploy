@@ -49,6 +49,7 @@ async def input_guardrail_node(state: AgentState) -> dict:
             previous_user_text=previous_user,
             previous_assistant_text=previous_assistant,
             conversation_mode=bool(state.get("conversation_id")),
+            user_id=state.get("user_id"),
         )
         semantic_metadata = {
             "decision": semantic.decision,
@@ -130,4 +131,3 @@ async def output_guardrail_node(state: AgentState) -> dict:
                 }
             break
     return {"metadata": {**state.get("metadata", {}), "output_guardrail": {"allowed": True}}}
-
