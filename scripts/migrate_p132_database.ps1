@@ -53,22 +53,23 @@ $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $targetBackupName = "orbit-target-before-restore-$timestamp.dump"
 $mount = "type=bind,source=$backupDirectory,target=/backup"
 
-docker run --rm --env "TARGET_DATABASE_URL=$TargetDatabaseUrl" --env "TARGET_BACKUP_NAME=$targetBackupName" `
-    --mount $mount postgres:16-alpine `
-    sh -c 'pg_dump --format=custom --no-owner --no-privileges --file="/backup/$TARGET_BACKUP_NAME" "$TARGET_DATABASE_URL"'
+docker run --rm --mount $mount postgres:16-alpine `
+    pg_dump --format=custom --no-owner --no-privileges `
+    --file="/backup/$targetBackupName" $TargetDatabaseUrl
 if ($LASTEXITCODE -ne 0) {
     throw "The safety backup of the target database failed; the target was not modified."
 }
 
-docker run --rm --env "TARGET_DATABASE_URL=$TargetDatabaseUrl" postgres:16-alpine `
-    sh -c 'psql "$TARGET_DATABASE_URL" --set=ON_ERROR_STOP=1 --command="DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+$resetSql = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+$resetSql | docker run --rm --interactive postgres:16-alpine `
+    psql --dbname=$TargetDatabaseUrl --set=ON_ERROR_STOP=1
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to reset the target public schema. Restore the safety backup if needed."
 }
 
-docker run --rm --env "TARGET_DATABASE_URL=$TargetDatabaseUrl" --env "BACKUP_NAME=$backupName" `
-    --mount $mount postgres:16-alpine `
-    sh -c 'pg_restore --exit-on-error --no-owner --no-privileges --dbname="$TARGET_DATABASE_URL" "/backup/$BACKUP_NAME"'
+docker run --rm --mount $mount postgres:16-alpine `
+    pg_restore --exit-on-error --no-owner --no-privileges `
+    --dbname=$TargetDatabaseUrl "/backup/$backupName"
 if ($LASTEXITCODE -ne 0) {
     throw "Restore failed. The pre-restore target backup is $targetBackupName."
 }
