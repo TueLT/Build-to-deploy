@@ -27,6 +27,7 @@ def test_default_render_blueprint_uses_only_free_demo_resources():
     assert services[0]["type"] == "web"
     assert services[0]["plan"] == "free"
     assert "preDeployCommand" not in services[0]
+    assert "maxShutdownDelaySeconds" not in services[0]
     assert services[0]["dockerCommand"].startswith("/bin/sh -c \"alembic upgrade head")
     assert environment["WORKSPACE_AGENT_RUNTIME_MODE"] == "embedded"
     assert environment["ALLOW_EMBEDDED_WORKSPACE_AGENTS_IN_PRODUCTION"] == "true"
