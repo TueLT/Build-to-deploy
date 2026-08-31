@@ -250,6 +250,9 @@ _WORK_DOMAIN_PATTERNS = (
     # a legitimate "move the review" into an unnecessary semantic-classifier round trip.
     r"\b(move|cancel|delete|update|reschedul(?:e|ing)|show|list)\b.{0,60}\b(review|demo|sync|meeting|event|calendar|schedule|reminder)\b",
     r"\b(tuan nay|tuan toi|hom nay|ngay mai|this week|next week|today|tomorrow)\b.{0,40}\b(toi co gi|co gi|what do i have|what's on)\b",
+    # Natural Vietnamese often puts the time range last: "Tôi có việc gì cần làm ngày mai?".
+    # Keep this intent-shaped (work noun + relative date) rather than allowing every "tôi có gì".
+    r"\b(toi co|co)\b.{0,20}\b(viec gi|gi can lam|task nao|nhiem vu nao)\b.{0,30}\b(hom nay|ngay mai|tuan nay|tuan toi)\b",
     r"\b(nhac|nhac nho|remind|reminders?|memor(?:y|ies)|schedule)\w*\b",
     r"\b(ghi nho|remember)\b.{0,80}\b(cong viec|du an|task|meeting|cuoc hop|agenda|ticket|build|release)\b",
     r"\b(len ke hoach (?:hom nay|cong viec|du an)|ke hoach (?:cong viec|du an)|work plans?|project plans?)\b",
