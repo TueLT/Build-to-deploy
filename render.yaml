@@ -115,7 +115,7 @@ services:
     dockerContext: .
     # Free services do not use a pre-deploy command. Running migrations before
     # Uvicorn keeps a fresh or restored database at the expected schema head.
-    dockerCommand: /bin/sh -c "alembic upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"
+    dockerCommand: alembic upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'
     healthCheckPath: /health
     autoDeployTrigger: checksPass
     envVars:
