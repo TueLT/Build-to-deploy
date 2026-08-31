@@ -1514,6 +1514,12 @@ class Reminder(Base):
         Index("ix_reminders_workspace_owner_status", "workspace_id", "owner_id", "status"),
         Index("ix_reminders_workspace_fire_at", "workspace_id", "fire_at"),
         Index("uq_reminders_task_id", "task_id", unique=True),
+        Index(
+            "uq_reminders_owner_calendar_event",
+            "owner_id",
+            "calendar_event_id",
+            unique=True,
+        ),
     )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
@@ -1524,10 +1530,15 @@ class Reminder(Base):
     task_id: Mapped[str | None] = mapped_column(
         ForeignKey("tasks.id", ondelete="CASCADE"), default=None
     )
+    # Google event ids are external identifiers, so this is intentionally not a foreign key.
+    # Owner is part of the unique index because one shared Google event may appear on several
+    # users' calendars while each Orbit reminder remains private.
+    calendar_event_id: Mapped[str | None] = mapped_column(default=None)
     title: Mapped[str]
     message: Mapped[str] = mapped_column(default="")
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     fire_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lead_minutes: Mapped[int] = mapped_column(default=30)
     status: Mapped[str] = mapped_column(default="scheduled")  # "scheduled" | "fired" | "cancelled"
     source: Mapped[str] = mapped_column(default="manual")  # "manual" | "agent" | "proactive"
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

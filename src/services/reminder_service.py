@@ -53,10 +53,12 @@ def _reminder_payload(reminder: Reminder) -> dict:
         "id": reminder.id,
         "workspace_id": reminder.workspace_id,
         "task_id": reminder.task_id,
+        "calendar_event_id": reminder.calendar_event_id,
         "title": reminder.title,
         "message": reminder.message,
         "due_at": reminder.due_at.isoformat(),
         "fire_at": reminder.fire_at.isoformat(),
+        "lead_minutes": reminder.lead_minutes,
         "status": reminder.status,
         "source": reminder.source,
         "created_at": reminder.created_at.isoformat(),
@@ -107,6 +109,7 @@ async def schedule_reminder(
             message=message,
             due_at=due_at,
             fire_at=fire_at,
+            lead_minutes=lead_minutes,
             source=source,
         )
         db.add(reminder)
@@ -218,6 +221,7 @@ async def reconcile_task_reminder(task_id: str) -> Reminder | None:
                 message=f"Task deadline - {lead_minutes} minutes notice",
                 due_at=due_at,
                 fire_at=fire_at,
+                lead_minutes=lead_minutes,
                 status="scheduled",
                 source="proactive",
             )
@@ -230,6 +234,7 @@ async def reconcile_task_reminder(task_id: str) -> Reminder | None:
             reminder.message = f"Task deadline - {lead_minutes} minutes notice"
             reminder.due_at = due_at
             reminder.fire_at = fire_at
+            reminder.lead_minutes = lead_minutes
             reminder.status = "scheduled"
             reminder.source = "proactive"
         await db.commit()
@@ -241,6 +246,171 @@ async def reconcile_task_reminder(task_id: str) -> Reminder | None:
         {"type": event_type, "reminder": _reminder_payload(reminder)},
     )
     return reminder
+
+
+async def reconcile_calendar_event_reminder(
+    *,
+    owner_id: str,
+    calendar_event_id: str,
+    title: str | None = None,
+    start_at: str | datetime | None = None,
+    enabled: bool = True,
+    create_if_missing: bool = False,
+    lead_minutes: int | None = None,
+    source: str = "agent",
+) -> Reminder | None:
+    """Create or synchronize one private Orbit reminder for a Google Calendar event.
+
+    Calendar remains the source of truth for the event time/title. A linked reminder may be
+    created only during an explicit confirmation (`create_if_missing=True`); later Calendar
+    updates merely reconcile an existing row and never opt the user in silently.
+    """
+
+    if not owner_id or not calendar_event_id:
+        raise ValueError("Calendar reminder owner and event id are required")
+    if lead_minutes is not None and not 0 <= lead_minutes <= 10_080:
+        raise ValueError("Reminder lead time must be between 0 and 10080 minutes")
+
+    deleted: tuple[str, str] | None = None
+    event_type = "reminder_updated"
+    reminder: Reminder | None = None
+    async with db_session.async_session_maker() as db:
+        existing = await db.scalar(
+            select(Reminder).where(
+                Reminder.owner_id == owner_id,
+                Reminder.calendar_event_id == calendar_event_id,
+            )
+        )
+        if not enabled:
+            if existing is not None:
+                deleted = (existing.id, existing.owner_id)
+                await db.delete(existing)
+                await db.commit()
+        else:
+            if existing is None and not create_if_missing:
+                return None
+
+            owner = await db.get(User, owner_id)
+            if owner is None or not owner.is_active:
+                return None
+            timezone_name = owner.timezone or get_settings().scheduler_timezone
+            due_at: datetime | None
+            if start_at is None:
+                due_at = _as_aware(existing.due_at, timezone_name) if existing is not None else None
+            else:
+                parsed = start_at if isinstance(start_at, datetime) else datetime.fromisoformat(start_at)
+                due_at = _as_aware(parsed, timezone_name)
+            if due_at is None or due_at.astimezone(UTC) <= datetime.now(UTC):
+                if existing is not None:
+                    deleted = (existing.id, existing.owner_id)
+                    await db.delete(existing)
+                    await db.commit()
+            else:
+                personal_workspace_id = await db.scalar(
+                    select(Workspace.id).where(
+                        Workspace.type == "personal",
+                        Workspace.personal_owner_user_id == owner_id,
+                        Workspace.status == "active",
+                    )
+                )
+                if personal_workspace_id is None:
+                    logger.warning(
+                        "Cannot create event reminder without Personal Space: owner=%s event=%s",
+                        owner_id,
+                        calendar_event_id,
+                    )
+                    return None
+
+                effective_lead = (
+                    lead_minutes
+                    if lead_minutes is not None
+                    else existing.lead_minutes if existing is not None else _DEFAULT_TASK_REMINDER_LEAD_MINUTES
+                )
+                now = datetime.now(UTC)
+                fire_at = due_at - timedelta(minutes=effective_lead)
+                if fire_at.astimezone(UTC) <= now:
+                    fire_at = min(due_at, now + timedelta(seconds=1))
+
+                if existing is None:
+                    event_type = "reminder_created"
+                    reminder = Reminder(
+                        workspace_id=personal_workspace_id,
+                        owner_id=owner_id,
+                        calendar_event_id=calendar_event_id,
+                        title=(title or "Calendar event").strip(),
+                        message=f"Calendar event - {effective_lead} minutes notice",
+                        due_at=due_at,
+                        fire_at=fire_at,
+                        lead_minutes=effective_lead,
+                        status="scheduled",
+                        source=source,
+                    )
+                    db.add(reminder)
+                else:
+                    reminder = existing
+                    reminder.workspace_id = personal_workspace_id
+                    if title and title.strip():
+                        reminder.title = title.strip()
+                    reminder.message = f"Calendar event - {effective_lead} minutes notice"
+                    reminder.due_at = due_at
+                    reminder.fire_at = fire_at
+                    reminder.lead_minutes = effective_lead
+                    reminder.status = "scheduled"
+                await db.commit()
+                await db.refresh(reminder)
+
+    if deleted is not None:
+        reminder_id, reminder_owner_id = deleted
+        remove_scheduler_job(reminder_id)
+        await manager.broadcast_to_users(
+            [reminder_owner_id],
+            {"type": "reminder_deleted", "reminder_id": reminder_id},
+        )
+        return None
+    if reminder is None:
+        return None
+    _install_scheduler_job(reminder)
+    await manager.broadcast_to_users(
+        [owner_id],
+        {"type": event_type, "reminder": _reminder_payload(reminder)},
+    )
+    return reminder
+
+
+async def remove_calendar_event_reminder(owner_id: str, calendar_event_id: str) -> None:
+    await reconcile_calendar_event_reminder(
+        owner_id=owner_id,
+        calendar_event_id=calendar_event_id,
+        enabled=False,
+    )
+
+
+async def remove_all_calendar_event_reminders(owner_id: str) -> int:
+    """Remove linked reminders when a user disconnects their Google Calendar."""
+
+    async with db_session.async_session_maker() as db:
+        reminders = list(
+            (
+                await db.execute(
+                    select(Reminder).where(
+                        Reminder.owner_id == owner_id,
+                        Reminder.calendar_event_id.is_not(None),
+                    )
+                )
+            ).scalars()
+        )
+        removed = [(reminder.id, reminder.owner_id) for reminder in reminders]
+        for reminder in reminders:
+            await db.delete(reminder)
+        if reminders:
+            await db.commit()
+    for reminder_id, reminder_owner_id in removed:
+        remove_scheduler_job(reminder_id)
+        await manager.broadcast_to_users(
+            [reminder_owner_id],
+            {"type": "reminder_deleted", "reminder_id": reminder_id},
+        )
+    return len(removed)
 
 
 async def reconcile_user_task_reminders(user_id: str) -> int:
@@ -355,6 +525,7 @@ async def _fire_reminder_job(reminder_id: str) -> None:
             reminder.message,
         )
         task_id = reminder.task_id
+        calendar_event_id = reminder.calendar_event_id
 
     logger.info("Reminder fired: %s (%s)", title, reminder_id)
     if owner_id:
@@ -366,6 +537,8 @@ async def _fire_reminder_job(reminder_id: str) -> None:
         }
         if task_id is not None:
             fired_reminder["task_id"] = task_id
+        if calendar_event_id is not None:
+            fired_reminder["calendar_event_id"] = calendar_event_id
         await manager.broadcast_to_users(
             [owner_id],
             {
@@ -415,6 +588,8 @@ async def cancel_reminder(reminder_id: str, owner_id: str, workspace_id: str) ->
             return False
         if reminder.task_id is not None:
             raise ValueError("Task reminders are managed from the task's reminder settings")
+        if reminder.calendar_event_id is not None:
+            raise ValueError("Calendar reminders are managed from the linked event")
         if reminder.status == "scheduled":
             remove_scheduler_job(reminder_id)
         reminder.status = "cancelled"
@@ -458,6 +633,8 @@ async def update_reminder(
             return None
         if reminder.task_id is not None:
             raise ValueError("Task reminders are managed from the task's reminder settings")
+        if reminder.calendar_event_id is not None:
+            raise ValueError("Calendar reminders are managed from the linked event")
 
         timezone_name = get_settings().scheduler_timezone
         due_at = reminder.due_at
@@ -465,10 +642,7 @@ async def update_reminder(
             due_at = due_at_iso if isinstance(due_at_iso, datetime) else datetime.fromisoformat(due_at_iso)
         due_at = _as_aware(due_at, timezone_name)
 
-        effective_lead = lead_minutes
-        if effective_lead is None:
-            current_fire_at = _as_aware(reminder.fire_at, timezone_name)
-            effective_lead = max(0, int((due_at - current_fire_at).total_seconds() // 60))
+        effective_lead = lead_minutes if lead_minutes is not None else reminder.lead_minutes
         fire_at = due_at - timedelta(minutes=effective_lead)
         now = datetime.now(UTC)
         if due_at.astimezone(UTC) <= now:
@@ -482,6 +656,7 @@ async def update_reminder(
             reminder.message = message
         reminder.due_at = due_at
         reminder.fire_at = fire_at
+        reminder.lead_minutes = effective_lead
         reminder.status = "scheduled"
         await db.commit()
         await db.refresh(reminder)

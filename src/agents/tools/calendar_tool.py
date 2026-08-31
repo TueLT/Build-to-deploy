@@ -5,7 +5,7 @@ from langgraph.prebuilt import InjectedState
 from langgraph.types import interrupt
 
 from src.agents.state import AgentState
-from src.services import calendar_service, guardrail_service
+from src.services import calendar_service, guardrail_service, reminder_service
 from src.services.google_credentials import CalendarNotConnectedError
 
 
@@ -51,6 +51,8 @@ async def create_calendar_event(
         "end": end_iso,
         "description": description,
         "attendees": attendees or [],
+        "create_reminder": True,
+        "reminder_lead_minutes": 30,
     }
     if conflicts:
         # Propose & Verify: surface what it clashes with plus up to 2 free alternatives in the
@@ -83,7 +85,19 @@ async def create_calendar_event(
     await calendar_service.broadcast_change(
         user_id, "calendar_event_created", {"event": calendar_service.to_out_dict(created)}
     )
-    return f"Event created: {created.get('htmlLink', created.get('id'))}"
+    reminder = None
+    if draft.get("create_reminder", True):
+        reminder = await reminder_service.reconcile_calendar_event_reminder(
+            owner_id=user_id,
+            calendar_event_id=str(created.get("id") or ""),
+            title=str(created.get("summary") or draft["summary"]),
+            start_at=(created.get("start") or {}).get("dateTime") or draft["start"],
+            create_if_missing=True,
+            lead_minutes=int(draft.get("reminder_lead_minutes", 30)),
+            source="agent",
+        )
+    suffix = " Orbit reminder linked." if reminder is not None else ""
+    return f"Event created: {created.get('htmlLink', created.get('id'))}.{suffix}".rstrip(".") + "."
 
 
 @tool
@@ -171,6 +185,13 @@ async def update_calendar_event(
     await calendar_service.broadcast_change(
         user_id, "calendar_event_updated", {"event": calendar_service.to_out_dict(updated)}
     )
+    updated_out = calendar_service.to_out_dict(updated)
+    await reminder_service.reconcile_calendar_event_reminder(
+        owner_id=user_id,
+        calendar_event_id=draft["event_id"],
+        title=updated_out.get("title"),
+        start_at=updated_out.get("start"),
+    )
     return f"Event updated: {updated.get('htmlLink', updated.get('id'))}"
 
 
@@ -195,4 +216,5 @@ async def delete_calendar_event(
     except CalendarNotConnectedError:
         return "Connect Google Calendar from the Calendar page before deleting an event."
     await calendar_service.broadcast_change(user_id, "calendar_event_deleted", {"event_id": event_id})
+    await reminder_service.remove_calendar_event_reminder(user_id, event_id)
     return "Event deleted."

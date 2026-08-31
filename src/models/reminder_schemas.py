@@ -8,10 +8,12 @@ class ReminderOut(BaseModel):
     id: str
     workspace_id: str
     task_id: str | None = None
+    calendar_event_id: str | None = None
     title: str
     message: str
     due_at: datetime
     fire_at: datetime
+    lead_minutes: int
     status: Literal["scheduled", "fired", "cancelled"]
     source: Literal["manual", "agent", "proactive"]
     created_at: datetime

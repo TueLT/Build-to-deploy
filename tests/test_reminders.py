@@ -1,5 +1,7 @@
 import pytest
 
+from src.services import reminder_service
+
 
 @pytest.mark.asyncio
 async def test_create_and_list_reminder(client, auth_headers):
@@ -111,3 +113,47 @@ async def test_update_reminder_requires_a_change(client, auth_headers):
     )
     assert response.status_code == 409
     assert "At least one" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_calendar_event_reminder_stays_linked_through_update_and_delete(
+    client, auth_headers, personal_workspace, monkeypatch
+):
+    user = (await client.get("/api/v1/auth/me", headers=auth_headers)).json()
+    monkeypatch.setattr(reminder_service.scheduler, "add_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(reminder_service.scheduler, "remove_job", lambda *args, **kwargs: None)
+
+    created = await reminder_service.reconcile_calendar_event_reminder(
+        owner_id=user["id"],
+        calendar_event_id="google-event-1",
+        title="Design review",
+        start_at="2099-08-10T15:00:00+07:00",
+        create_if_missing=True,
+        lead_minutes=30,
+        source="agent",
+    )
+
+    assert created is not None
+    assert created.workspace_id == personal_workspace["id"]
+    assert created.calendar_event_id == "google-event-1"
+    assert created.lead_minutes == 30
+    assert created.fire_at.isoformat().startswith("2099-08-10T14:30:00")
+
+    updated = await reminder_service.reconcile_calendar_event_reminder(
+        owner_id=user["id"],
+        calendar_event_id="google-event-1",
+        title="Design review moved",
+        start_at="2099-08-11T16:00:00+07:00",
+    )
+
+    assert updated is not None
+    assert updated.id == created.id
+    assert updated.title == "Design review moved"
+    assert updated.lead_minutes == 30
+    assert updated.fire_at.isoformat().startswith("2099-08-11T15:30:00")
+
+    await reminder_service.remove_calendar_event_reminder(user["id"], "google-event-1")
+    reminders = await reminder_service.list_reminders(
+        owner_id=user["id"], workspace_id=personal_workspace["id"]
+    )
+    assert reminders == []

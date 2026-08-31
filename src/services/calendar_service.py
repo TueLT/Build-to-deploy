@@ -7,7 +7,7 @@ from googleapiclient.errors import HttpError
 from starlette.concurrency import run_in_threadpool
 
 from src.config import get_settings
-from src.services import google_credentials
+from src.services import google_credentials, reminder_service
 from src.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -276,8 +276,16 @@ async def _poll_one_user(user_id: str) -> None:
 
     for event in items:
         if event.get("status") == "cancelled":
+            await reminder_service.remove_calendar_event_reminder(user_id, event["id"])
             await broadcast_change(user_id, "calendar_event_deleted", {"event_id": event["id"]})
         else:
+            event_out = to_out_dict(event)
+            await reminder_service.reconcile_calendar_event_reminder(
+                owner_id=user_id,
+                calendar_event_id=event_out["id"],
+                title=event_out["title"],
+                start_at=event_out["start"],
+            )
             await broadcast_change(user_id, "calendar_event_updated", {"event": to_out_dict(event)})
     await google_credentials.set_sync_token(user_id, next_sync_token)
 

@@ -4,7 +4,7 @@ import json
 import logging
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,8 +22,15 @@ from src.models.calendar_schemas import (
     EventBackfillOut,
     EventBackfillRequest,
     EventCandidateOut,
+    EventCandidateConfirmRequest,
 )
-from src.services import calendar_service, consent_service, event_extraction_service, google_credentials
+from src.services import (
+    calendar_service,
+    consent_service,
+    event_extraction_service,
+    google_credentials,
+    reminder_service,
+)
 from src.services.authorization_service import require_conversation_access
 from src.services.google_credentials import CalendarNotConnectedError
 
@@ -78,6 +85,7 @@ async def calendar_oauth_url(current_user: User = Depends(get_current_user)) -> 
 @router.delete("/calendar/connection", status_code=status.HTTP_204_NO_CONTENT)
 async def disconnect_calendar(current_user: User = Depends(get_current_user)) -> None:
     await google_credentials.disconnect(current_user.id)
+    await reminder_service.remove_all_calendar_event_reminders(current_user.id)
 
 
 @public_router.get("/calendar/oauth/callback", response_class=HTMLResponse)
@@ -131,6 +139,7 @@ async def list_event_candidates(
 @router.post("/calendar/candidates/{candidate_id}/confirm", response_model=EventCandidateOut)
 async def confirm_event_candidate(
     candidate_id: str,
+    request: EventCandidateConfirmRequest = Body(default=EventCandidateConfirmRequest()),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> EventCandidateOut:
@@ -211,6 +220,28 @@ async def confirm_event_candidate(
     candidate.status = "confirmed"
     await db.commit()
     await db.refresh(candidate)
+    if candidate.operation == "create" and request.create_reminder:
+        await reminder_service.reconcile_calendar_event_reminder(
+            owner_id=current_user.id,
+            calendar_event_id=candidate.calendar_event_id,
+            title=candidate.title,
+            start_at=candidate.start_at,
+            create_if_missing=True,
+            lead_minutes=request.reminder_lead_minutes,
+            source="proactive",
+        )
+    elif candidate.operation == "update":
+        await reminder_service.reconcile_calendar_event_reminder(
+            owner_id=current_user.id,
+            calendar_event_id=candidate.calendar_event_id,
+            title=candidate.title,
+            start_at=candidate.start_at,
+        )
+    elif candidate.operation == "cancel":
+        await reminder_service.remove_calendar_event_reminder(
+            current_user.id,
+            candidate.calendar_event_id,
+        )
     await calendar_service.broadcast_change(current_user.id, event_type, payload)
     return _candidate_out(candidate)
 
@@ -284,6 +315,16 @@ async def create_event(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
     out = _to_out(created)
+    if request.create_reminder:
+        await reminder_service.reconcile_calendar_event_reminder(
+            owner_id=current_user.id,
+            calendar_event_id=out.id,
+            title=out.title,
+            start_at=out.start,
+            create_if_missing=True,
+            lead_minutes=request.reminder_lead_minutes,
+            source="manual",
+        )
     await calendar_service.broadcast_change(current_user.id, "calendar_event_created", {"event": out.model_dump()})
     return out
 
@@ -309,6 +350,12 @@ async def update_event(
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
     out = _to_out(updated)
+    await reminder_service.reconcile_calendar_event_reminder(
+        owner_id=current_user.id,
+        calendar_event_id=out.id,
+        title=out.title,
+        start_at=out.start,
+    )
     await calendar_service.broadcast_change(current_user.id, "calendar_event_updated", {"event": out.model_dump()})
     return out
 
@@ -322,3 +369,4 @@ async def delete_event(event_id: str, current_user: User = Depends(get_current_u
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Google Calendar error: {exc}") from None
     await calendar_service.broadcast_change(current_user.id, "calendar_event_deleted", {"event_id": event_id})
+    await reminder_service.remove_calendar_event_reminder(current_user.id, event_id)

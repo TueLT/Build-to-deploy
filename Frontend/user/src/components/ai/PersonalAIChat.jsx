@@ -112,6 +112,18 @@ function describeInterrupt(interrupt) {
   return 'Bạn có muốn xác nhận hành động này?'
 }
 
+function CalendarInterruptActions({ interrupt, sending, onConfirm, onDecline }) {
+  const draft = interrupt.draft || {}
+  const [createReminder, setCreateReminder] = useState(draft.create_reminder !== false)
+  const [leadMinutes, setLeadMinutes] = useState(draft.reminder_lead_minutes || 30)
+  const reminderEdits = { create_reminder: createReminder, reminder_lead_minutes: Number(leadMinutes) }
+  return <div className="calendar-confirmation-controls mt-3">
+    <label className="form-check form-switch"><input className="form-check-input" type="checkbox" checked={createReminder} onChange={event=>setCreateReminder(event.target.checked)} disabled={sending}/><span className="form-check-label">Nhắc tôi trước sự kiện</span></label>
+    {createReminder && <select className="form-select form-select-sm mb-2" value={leadMinutes} onChange={event=>setLeadMinutes(Number(event.target.value))} disabled={sending}><option value={15}>15 phút trước</option><option value={30}>30 phút trước</option><option value={60}>1 giờ trước</option><option value={1440}>1 ngày trước</option></select>}
+    <div className="d-flex gap-2 flex-wrap">{draft.alternatives?.map((alt,i)=><button key={i} className="btn btn-sm btn-outline-primary" disabled={sending} onClick={()=>onConfirm({...reminderEdits,start:alt.start,end:alt.end})}>Dùng {alt.start} - {alt.end}</button>)}<button className="btn btn-sm btn-primary" disabled={sending} onClick={()=>onConfirm(reminderEdits)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={sending} onClick={onDecline}>Huỷ</button></div>
+  </div>
+}
+
 // `threadId` is controlled from PersonalAssistantPage (not local state here) so the "Gần đây"
 // sidebar and this chat panel stay in sync: selecting a past session sets it from outside, and this
 // component reports back (onThreadIdChange) whenever the server mints a new one on the first
@@ -225,7 +237,7 @@ export default function PersonalAIChat({ onContext, contextCollapsed, threadId, 
     <div ref={messagesRef} className="personal-messages">
       {messages.length===0 && <div className="personal-welcome"><motion.div initial={{scale:.85,opacity:0}} animate={{scale:1,opacity:1}} className="welcome-ai-mark"><i className="bi bi-stars"/></motion.div><span className="welcome-kicker">Chào {user?.display_name || 'bạn'}</span><h1>Hôm nay mình có thể<br/><em>giúp gì cho bạn?</em></h1><p>Hỏi mình về lịch, công việc, deadline hoặc thông tin từ các cuộc trò chuyện đã được cấp quyền.</p><div className="prompt-grid">{prompts.map(p=><motion.button whileHover={{y:-3}} whileTap={{scale:.98}} key={p.label} onClick={()=>send(p.prompt)}><span><i className={`bi ${p.icon}`}/></span><strong>{p.label}</strong><small>{p.prompt}</small><i className="bi bi-arrow-up-right"/></motion.button>)}</div></div>}
       <AnimatePresence>{messages.map(m=><motion.div key={m.id} initial={{opacity:0,y:8}} animate={{opacity:1,y:0}} className={`personal-message ${m.own?'own':''}`}>
-        {!m.own&&<div className="message-ai-icon"><i className="bi bi-stars"/></div>}<div><div className="personal-message-bubble">{m.own ? m.text : <Markdown>{m.text}</Markdown>}{m.interrupt && pending?.thread_id===threadId && <div className="d-flex gap-2 mt-2 flex-wrap">{m.interrupt.draft?.alternatives?.map((alt,i)=><button key={i} className="btn btn-sm btn-outline-primary" disabled={sending} onClick={()=>respond(true,{start:alt.start,end:alt.end})}>Dùng {alt.start} - {alt.end}</button>)}<button className="btn btn-sm btn-primary" disabled={sending} onClick={()=>respond(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={sending} onClick={()=>respond(false)}>Huỷ</button></div>}</div>{!m.own && <PersonalProcessTrace steps={m.analysisSteps} summary={m.analysis}/>}<time>Bây giờ</time></div>
+        {!m.own&&<div className="message-ai-icon"><i className="bi bi-stars"/></div>}<div><div className="personal-message-bubble">{m.own ? m.text : <Markdown>{m.text}</Markdown>}{m.interrupt && pending?.thread_id===threadId && (m.interrupt.type === 'calendar_event' ? <CalendarInterruptActions interrupt={m.interrupt} sending={sending} onConfirm={edits=>respond(true,edits)} onDecline={()=>respond(false)}/> : <div className="d-flex gap-2 mt-2 flex-wrap"><button className="btn btn-sm btn-primary" disabled={sending} onClick={()=>respond(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={sending} onClick={()=>respond(false)}>Huỷ</button></div>)}</div>{!m.own && <PersonalProcessTrace steps={m.analysisSteps} summary={m.analysis}/>}<time>Bây giờ</time></div>
       </motion.div>)}</AnimatePresence>
       {sending && <PersonalThinkingState/>}
     </div>

@@ -547,6 +547,8 @@ async def list_all_reminders(
             id=r.id,
             workspace_id=r.workspace_id,
             task_id=r.task_id,
+            calendar_event_id=r.calendar_event_id,
+            lead_minutes=r.lead_minutes,
             title=r.title,
             message=r.message,
             due_at=r.due_at,
