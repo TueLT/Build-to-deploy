@@ -31,6 +31,12 @@ class MessageOut(BaseModel):
     created_at: str
 
 
+class ConversationReadReceiptOut(BaseModel):
+    user_id: str
+    display_name: str
+    read_at: str
+
+
 class ConversationSummary(BaseModel):
     id: str
     workspace_id: str
@@ -56,6 +62,7 @@ class ConversationListResponse(BaseModel):
 class MessageListResponse(BaseModel):
     messages: list[MessageOut]
     has_more: bool
+    read_receipts: list[ConversationReadReceiptOut] = Field(default_factory=list)
     # Only computed on the initial fetch (no `before` cursor) - see chat_routes.get_messages.
     first_unread_message_id: str | None = None
 

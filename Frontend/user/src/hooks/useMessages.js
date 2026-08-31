@@ -25,10 +25,19 @@ export function useMessages(token, conversationId, unreadHint = 0) {
       return { ...(previous || {}), messages: next }
     })
   }, [conversationId])
+  const setReadReceipts = useCallback(updater => {
+    queryClient.setQueryData(queryKeys.messages(conversationId), previous => {
+      const current = previous?.read_receipts || []
+      const next = typeof updater === 'function' ? updater(current) : updater
+      return { ...(previous || {}), read_receipts: next }
+    })
+  }, [conversationId])
 
   return {
     messages: query.data?.messages || [],
     setMessages,
+    readReceipts: query.data?.read_receipts || [],
+    setReadReceipts,
     loading: query.isPending && Boolean(conversationId),
     firstUnreadMessageId: query.data?.first_unread_message_id || null,
     unreadCount: query.data?.initial_unread_count || 0,

@@ -225,6 +225,8 @@
 :root[data-theme='dark'] .conversation-meta h3 { color: var(--ink); }
 :root[data-theme='dark'] .message-bubble { background: #293240; border-color: var(--line); color: #dce3ed; }
 :root[data-theme='dark'] .own .message-bubble { background: linear-gradient(135deg,#526ff5,#785de4); border-color: transparent; color: #fff; }
+:root[data-theme='dark'] .message-reader { box-shadow: 0 0 0 2px #1d2531; }
+:root[data-theme='dark'] .message-reader-more { background: #303a49; color: #d5dce7; }
 :root[data-theme='dark'] .composer-attachment { background: #1a2334; border-color: var(--line); color: #c6cfdf; }
 :root[data-theme='dark'] .emoji-picker { background: var(--card); border-color: var(--line); }
 :root[data-theme='dark'] .emoji-picker button:hover { background: #20294b; }

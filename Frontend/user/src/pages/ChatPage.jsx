@@ -41,7 +41,7 @@ export default function ChatPage({ mode = 'personal' }) {
   const scopedConversations = conversations.filter(conversation => mode === 'channel'
     ? conversation.scope === 'channel'
     : conversation.scope !== 'channel')
-  const { messages, setMessages, loading: messagesLoading, firstUnreadMessageId, unreadCount } = useMessages(token, selectedId, unreadHint)
+  const { messages, setMessages, readReceipts, setReadReceipts, loading: messagesLoading, firstUnreadMessageId, unreadCount } = useMessages(token, selectedId, unreadHint)
 
   // Direct-chat AI permission is per user; groups expose one manager-owned policy shared by every
   // participant. Keep both modes in one state so the header, list and AI panel always agree.
@@ -121,6 +121,16 @@ export default function ChatPage({ mode = 'personal' }) {
   }, [scopedConversations, selectedId, setConversations])
 
   useEffect(() => subscribe((data) => {
+    if (data.type === 'conversation_read') {
+      const { selectedId, userId } = stateRef.current
+      if (data.conversation_id === selectedId && data.user_id !== userId) {
+        setReadReceipts(previous => [
+          ...previous.filter(receipt => receipt.user_id !== data.user_id),
+          { user_id: data.user_id, display_name: data.display_name, read_at: data.read_at },
+        ])
+      }
+      return
+    }
     if (data.type === 'group_ai_policy_changed') {
       setConversations(prev => prev.map(c => c.id === data.conversation_id ? { ...c, ai_enabled: data.enabled } : c))
       if (data.conversation_id === stateRef.current.selectedId) {
@@ -138,7 +148,15 @@ export default function ChatPage({ mode = 'personal' }) {
     if (data.type !== 'new_message') return
     const { selectedId, userId } = stateRef.current
     const msg = data.message
-    if (msg.conversation_id === selectedId) setMessages(prev => [...prev, msg])
+    if (msg.conversation_id === selectedId) {
+      setMessages(prev => prev.some(message => message.id === msg.id) ? prev : [...prev, msg])
+      if (msg.sender_id !== userId) {
+        setReadReceipts(previous => [
+          ...previous.filter(receipt => receipt.user_id !== msg.sender_id),
+          { user_id: msg.sender_id, display_name: msg.sender_name, read_at: msg.created_at },
+        ])
+      }
+    }
     setConversations(prev => {
       const idx = prev.findIndex(c => c.id === msg.conversation_id)
       if (idx === -1) return prev
@@ -146,7 +164,7 @@ export default function ChatPage({ mode = 'personal' }) {
       const updated = { ...prev[idx], last_message: msg, updated_at: msg.created_at, unread_count: bumpUnread ? (prev[idx].unread_count || 0) + 1 : prev[idx].unread_count }
       return [updated, ...prev.slice(0, idx), ...prev.slice(idx + 1)]
     })
-  }), [subscribe, setMessages, setConversations])
+  }), [subscribe, setMessages, setReadReceipts, setConversations])
 
   const selectedConversation = scopedConversations.find(conversation => conversation.id === selectedId) || null
 
@@ -218,7 +236,7 @@ export default function ChatPage({ mode = 'personal' }) {
         {selectedConversation ? (
           <>
             <ConversationHeader conversation={selectedConversation} onBack={() => isSingleChannel ? navigate('/channels') : setMobileChat(false)} onAI={openAiPanel} onHide={onHide} onLeave={onLeave} aiGranted={aiGranted} onToggleAi={onToggleAi} aiMode={aiMode} canManageAi={canManageAi} aiPanelCollapsed={aiPanelCollapsed} />
-            <MessageArea conversation={selectedConversation} messages={messages} currentUserId={user?.id} onSend={onSend} loading={messagesLoading} firstUnreadMessageId={firstUnreadMessageId} unreadCount={unreadCount} />
+            <MessageArea conversation={selectedConversation} messages={messages} readReceipts={readReceipts} currentUserId={user?.id} onSend={onSend} loading={messagesLoading} firstUnreadMessageId={firstUnreadMessageId} unreadCount={unreadCount} />
           </>
         ) : (
           <div className="chat-empty-state"><i className={`bi ${mode === 'channel' ? 'bi-hash' : 'bi-chat-dots'}`} /><p>{mode === 'channel' ? 'Chọn một channel trong workspace.' : 'Chọn một cuộc trò chuyện hoặc bắt đầu cuộc trò chuyện mới.'}</p></div>

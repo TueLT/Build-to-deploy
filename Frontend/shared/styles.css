@@ -184,3 +184,10 @@ html{scroll-behavior:smooth}
   .ai-close{display:grid;margin-left:auto}
 }
 @media(max-width:1200px){.chat-layout.single-channel{grid-template-columns:minmax(0,1fr)}}
+
+/* Read cursors are rendered only below the newest own message reached by each participant. */
+.message-readers{display:flex;justify-content:flex-end;align-items:center;min-height:18px;margin:1px 1px 0;padding-right:1px}
+.message-reader{display:inline-flex;margin-left:-4px;border-radius:50%;box-shadow:0 0 0 2px #fcfcfd}
+.message-reader:first-child{margin-left:0}
+.message-reader .avatar{font-weight:700}
+.message-reader-more{height:18px;min-width:18px;display:grid;place-items:center;margin-left:3px;padding:0 4px;border-radius:9px;background:#e9ecf3;color:#667186;font-size:8px;font-weight:700}

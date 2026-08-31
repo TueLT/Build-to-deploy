@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import MessageBubble from './MessageBubble'
 
 const ATTACHMENT_MARKER = '[[orbit-attachment]]'
@@ -7,7 +7,7 @@ const MAX_FILES = 5
 const MAX_FILE_BYTES = 3 * 1024 * 1024
 const MAX_MESSAGE_BYTES = 4_500_000
 
-export default function MessageArea({ conversation, messages, currentUserId, onSend, loading, firstUnreadMessageId, unreadCount }) {
+export default function MessageArea({ conversation, messages, readReceipts = [], currentUserId, onSend, loading, firstUnreadMessageId, unreadCount }) {
   const [draft, setDraft] = useState('')
   const [attachments, setAttachments] = useState([])
   const [emojiOpen, setEmojiOpen] = useState(false)
@@ -65,6 +65,18 @@ export default function MessageArea({ conversation, messages, currentUserId, onS
   }
 
   const unreadTargetLoaded = firstUnreadMessageId && messages.some(message => message.id === firstUnreadMessageId)
+  const readersByMessageId = useMemo(() => {
+    const ownMessages = messages.filter(message => message.sender_id === currentUserId)
+    const result = new Map()
+    readReceipts.forEach(receipt => {
+      const readAt = Date.parse(receipt.read_at)
+      if (Number.isNaN(readAt)) return
+      const target = [...ownMessages].reverse().find(message => Date.parse(message.created_at) <= readAt)
+      if (!target) return
+      result.set(target.id, [...(result.get(target.id) || []), receipt])
+    })
+    return result
+  }, [currentUserId, messages, readReceipts])
   const jumpToUnread = () => {
     document.getElementById(`msg-${firstUnreadMessageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setUnreadDismissed(true)
@@ -83,7 +95,7 @@ export default function MessageArea({ conversation, messages, currentUserId, onS
         {!loading && messages.map(message => (
           <div key={message.id} id={`msg-${message.id}`}>
             {message.id === firstUnreadMessageId && <div className="unread-divider"><span>{unreadCount} tin nhắn mới</span></div>}
-            <MessageBubble message={message} own={message.sender_id === currentUserId} />
+            <MessageBubble message={message} own={message.sender_id === currentUserId} readers={readersByMessageId.get(message.id) || []} />
           </div>
         ))}
         <div ref={scrollRef} />

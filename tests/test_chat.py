@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pytest
 from sqlalchemy import select
 
@@ -191,7 +193,11 @@ async def test_unread_count_and_mark_read(client, auth_headers, other_auth_heade
             headers=auth_headers,
         )
     ).json()
-    await client.post(f"/api/v1/conversations/{conv['id']}/messages", json={"content": "hi bob"}, headers=auth_headers)
+    sent = await client.post(
+        f"/api/v1/conversations/{conv['id']}/messages",
+        json={"content": "hi bob"},
+        headers=auth_headers,
+    )
 
     listed = await client.get(
         f"/api/v1/conversations?workspace_id={workspace['id']}",
@@ -207,6 +213,17 @@ async def test_unread_count_and_mark_read(client, auth_headers, other_auth_heade
     )
     summary_again = next(c for c in listed_again.json()["conversations"] if c["id"] == conv["id"])
     assert summary_again["unread_count"] == 0
+
+    # Alice can now render Bob's avatar below the newest message his cursor has reached.
+    history_for_sender = await client.get(
+        f"/api/v1/conversations/{conv['id']}/messages",
+        headers=auth_headers,
+    )
+    receipts = history_for_sender.json()["read_receipts"]
+    assert len(receipts) == 1
+    assert receipts[0]["user_id"] == other["id"]
+    assert receipts[0]["display_name"] == other["display_name"]
+    assert datetime.fromisoformat(receipts[0]["read_at"]) >= datetime.fromisoformat(sent.json()["created_at"])
 
 
 @pytest.mark.asyncio

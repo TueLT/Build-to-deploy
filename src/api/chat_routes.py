@@ -335,7 +335,17 @@ async def get_messages(
     if not before:
         first_unread_message_id = await chat_service.get_first_unread_message_id(db, conversation_id, current_user.id)
 
-    return MessageListResponse(messages=messages, has_more=has_more, first_unread_message_id=first_unread_message_id)
+    read_receipts = await chat_service.get_read_receipts(
+        db,
+        conversation_id,
+        exclude_user_id=current_user.id,
+    )
+    return MessageListResponse(
+        messages=messages,
+        has_more=has_more,
+        read_receipts=read_receipts,
+        first_unread_message_id=first_unread_message_id,
+    )
 
 
 @router.post("/conversations/{conversation_id}/messages", response_model=MessageOut)
@@ -465,8 +475,19 @@ async def mark_conversation_read(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await chat_service.mark_read(db, conversation_id, current_user.id)
-    return {"status": "ok"}
+    read_at = await chat_service.mark_read(db, conversation_id, current_user.id)
+    participant_ids = await chat_service.get_participant_ids(db, conversation_id)
+    await manager.broadcast_to_users(
+        participant_ids,
+        {
+            "type": "conversation_read",
+            "conversation_id": conversation_id,
+            "user_id": current_user.id,
+            "display_name": current_user.display_name,
+            "read_at": read_at.isoformat(),
+        },
+    )
+    return {"status": "ok", "read_at": read_at.isoformat()}
 
 
 @router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)

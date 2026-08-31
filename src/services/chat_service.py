@@ -17,7 +17,7 @@ from src.db.models import (
     WorkspaceMembership,
 )
 from src.models.auth_schemas import UserPublic
-from src.models.chat_schemas import ConversationSummary, MessageOut
+from src.models.chat_schemas import ConversationReadReceiptOut, ConversationSummary, MessageOut
 from src.services.authorization_service import (
     get_authorized_participant_ids,
     require_conversation_access,
@@ -293,10 +293,41 @@ async def leave_group_conversation(
     return [row.user_id for row in remaining if row.user_id], False
 
 
-async def mark_read(db: AsyncSession, conversation_id: str, user_id: str) -> None:
+async def mark_read(db: AsyncSession, conversation_id: str, user_id: str) -> datetime:
     participant = await assert_participant(db, conversation_id, user_id)
-    participant.last_read_at = datetime.now(UTC)
+    read_at = datetime.now(UTC)
+    participant.last_read_at = read_at
     await db.commit()
+    return read_at
+
+
+async def get_read_receipts(
+    db: AsyncSession,
+    conversation_id: str,
+    *,
+    exclude_user_id: str,
+) -> list[ConversationReadReceiptOut]:
+    """Return active participants' read cursors for rendering per-message seen avatars."""
+    rows = (
+        await db.execute(
+            select(ConversationParticipant, User)
+            .join(User, User.id == ConversationParticipant.user_id)
+            .where(
+                ConversationParticipant.conversation_id == conversation_id,
+                ConversationParticipant.user_id != exclude_user_id,
+                ConversationParticipant.revoked_at.is_(None),
+            )
+            .order_by(User.display_name, User.id)
+        )
+    ).all()
+    return [
+        ConversationReadReceiptOut(
+            user_id=user.id,
+            display_name=user.display_name,
+            read_at=_iso(participant.last_read_at),
+        )
+        for participant, user in rows
+    ]
 
 
 async def get_first_unread_message_id(db: AsyncSession, conversation_id: str, user_id: str) -> str | None:
