@@ -114,6 +114,7 @@ export function GoogleAuthButton({ onError }) {
       <div className="auth-divider">or continue with</div>
       <GoogleLogin
         width="100%"
+        use_fedcm_for_button
         onSuccess={(credentialResponse) => {
           onError('')
           loginWithGoogle(credentialResponse.credential)
