@@ -73,6 +73,15 @@ export default function MessageArea({ conversation, messages, readReceipts = [],
       if (Number.isNaN(readAt)) return
       const target = [...ownMessages].reverse().find(message => Date.parse(message.created_at) <= readAt)
       if (!target) return
+      const targetAt = Date.parse(target.created_at)
+      const hasRepliedAfterTarget = messages.some(message => {
+        const messageAt = Date.parse(message.created_at)
+        return message.sender_id === receipt.user_id && messageAt > targetAt && messageAt <= readAt
+      })
+      // A reply is stronger feedback than a passive seen receipt. Once this participant has
+      // answered after the target message, keep the thread clean and let their reply represent
+      // the acknowledgement instead of retaining a redundant avatar below the older bubble.
+      if (hasRepliedAfterTarget) return
       result.set(target.id, [...(result.get(target.id) || []), receipt])
     })
     return result
