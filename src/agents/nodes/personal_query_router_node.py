@@ -11,6 +11,7 @@ from src.db.models import User
 from src.models.memory_schemas import MemoryCreateRequest
 from src.services import memory_service
 from src.services.personal_query_router_service import (
+    PersonalQueryRoute,
     classify_personal_query,
     extract_explicit_memory_drafts,
 )
@@ -36,6 +37,27 @@ async def personal_query_router_node(state: AgentState) -> dict:
         _latest_user_text(state),
         semantic_intent=semantic.get("intent") if semantic.get("decision") == "allow" else None,
     )
+    previous_intent = state.get("personal_intent")
+    guardrail_category = guardrail_metadata.get("category")
+    resumable_intents = {
+        "calendar",
+        "reminder",
+        "task_management",
+        "chat_analysis",
+        "memory_search",
+        "people_search",
+    }
+    if (
+        guardrail_category == "work_follow_up"
+        and route.intent in {"general_work", "unclear"}
+        and previous_intent in resumable_intents
+    ):
+        route = PersonalQueryRoute(
+            intent=previous_intent,
+            routing_strategy="deterministic",
+            confidence=1.0,
+            reason_code="THREAD_FOLLOW_UP_INTENT",
+        )
     return {
         "personal_intent": route.intent,
         "routing_strategy": route.routing_strategy,

@@ -394,12 +394,15 @@ _FOLLOW_UP_PATTERNS = (
     r"\b(hom nay|ngay mai|tuan nay|tuan sau|thang nay|thang sau|today|tomorrow|this week|next week)\b",
     r"\b(tu .{1,40} den .{1,40}|from .{1,40} to .{1,40})\b",
     r"^(dung|dung roi|ok|okay|co|khong|yes|no|correct|the first|the second|cai dau|cai thu hai)[!. ]*$",
+    r"^(xac nhan|toi xac nhan|dong y|chap nhan|confirm|confirmed|approve|approved)[!. ]*$",
     r"^(cai do|lich do|task do|cuoc hop do|phuong an do|that one|that event|that task)\b",
 )
 
 _CLARIFYING_QUESTION_PATTERNS = (
     r"\?\s*$",
     r"\b(ban muon|ban can|khoang thoi gian nao|ngay nao|luc nao|which|what time|what date|how many)\b",
+    r"\b(tra loi|go|nhap|chon|bam|reply).{0,50}\b(xac nhan|confirm|approve)\b",
+    r"\b(xac nhan|confirm|approve).{0,50}\b(de|to)\s+(tao|create|dat lich|schedule)\b",
 )
 
 _SECRET_OUTPUT_PATTERNS = (
@@ -538,7 +541,7 @@ def evaluate_request_with_history(
     if not previous.allowed or previous.category not in {"work", "conversation"}:
         return decision
 
-    is_time_or_reference = _matches_any(text, _FOLLOW_UP_PATTERNS[:-2] + (_FOLLOW_UP_PATTERNS[-1],))
+    is_time_or_reference = _matches_any(text, _FOLLOW_UP_PATTERNS[:5] + (_FOLLOW_UP_PATTERNS[-1],))
     assistant_asked = _matches_any(previous_assistant_text, _CLARIFYING_QUESTION_PATTERNS)
     if not is_time_or_reference and not assistant_asked:
         return decision

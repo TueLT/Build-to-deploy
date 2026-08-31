@@ -406,6 +406,23 @@ async def test_input_guardrail_uses_checkpoint_turn_history_for_follow_up():
 
 
 @pytest.mark.asyncio
+async def test_input_guardrail_accepts_typed_confirmation_requested_by_previous_turn():
+    result = await input_guardrail_node(
+        {
+            "messages": [
+                HumanMessage(content="Đặt lịch họp ngày mai lúc 10 giờ trong 30 phút"),
+                AIMessage(content='Vui lòng trả lời “Xác nhận” để tạo lịch.'),
+                HumanMessage(content="xác nhận"),
+            ]
+        }
+    )
+
+    assert result["guardrail_blocked"] is False
+    assert result["guardrail_requires_clarification"] is False
+    assert result["metadata"]["guardrail"]["category"] == "work_follow_up"
+
+
+@pytest.mark.asyncio
 async def test_ambiguous_request_asks_specific_clarification(monkeypatch):
     async def classify(*args, **kwargs):
         return DomainAssessment(
