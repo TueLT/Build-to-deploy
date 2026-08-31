@@ -102,7 +102,9 @@ envVarGroups:
       - key: DB_MAX_OVERFLOW
         value: "1"
       - key: DEMO_LOGIN_ENABLED
-        value: "false"
+        value: "true"
+      - key: ALLOW_DEMO_LOGIN_IN_PRODUCTION
+        value: "true"
 
 services:
   - type: web

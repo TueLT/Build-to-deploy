@@ -88,6 +88,8 @@ envVarGroups:
         value: "true"
       - key: DEMO_LOGIN_ENABLED
         value: "false"
+      - key: ALLOW_DEMO_LOGIN_IN_PRODUCTION
+        value: "false"
 
 services:
   - type: web

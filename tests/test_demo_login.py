@@ -11,7 +11,11 @@ async def test_demo_accounts_are_public_click_to_login_identities(client, monkey
     monkeypatch.setattr("scripts.seed_delivery_demo.async_session_maker", db_session.async_session_maker)
     monkeypatch.setattr(
         "src.api.auth_routes.get_settings",
-        lambda: SimpleNamespace(demo_login_enabled=True, app_env="test"),
+        lambda: SimpleNamespace(
+            demo_login_enabled=True,
+            allow_demo_login_in_production=False,
+            app_env="test",
+        ),
     )
     await seed_demo()
 
@@ -48,15 +52,33 @@ async def test_demo_accounts_are_public_click_to_login_identities(client, monkey
 
 
 @pytest.mark.asyncio
-async def test_demo_login_is_hidden_when_disabled_or_in_production(client, monkeypatch):
+async def test_demo_login_requires_explicit_production_opt_in(client, monkeypatch):
     monkeypatch.setattr(
         "src.api.auth_routes.get_settings",
-        lambda: SimpleNamespace(demo_login_enabled=False, app_env="development"),
+        lambda: SimpleNamespace(
+            demo_login_enabled=False,
+            allow_demo_login_in_production=False,
+            app_env="development",
+        ),
     )
     assert (await client.get("/api/v1/auth/demo-accounts")).status_code == 404
 
     monkeypatch.setattr(
         "src.api.auth_routes.get_settings",
-        lambda: SimpleNamespace(demo_login_enabled=True, app_env="production"),
+        lambda: SimpleNamespace(
+            demo_login_enabled=True,
+            allow_demo_login_in_production=False,
+            app_env="production",
+        ),
     )
     assert (await client.get("/api/v1/auth/demo-accounts")).status_code == 404
+
+    monkeypatch.setattr(
+        "src.api.auth_routes.get_settings",
+        lambda: SimpleNamespace(
+            demo_login_enabled=True,
+            allow_demo_login_in_production=True,
+            app_env="production",
+        ),
+    )
+    assert (await client.get("/api/v1/auth/demo-accounts")).status_code == 200

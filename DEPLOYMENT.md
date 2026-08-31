@@ -151,7 +151,10 @@ Chọn **Save, rebuild, and deploy**.
 - Browser không gọi `localhost`, `ws://` hoặc agent hostname riêng.
 - Sau cold start, thử lại khi `/health` đã trả 200.
 
-One-click demo login luôn bị vô hiệu khi `APP_ENV=production`.
+Blueprint Free demo bật one-click demo login bằng cặp cờ
+`DEMO_LOGIN_ENABLED=true` và `ALLOW_DEMO_LOGIN_IN_PRODUCTION=true`. Cấu hình production trả phí
+giữ cả hai cờ ở `false`; không bật cờ thứ hai cho dữ liệu thật vì các tài khoản
+demo cho phép đăng nhập công khai mà không cần mật khẩu.
 
 ## 9. Chuyển sang production trả phí
 

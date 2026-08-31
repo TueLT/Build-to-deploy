@@ -39,6 +39,8 @@ def test_default_render_blueprint_uses_only_free_demo_resources():
     assert environment["WORKSPACE_AGENT_RUNTIME_MODE"] == "embedded"
     assert environment["ALLOW_EMBEDDED_WORKSPACE_AGENTS_IN_PRODUCTION"] == "true"
     assert environment["WORKSPACE_AGENT_MAX_CONCURRENCY"] == "1"
+    assert environment["DEMO_LOGIN_ENABLED"] == "true"
+    assert environment["ALLOW_DEMO_LOGIN_IN_PRODUCTION"] == "true"
 
 
 def test_paid_render_blueprint_preserves_isolated_agent_topology():
@@ -50,3 +52,5 @@ def test_paid_render_blueprint_preserves_isolated_agent_topology():
     assert [service["type"] for service in services] == ["web", "pserv", "pserv"]
     assert "dockerCommand" not in services[0]
     assert environment["WORKSPACE_AGENT_RUNTIME_MODE"] == "remote"
+    assert environment["DEMO_LOGIN_ENABLED"] == "false"
+    assert environment["ALLOW_DEMO_LOGIN_IN_PRODUCTION"] == "false"

@@ -54,7 +54,10 @@ _DEMO_ACCOUNTS = {
 
 def _require_demo_login_enabled() -> None:
     settings = get_settings()
-    if not settings.demo_login_enabled or settings.app_env == "production":
+    production_demo_allowed = (
+        settings.app_env != "production" or settings.allow_demo_login_in_production
+    )
+    if not settings.demo_login_enabled or not production_demo_allowed:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Demo login is unavailable")
 
 
