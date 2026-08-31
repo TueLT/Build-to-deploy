@@ -1,3 +1,5 @@
+import json
+import re
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -9,7 +11,14 @@ from src.agents.state import AgentState
 from src.db import session as db_session
 from src.db.models import Task, User
 from src.models.memory_schemas import MemoryCreateRequest
-from src.services import guardrail_service, memory_service, task_visibility_service, timeline_service
+from src.services import (
+    guardrail_service,
+    memory_service,
+    personal_schedule_analysis_service,
+    task_visibility_service,
+    timeline_service,
+)
+from src.services.personal_query_router_service import normalize_for_routing
 
 
 def _agent_identity(state: AgentState | None) -> tuple[str, str]:
@@ -18,6 +27,22 @@ def _agent_identity(state: AgentState | None) -> tuple[str, str]:
     if not user_id or not workspace_id:
         raise ValueError("Authenticated user and workspace context are required")
     return user_id, workspace_id
+
+
+def _explicit_reminder_lead_minutes(state: AgentState | None) -> int | None:
+    latest = next(
+        (
+            str(message.content)
+            for message in reversed((state or {}).get("messages", []))
+            if getattr(message, "type", "") == "human" and getattr(message, "content", None)
+        ),
+        "",
+    )
+    normalized = normalize_for_routing(latest)
+    if not re.search(r"\b(de xuat|goi y)\b.{0,100}\b(reminder|nhac)\b", normalized):
+        return None
+    match = re.search(r"\btruoc\b.{0,60}\b(\d{1,5})\s*phut\b", normalized)
+    return int(match.group(1)) if match else None
 
 
 @tool
@@ -124,11 +149,19 @@ async def get_personal_timeline(
     from_iso: str,
     to_iso: str,
     include_messages: bool = False,
+    include_overdue_tasks: bool = True,
+    suggest_reminder_lead_minutes: int | None = None,
     state: Annotated[AgentState, InjectedState] = None,  # type: ignore[assignment]
 ) -> str:
-    """List the authenticated user's tasks, reminders, calendar events and optionally
-    consent-authorized messages in chronological order. The range must use ISO 8601 datetimes
-    and cannot exceed 90 days."""
+    """Analyze the user's tasks, linked/standalone reminders, and Google Calendar.
+
+    The result is structured JSON containing a deterministic priority order, deduplicated
+    task-reminder relationships, hard calendar conflicts, deadline clustering risks, source
+    availability, and ``report_markdown`` for a readable Vietnamese answer. Use
+    ``include_overdue_tasks=true`` when the user asks what to prioritize. Set
+    ``suggest_reminder_lead_minutes`` only when the user explicitly asks for a reminder proposal;
+    it never creates anything. The ISO range cannot exceed 90 days.
+    """
     user_id, workspace_id = _agent_identity(state)
     try:
         from_at = datetime.fromisoformat(from_iso.replace("Z", "+00:00"))
@@ -149,17 +182,18 @@ async def get_personal_timeline(
                 include_messages=include_messages,
                 conversation_id=(state or {}).get("conversation_id") if include_messages else None,
                 include_assigned_tasks=True,
+                include_overdue_tasks=include_overdue_tasks,
+                include_completed_tasks=False,
                 limit=100,
             )
         except ValueError as exc:
             return str(exc)
-    lines = [
-        f"- {item.occurred_at.isoformat()} | {item.kind} | {item.title} | {item.status}"
-        for item in timeline.items
-    ]
-    source_notes = [
-        f"{source.source}:{source.status}" for source in timeline.sources if source.status != "ok"
-    ]
-    if source_notes:
-        lines.append(f"Nguồn chưa đầy đủ: {', '.join(source_notes)}")
-    return "\n".join(lines) if lines else "Không có sự kiện nào trong khoảng thời gian này."
+    report = personal_schedule_analysis_service.build_personal_schedule_analysis(
+        timeline,
+        suggest_reminder_lead_minutes=(
+            suggest_reminder_lead_minutes
+            if suggest_reminder_lead_minutes is not None
+            else _explicit_reminder_lead_minutes(state)
+        ),
+    )
+    return json.dumps(report, ensure_ascii=False)

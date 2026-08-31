@@ -90,3 +90,29 @@ async def test_task_calendar_plan_contains_multiple_grounded_steps():
 
     assert len(result["personal_plan"]["steps"]) >= 4
     assert "Đối chiếu với Google Calendar" in result["personal_plan"]["steps"]
+
+
+@pytest.mark.asyncio
+async def test_orbit_plan_compound_request_plans_search_cross_source_analysis_and_safe_proposal():
+    result = await personal_plan_node(
+        {
+            "messages": [
+                HumanMessage(
+                    content=(
+                        "Tìm trong tin nhắn cũ cam kết ORBIT-PLAN-01, đối chiếu task, reminder "
+                        "và Google Calendar; lập kế hoạch ưu tiên, chỉ ra xung đột và đề xuất "
+                        "reminder trước deadline 60 phút nếu còn thiếu. Không tự đoán."
+                    )
+                )
+            ],
+            "personal_intent": "task_management",
+        }
+    )
+
+    steps = result["personal_plan"]["steps"]
+    assert "Tìm dữ kiện trong tin nhắn cũ được cấp quyền" in steps
+    assert "Xác minh deadline từ bằng chứng, không tự đoán dữ kiện thiếu" in steps
+    assert "Đối chiếu với Google Calendar" in steps
+    assert "Đối chiếu reminder và gộp reminder liên kết vào task tương ứng" in steps
+    assert "Phân biệt xung đột lịch trực tiếp với rủi ro deadline dồn sát" in steps
+    assert "Đề xuất reminder còn thiếu nhưng không tự tạo khi chưa xác nhận" in steps

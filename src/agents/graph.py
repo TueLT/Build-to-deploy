@@ -12,6 +12,7 @@ from src.agents.nodes.personal_query_router_node import (
     personal_query_router_node,
     save_explicit_personal_memory_node,
 )
+from src.agents.nodes.personal_response_quality_node import personal_response_quality_node
 from src.agents.nodes.planner_node import planner_node
 from src.agents.nodes.process_summary_node import attach_process_summary_node
 from src.agents.state import AgentState
@@ -85,6 +86,7 @@ def build_graph(checkpointer):
     graph.add_node("personal_plan", personal_plan_node)
     graph.add_node("personal_clarification", personal_clarification_node)
     graph.add_node("planner", planner_node)
+    graph.add_node("personal_response_quality", personal_response_quality_node)
     graph.add_node("tools", ToolNode(ALL_TOOLS))
     graph.add_node("output_guardrail", output_guardrail_node)
     graph.add_node("process_summary", attach_process_summary_node)
@@ -123,8 +125,9 @@ def build_graph(checkpointer):
     graph.add_conditional_edges(
         "planner",
         route_after_planner,
-        {"tools": "tools", END: "output_guardrail"},
+        {"tools": "tools", END: "personal_response_quality"},
     )
+    graph.add_edge("personal_response_quality", "output_guardrail")
     graph.add_conditional_edges(
         "tools",
         route_after_tools,

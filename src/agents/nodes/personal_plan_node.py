@@ -47,9 +47,22 @@ def _latest_turn(state: AgentState) -> tuple[str, str]:
 def _plan_steps(intent: str, normalized: str) -> list[str]:
     if intent == "task_management":
         steps = ["Đọc các task đang được giao và deadline hiện tại"]
+        if re.search(r"\b(tin nhan|message|chat|cam ket|ma)\b", normalized):
+            steps.extend(
+                [
+                    "Tìm dữ kiện trong tin nhắn cũ được cấp quyền",
+                    "Xác minh deadline từ bằng chứng, không tự đoán dữ kiện thiếu",
+                ]
+            )
         if re.search(r"\b(lich|calendar|ke hoach|plan|conflict|xung dot)\b", normalized):
             steps.append("Đối chiếu với Google Calendar")
+        if re.search(r"\b(reminder|nhac viec|nhac nho|nhac truoc)\b", normalized):
+            steps.append("Đối chiếu reminder và gộp reminder liên kết vào task tương ứng")
         steps.append("Đánh giá ưu tiên, trạng thái chặn và rủi ro quá hạn")
+        if re.search(r"\b(conflict|xung dot|trung lich|chong lich)\b", normalized):
+            steps.append("Phân biệt xung đột lịch trực tiếp với rủi ro deadline dồn sát")
+        if re.search(r"\b(de xuat|goi y)\b.{0,80}\b(reminder|nhac)\b", normalized):
+            steps.append("Đề xuất reminder còn thiếu nhưng không tự tạo khi chưa xác nhận")
     elif intent == "calendar":
         if _CALENDAR_CREATE_RE.search(normalized):
             steps = [

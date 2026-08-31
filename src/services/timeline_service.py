@@ -108,6 +108,8 @@ async def get_personal_timeline(
     to_at: datetime | None = None,
     include_messages: bool = False,
     include_assigned_tasks: bool = False,
+    include_overdue_tasks: bool = False,
+    include_completed_tasks: bool = True,
     conversation_id: str | None = None,
     limit: int = 200,
 ) -> PersonalTimelineOut:
@@ -132,15 +134,19 @@ async def get_personal_timeline(
             Task.workspace_id == workspace_id,
         )
     )
+    task_statement = task_statement.where(
+        Task.due_at.is_not(None),
+        Task.due_at <= end_utc,
+        Task.status.not_in({"dismissed", "invalidated"}),
+    )
+    if not include_overdue_tasks:
+        task_statement = task_statement.where(Task.due_at >= start_utc)
+    if not include_completed_tasks:
+        task_statement = task_statement.where(Task.status != "completed")
     tasks = list(
         (
             await db.execute(
-                task_statement.where(
-                    Task.due_at.is_not(None),
-                    Task.due_at >= start_utc,
-                    Task.due_at <= end_utc,
-                    Task.status.not_in({"dismissed", "invalidated"}),
-                )
+                task_statement.order_by(Task.due_at.asc(), Task.id.asc()).limit(limit)
             )
         ).scalars()
     )
@@ -168,6 +174,14 @@ async def get_personal_timeline(
             conversation_id=task.conversation_id,
             source_message_ids=task.source_message_ids or [],
             detail=f"Ưu tiên {task.priority}",
+            priority=task.priority,
+            blocked_reason=task.blocked_reason,
+            overdue=(
+                _aware(task.due_at, timezone) < now
+                and task.status not in {"completed", "dismissed", "invalidated"}
+            ),
+            scope="workspace" if task.agent_workspace_id else "personal",
+            auto_reminder_enabled=task.auto_reminder_enabled,
         )
         for task in tasks
         if task.due_at is not None
@@ -182,6 +196,9 @@ async def get_personal_timeline(
             detail=reminder.message,
             status=reminder.status,
             source_id=reminder.id,
+            linked_task_id=reminder.task_id,
+            linked_calendar_event_id=reminder.calendar_event_id,
+            reminder_lead_minutes=reminder.lead_minutes,
         )
         for reminder in reminders
     )

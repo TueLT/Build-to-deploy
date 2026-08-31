@@ -286,7 +286,11 @@ Kỳ vọng:
 - Agent dùng dữ liệu Tasks, Reminders và Google Calendar.
 - Task `[E2E] Gửi báo cáo tuần` xuất hiện với đúng deadline và priority.
 - Không kết luận “không có deadline” chỉ vì Calendar trống.
-- Kết quả phân biệt được task, reminder và Calendar event.
+- Câu trả lời có đủ bốn mục: **Tổng quan**, **Việc cần ưu tiên**, **Lịch và reminder**, **Xung đột và rủi ro**.
+- Reminder có `task_id` được đặt dưới task tương ứng, không bị đếm thành một công việc thứ hai.
+- Kết quả phân biệt **xung đột lịch trực tiếp** với **rủi ro deadline dồn sát**; nếu không có xung đột phải nói rõ.
+- Task quá hạn hoặc blocked vẫn được đưa lên đầu danh sách ưu tiên dù nằm trước khoảng bảy ngày tương lai.
+- Không hiển thị raw ISO/tool output dạng `2026-... | task | ... | pending`.
 - **Xem tiến trình** có các bước đọc nguồn, đánh giá ưu tiên và tổng hợp.
 
 ### PA-10 — Tạo reminder qua agent
@@ -546,6 +550,8 @@ Mở **Xem tiến trình** và đối chiếu:
 - Không hiển thị raw chain-of-thought, system prompt, token hoặc credential.
 
 PASS chỉ khi câu trả lời dùng đúng dữ kiện của cả bốn nguồn, thứ tự kế hoạch hợp lý và hành động ghi vẫn dừng ở confirmation. Một câu trả lời chung chung như “hãy ưu tiên task quan trọng” là FAIL.
+
+Câu trả lời cuối cũng phải tuân theo contract trình bày của PA-09: gộp reminder vào task, dùng giờ địa phương dễ đọc, có kết luận xung đột rõ ràng và không để lộ JSON/ISO/tool output thô.
 
 ### PA-21 — Lập lại kế hoạch khi điều kiện thay đổi
 
