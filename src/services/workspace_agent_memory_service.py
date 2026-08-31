@@ -208,6 +208,43 @@ async def get_thread_messages(
     )
 
 
+async def delete_thread(
+    db: AsyncSession,
+    *,
+    thread_id: str,
+    organization_workspace_id: str,
+    agent_workspace_id: str,
+    owner_id: str,
+    profile: AgentProfile,
+    authorization_scope_hash: str | None,
+) -> None:
+    """Physically delete one thread after validating its complete security binding.
+
+    Workspace-agent history is private to its creator even when the source facts belong to a
+    shared workspace. Deleting this bounded chat memory must not delete workflows, tasks, source
+    conversations, or any business evidence referenced by an answer.
+    """
+
+    thread = (
+        await db.execute(
+            select(WorkspaceAgentThread)
+            .where(
+                WorkspaceAgentThread.id == thread_id,
+                WorkspaceAgentThread.organization_workspace_id == organization_workspace_id,
+                WorkspaceAgentThread.agent_workspace_id == agent_workspace_id,
+                WorkspaceAgentThread.owner_id == owner_id,
+                WorkspaceAgentThread.agent_profile == profile.value,
+                WorkspaceAgentThread.authorization_scope_hash == authorization_scope_hash,
+                WorkspaceAgentThread.status == "active",
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if thread is None:
+        raise WorkspaceAgentThreadDeniedError("Workspace agent thread is unavailable")
+    await discard_thread(db, thread=thread)
+
+
 def _bounded(content: str) -> str:
     max_content = get_settings().workspace_agent_memory_max_content_chars
     if len(content) <= max_content:

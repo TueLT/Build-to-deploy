@@ -20,6 +20,9 @@ export const listDeliveryThreads = (token, workspaceId, agentWorkspaceId, conver
 export const getDeliveryThreadMessages = (token, workspaceId, agentWorkspaceId, threadId, conversationId = '') =>
   apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/threads/${threadId}/messages${conversationId ? `?selected_conversation_id=${encodeURIComponent(conversationId)}` : ''}`, { token })
 
+export const deleteDeliveryThread = (token, workspaceId, agentWorkspaceId, threadId, conversationId = '') =>
+  apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/threads/${encodeURIComponent(threadId)}${conversationId ? `?selected_conversation_id=${encodeURIComponent(conversationId)}` : ''}`, { method: 'DELETE', token })
+
 export const getDeliveryCapabilities = (token, workspaceId, agentWorkspaceId) =>
   apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/delivery/capabilities`, { token })
 

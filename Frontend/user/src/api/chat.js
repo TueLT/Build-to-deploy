@@ -13,8 +13,8 @@ export const listConversations = (token, workspaceId) => {
   return apiFetch(`/conversations${params.toString() ? `?${params.toString()}` : ''}`, { token })
 }
 
-export const createConversation = (token, { type, participant_ids, name, workspace_id }) =>
-  apiFetch('/conversations', { method: 'POST', token, body: { type, participant_ids, name, workspace_id } })
+export const createConversation = (token, { type, participant_ids, name, workspace_id, ai_enabled = false }) =>
+  apiFetch('/conversations', { method: 'POST', token, body: { type, participant_ids, name, workspace_id, ai_enabled } })
 
 export const listChannelMembers = (token, workspaceId, agentWorkspaceId) =>
   apiFetch(`/workspaces/${workspaceId}/agent-workspaces/${agentWorkspaceId}/channel-members`, { token })

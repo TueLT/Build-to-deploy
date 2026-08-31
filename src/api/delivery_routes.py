@@ -126,7 +126,7 @@ from src.models.workspace_agent_schemas import (
     WorkspaceAgentMessageOut,
     WorkspaceAgentThreadSummaryOut,
 )
-from src.services import guardrail_service, usage_service
+from src.services import guardrail_service, reminder_service, usage_service
 from src.services.audit_service import record_audit_event
 from src.services.delivery_checkpoint_service import read_delivery_checkpoint_progress
 from src.services.delivery_tool_gateway import DeliveryToolGateway
@@ -145,6 +145,9 @@ from src.services.workspace_agent_memory_service import (
     list_thread_summaries,
     load_history,
     resolve_thread,
+)
+from src.services.workspace_agent_memory_service import (
+    delete_thread as delete_workspace_agent_thread,
 )
 from src.websocket.manager import manager
 
@@ -722,6 +725,60 @@ async def read_delivery_thread_messages(
     ]
 
 
+@router.delete(
+    "/workspaces/{workspace_id}/agent-workspaces/{agent_workspace_id}/delivery/threads/{thread_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_delivery_thread(
+    workspace_id: str,
+    agent_workspace_id: str,
+    thread_id: str,
+    selected_conversation_id: str | None = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Delete only the caller's private Delivery Agent chat history in the active scope."""
+
+    prepared, scope = await _prepare_delivery_scope(
+        db,
+        current_user=current_user,
+        workspace_id=workspace_id,
+        agent_workspace_id=agent_workspace_id,
+        message="Xóa lịch sử trò chuyện Product Delivery.",
+        selected_conversation_id=selected_conversation_id,
+    )
+    scope_hash = _delivery_thread_scope_hash(
+        consent_scope_hash=prepared.context.authorization.consent_scope_hash,
+        scope=scope,
+    )
+    try:
+        await delete_workspace_agent_thread(
+            db,
+            thread_id=thread_id,
+            organization_workspace_id=workspace_id,
+            agent_workspace_id=agent_workspace_id,
+            owner_id=current_user.id,
+            profile=AgentProfile.PRODUCT_DELIVERY,
+            authorization_scope_hash=scope_hash,
+        )
+    except WorkspaceAgentThreadDeniedError as exc:
+        raise HTTPException(status_code=404, detail="Conversation history is unavailable") from exc
+    await record_audit_event(
+        db,
+        current_user,
+        action="workspace_agent_thread.deleted",
+        target_type="workspace_agent_thread",
+        target_id=thread_id,
+        workspace_id=workspace_id,
+        metadata={
+            "agent_workspace_id": agent_workspace_id,
+            "agent_profile": AgentProfile.PRODUCT_DELIVERY.value,
+            "scope": scope.view_scope.value,
+        },
+    )
+    await db.commit()
+
+
 async def _respond_without_business_data(
     db: AsyncSession,
     *,
@@ -1117,6 +1174,7 @@ async def create_delivery_team_task(
     )
     await db.commit()
     await db.refresh(task)
+    await reminder_service.reconcile_task_reminder(task.id)
     output = TaskOut.model_validate(task)
     await manager.broadcast_to_users(
         list({current_user.id, task.owner_id}),
@@ -1247,6 +1305,7 @@ async def review_delivery_task_submission(
     )
     await db.commit()
     await db.refresh(task)
+    await reminder_service.reconcile_task_reminder(task.id)
     reviewed = task
     output = TaskOut.model_validate(reviewed)
     await manager.broadcast_to_users(

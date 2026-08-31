@@ -13,13 +13,15 @@ class ChatMessage(BaseModel):
 
 class MessageScope(BaseModel):
     kind: Literal["latest_n", "unread", "today", "yesterday", "this_week", "rolling_hours", "custom_range"]
-    count: int | None = Field(default=None, ge=1, le=50)
+    count: int | None = Field(default=None, ge=1, le=200)
     hours: int | None = Field(default=None, ge=1, le=168)
     since: datetime | None = None
     until: datetime | None = None
 
     @model_validator(mode="after")
     def validate_scope_fields(self):
+        if self.count and self.count > 50 and self.kind != "unread":
+            raise ValueError("only unread scope supports more than 50 messages")
         if self.kind == "custom_range" and (self.since is None or self.until is None):
             raise ValueError("custom_range requires both since and until")
         if self.since and self.until and self.since >= self.until:
@@ -36,7 +38,7 @@ class ChatRequest(BaseModel):
         default=None,
         description="Conversation workspace validation only; omit for Personal Assistant",
     )
-    context_limit: int = Field(default=20, ge=1, le=50)
+    context_limit: int = Field(default=20, ge=1, le=200)
     scope: MessageScope | None = None
     messages: list[ChatMessage] | None = Field(
         default=None,
@@ -54,7 +56,15 @@ class ChatRequest(BaseModel):
 
 
 class InterruptPayload(BaseModel):
-    type: Literal["calendar_event", "calendar_event_update", "calendar_event_delete", "reminder"]
+    type: Literal[
+        "calendar_event",
+        "calendar_event_update",
+        "calendar_event_delete",
+        "reminder",
+        "reminder_update",
+        "reminder_cancel",
+        "reminder_snooze",
+    ]
     draft: dict
 
 
@@ -70,7 +80,14 @@ class AuthorizedContextMetadata(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str = Field(default="", description="Phản hồi từ agent")
-    analysis: str = Field(default="", description="Phân tích nội bộ")
+    analysis: str = Field(
+        default="",
+        description="Tóm tắt routing/tool đã dùng; không chứa chain-of-thought nội bộ",
+    )
+    analysis_steps: list[str] = Field(
+        default_factory=list,
+        description="Các bước xử lý quan sát được để hiển thị dạng activity trace",
+    )
     thread_id: str
     status: Literal["completed", "interrupted", "error"] = "completed"
     interrupt: InterruptPayload | None = None

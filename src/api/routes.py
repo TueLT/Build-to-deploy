@@ -26,6 +26,12 @@ from src.services import (
     usage_service,
 )
 from src.services.authorization_service import require_conversation_access
+from src.services.personal_agent_trace_service import (
+    build_process_steps,
+    build_process_summary,
+    message_process_steps,
+    message_process_summary,
+)
 from src.services.workspace_service import resolve_personal_workspace_for_user
 
 router = APIRouter()
@@ -44,6 +50,12 @@ def _build_chat_response(
         payload = interrupts[0].value
         return ChatResponse(
             response="Please confirm the proposed action.",
+            analysis=build_process_summary(
+                result.get("messages", []), result.get("metadata", {})
+            ),
+            analysis_steps=build_process_steps(
+                result.get("messages", []), result.get("metadata", {})
+            ),
             thread_id=thread_id,
             status="interrupted",
             interrupt=InterruptPayload(**payload),
@@ -55,11 +67,16 @@ def _build_chat_response(
         return ChatResponse(response=error, thread_id=thread_id, status="error", context_scope=context_scope)
 
     final_text = ""
+    process_summary = ""
+    process_steps: list[str] = []
     for m in reversed(result.get("messages", [])):
         # A trailing ToolMessage means graph.py routed straight to END after a "terminal" tool
         # (summarize_conversation/extract_tasks) - its content is already the final answer.
         if isinstance(m, (AIMessage, ToolMessage)) and m.content:
             final_text = m.content
+            if isinstance(m, AIMessage):
+                process_summary = message_process_summary(m)
+                process_steps = message_process_steps(m)
             break
     if not final_text:
         final_text = (
@@ -68,6 +85,10 @@ def _build_chat_response(
         )
     return ChatResponse(
         response=final_text,
+        analysis=process_summary
+        or build_process_summary(result.get("messages", []), result.get("metadata", {})),
+        analysis_steps=process_steps
+        or build_process_steps(result.get("messages", []), result.get("metadata", {})),
         thread_id=thread_id,
         status="completed",
         context_scope=context_scope,

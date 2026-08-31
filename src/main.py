@@ -42,6 +42,7 @@ from src.services.ai_config_service import load_saved_ai_configuration
 from src.services.company_service import get_or_create_company_workspace
 from src.services.component_health_service import component_health
 from src.services.delivery_group_schedule_service import process_due_delivery_group_schedules
+from src.services.reminder_service import reconcile_active_task_reminders
 from src.services.scheduler import scheduler
 from src.services.workspace_outbox_service import process_workspace_outbox_events
 from src.websocket.routes import router as ws_router
@@ -117,6 +118,15 @@ async def lifespan(app: FastAPI):
         seconds=settings.calendar_poll_interval_seconds,
         id="calendar_poll",
         replace_existing=True,
+    )
+    scheduler.add_job(
+        reconcile_active_task_reminders,
+        "interval",
+        minutes=15,
+        id="task_reminder_reconcile",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.add_job(
         process_workspace_outbox_events,

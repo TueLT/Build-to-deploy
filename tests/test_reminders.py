@@ -65,3 +65,49 @@ async def test_reminder_not_visible_to_other_user(client, auth_headers, other_au
 
     resp = await client.delete(f"/api/v1/reminders/{created['id']}", headers=other_auth_headers)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_and_snooze_independent_reminder(client, auth_headers):
+    created = (
+        await client.post(
+            "/api/v1/reminders",
+            json={"title": "Original", "due_at_iso": "2099-08-10T15:00:00", "lead_minutes": 30},
+            headers=auth_headers,
+        )
+    ).json()
+
+    updated_response = await client.patch(
+        f"/api/v1/reminders/{created['id']}",
+        json={"title": "Updated", "due_at_iso": "2099-08-11T16:00:00", "lead_minutes": 60},
+        headers=auth_headers,
+    )
+    assert updated_response.status_code == 200
+    updated = updated_response.json()
+    assert updated["title"] == "Updated"
+    assert updated["status"] == "scheduled"
+    assert updated["fire_at"].startswith("2099-08-11T15:00:00")
+
+    snoozed_response = await client.post(
+        f"/api/v1/reminders/{created['id']}/snooze",
+        json={"minutes": 10},
+        headers=auth_headers,
+    )
+    assert snoozed_response.status_code == 200
+    assert snoozed_response.json()["status"] == "scheduled"
+
+
+@pytest.mark.asyncio
+async def test_update_reminder_requires_a_change(client, auth_headers):
+    created = (
+        await client.post(
+            "/api/v1/reminders",
+            json={"title": "Original", "due_at_iso": "2099-08-10T15:00:00"},
+            headers=auth_headers,
+        )
+    ).json()
+    response = await client.patch(
+        f"/api/v1/reminders/{created['id']}", json={}, headers=auth_headers
+    )
+    assert response.status_code == 409
+    assert "At least one" in response.json()["detail"]

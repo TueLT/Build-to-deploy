@@ -10,6 +10,7 @@ export default function NewConversationModal({ open, workspaceId, onClose, onCre
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState([])
   const [groupName, setGroupName] = useState('')
+  const [groupAiEnabled, setGroupAiEnabled] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
@@ -22,6 +23,7 @@ export default function NewConversationModal({ open, workspaceId, onClose, onCre
     if (open) return
     setSelected([])
     setGroupName('')
+    setGroupAiEnabled(false)
     setSearch('')
     setError('')
   }, [open])
@@ -48,6 +50,7 @@ export default function NewConversationModal({ open, workspaceId, onClose, onCre
         participant_ids: selected,
         name: isGroup ? groupName.trim() : undefined,
         workspace_id: workspaceId,
+        ai_enabled: isGroup && groupAiEnabled,
       })
       onCreated(conversation)
       onClose()
@@ -74,10 +77,19 @@ export default function NewConversationModal({ open, workspaceId, onClose, onCre
               </div>
               {error && <div className="auth-error">{error}</div>}
               {isGroup && (
-                <div className="mb-3">
-                  <label className="form-label small fw-semibold" htmlFor="conversation-group-name">Tên cuộc trò chuyện</label>
-                  <input id="conversation-group-name" className="form-control" placeholder="Ví dụ: Nhóm thiết kế, Đi ăn trưa…" value={groupName} onChange={event => setGroupName(event.target.value)} autoFocus />
-                </div>
+                <>
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold" htmlFor="conversation-group-name">Tên cuộc trò chuyện</label>
+                    <input id="conversation-group-name" className="form-control" placeholder="Ví dụ: Nhóm thiết kế, Đi ăn trưa…" value={groupName} onChange={event => setGroupName(event.target.value)} autoFocus />
+                  </div>
+                  <div className="conversation-privacy-note mb-3">
+                    <i className="bi bi-stars" />
+                    <span className="flex-grow-1"><strong>Bật AI cho cả nhóm</strong><small className="d-block">Một chính sách chung: khi bật, mọi thành viên đều dùng được AI trong cuộc trò chuyện này.</small></span>
+                    <div className="form-check form-switch m-0">
+                      <input id="conversation-group-ai" className="form-check-input" type="checkbox" role="switch" checked={groupAiEnabled} onChange={event => setGroupAiEnabled(event.target.checked)} />
+                    </div>
+                  </div>
+                </>
               )}
               <label className="form-label small fw-semibold" htmlFor="conversation-user-search">Người nhận</label>
               <div className="conversation-member-search"><i className="bi bi-search" /><input id="conversation-user-search" placeholder="Tìm theo tên hoặc email..." value={search} onChange={event => setSearch(event.target.value)} /></div>

@@ -22,6 +22,7 @@ from src.models.auth_schemas import (
     UpdateProfileRequest,
     UserPublic,
 )
+from src.services import reminder_service
 from src.services.workspace_service import ensure_personal_workspace
 
 router = APIRouter()
@@ -258,10 +259,22 @@ async def update_me(
     db: AsyncSession = Depends(get_db),
 ) -> UserPublic:
     updates = request.model_dump(exclude_unset=True)
+    previous_preferences = dict(current_user.preferences or {})
     for field, value in updates.items():
         setattr(current_user, field, value)
     await db.commit()
     await db.refresh(current_user)
+    current_preferences = current_user.preferences or {}
+    reminder_preferences_changed = any(
+        previous_preferences.get(key) != current_preferences.get(key)
+        for key in (
+            "auto_task_reminders",
+            "default_reminder_lead_minutes",
+            "default_reminder_lead",
+        )
+    )
+    if reminder_preferences_changed:
+        await reminder_service.reconcile_user_task_reminders(current_user.id)
     return _to_public(current_user)
 
 

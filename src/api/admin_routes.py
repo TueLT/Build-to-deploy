@@ -480,6 +480,7 @@ async def list_all_tasks(
             conversation_id=t.conversation_id,
             title=t.title,
             due_at=t.due_at,
+            auto_reminder_enabled=t.auto_reminder_enabled,
             priority=t.priority,
             status=t.status,
             source=t.source,
@@ -517,6 +518,7 @@ async def delete_task_admin(
         workspace_id=workspace_id,
         metadata={},
     )
+    await reminder_service.remove_task_reminder(task.id)
     await db.delete(task)
     await db.commit()
 
@@ -544,6 +546,7 @@ async def list_all_reminders(
         AdminReminderOut(
             id=r.id,
             workspace_id=r.workspace_id,
+            task_id=r.task_id,
             title=r.title,
             message=r.message,
             due_at=r.due_at,

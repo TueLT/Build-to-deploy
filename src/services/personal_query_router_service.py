@@ -155,7 +155,12 @@ def extract_explicit_memory_drafts(text: str) -> tuple[PersonalMemoryDraft, ...]
             flags=re.IGNORECASE,
         )
     if alias_match is not None:
-        alias = re.sub(r"\s+(?:đi|nhé|nha)$", "", alias_match.group(1), flags=re.IGNORECASE).strip()
+        alias = re.sub(
+            r"(?:\s+(?:đi|nhé|nha|thôi))+$",
+            "",
+            alias_match.group(1),
+            flags=re.IGNORECASE,
+        ).strip()
         if alias:
             drafts.append(
                 PersonalMemoryDraft(

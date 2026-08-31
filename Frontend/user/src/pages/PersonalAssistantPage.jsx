@@ -2,8 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import AssistantSessionList from '../components/ai/AssistantSessionList'
 import PersonalAIChat from '../components/ai/PersonalAIChat'
 import AssistantContextPanel from '../components/ai/AssistantContextPanel'
+import { useAuth } from '../context/AuthContext'
+
+const activeThreadStorageKey = userId => `orbit-assistant-active-thread:${userId}`
 
 export default function PersonalAssistantPage(){
+  const { user } = useAuth()
   const [contextOpen,setContextOpen]=useState(false)
   const [contextCollapsed,setContextCollapsed]=useState(() => window.localStorage.getItem('orbit-assistant-context-collapsed') === 'true')
   const [contextWidth,setContextWidth]=useState(() => {
@@ -17,6 +21,21 @@ export default function PersonalAssistantPage(){
   // Bumped after every completed chat turn so AssistantSessionList re-fetches - a new/updated
   // thread should show up (or move to the top) without a manual page refresh.
   const [threadsVersion,setThreadsVersion]=useState(0)
+
+  // A route change unmounts this page. Restore the last Personal Agent session per account so
+  // returning from Calendar/Tasks/etc. continues the same clarification or confirmation flow.
+  useEffect(() => {
+    if (!user?.id) return
+    setActiveThreadId(window.localStorage.getItem(activeThreadStorageKey(user.id)) || null)
+  }, [user?.id])
+
+  const selectThread = useCallback(threadId => {
+    setActiveThreadId(threadId)
+    if (!user?.id) return
+    const key = activeThreadStorageKey(user.id)
+    if (threadId) window.localStorage.setItem(key, threadId)
+    else window.localStorage.removeItem(key)
+  }, [user?.id])
 
   useEffect(() => {
     window.localStorage.setItem('orbit-assistant-context-width', String(contextWidth))
@@ -50,15 +69,15 @@ export default function PersonalAssistantPage(){
   return <div className={`personal-assistant-layout ${resizing ? 'resizing' : ''} ${contextCollapsed ? 'context-collapsed' : ''}`} style={{ '--assistant-context-width': `${contextWidth}px` }}>
     <AssistantSessionList
       activeThreadId={activeThreadId}
-      onSelectThread={setActiveThreadId}
-      onNewThread={()=>setActiveThreadId(null)}
+      onSelectThread={selectThread}
+      onNewThread={()=>selectThread(null)}
       refreshSignal={threadsVersion}
     />
     <PersonalAIChat
       onContext={openContext}
       contextCollapsed={contextCollapsed}
       threadId={activeThreadId}
-      onThreadIdChange={setActiveThreadId}
+      onThreadIdChange={selectThread}
       onActivity={()=>setThreadsVersion(v=>v+1)}
     />
     <AssistantContextPanel

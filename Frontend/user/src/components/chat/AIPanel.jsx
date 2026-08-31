@@ -17,7 +17,7 @@ const actions = [
 const scopeOptions = {
   latest_20: { label: '20 latest messages', request: { kind: 'latest_n', count: 20 }, count: 20 },
   latest_50: { label: '50 latest messages', request: { kind: 'latest_n', count: 50 }, count: 50 },
-  unread: { label: 'Unread messages', request: { kind: 'unread' }, count: 50 },
+  unread: { label: 'Unread messages (up to 200)', request: { kind: 'unread', count: 200 }, count: 200 },
   today: { label: 'Today', request: { kind: 'today' }, count: 50 },
   yesterday: { label: 'Yesterday', request: { kind: 'yesterday' }, count: 50 },
   this_week: { label: 'This week', request: { kind: 'this_week' }, count: 50 },
@@ -36,6 +36,9 @@ function parseJsonArray(text) {
 function describeInterrupt(interrupt) {
   const d = interrupt.draft
   if (interrupt.type === 'reminder') return `Tạo nhắc nhở "${d.title}" lúc ${d.due_at}?`
+  if (interrupt.type === 'reminder_update') return `Cập nhật nhắc nhở ${d.reminder_id}?`
+  if (interrupt.type === 'reminder_cancel') return `Hủy nhắc nhở ${d.reminder_id}?`
+  if (interrupt.type === 'reminder_snooze') return `Hoãn nhắc nhở ${d.reminder_id} thêm ${d.minutes} phút?`
   if (interrupt.type === 'calendar_event') {
     if (d.conflicts?.length) {
       const clash = d.conflicts.map(conflict => conflict.title).join(', ')

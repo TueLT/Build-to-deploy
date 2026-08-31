@@ -49,6 +49,9 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
       .filter(conversation => conversation.scope === 'channel' && conversation.agent_workspace_id === deliveryWorkspace.id)
       .sort((left, right) => (left.name || '').localeCompare(right.name || '', 'vi'))
     : []
+  const personalUnreadCount = (conversationsQuery.data?.conversations || [])
+    .filter(conversation => conversation.scope !== 'channel')
+    .reduce((total, conversation) => total + Number(conversation.unread_count || 0), 0)
   const channelsExpanded = !collapsed && channelsOpen
   const hasAssignedAgent = (assignedAgentsQuery.data || []).length === 1
   const usage = usageQuery.data
@@ -110,6 +113,7 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse }) 
             // `/tasks/inbox` (NavLink prefix-matches by default), highlighting both at once.
             <NavLink key={path} to={`/${path}`} end title={collapsed ? label : undefined} onMouseEnter={() => preloadDestination(`/${path}`)} onFocus={() => preloadDestination(`/${path}`)} onClick={onClose} className={({ isActive }) => `side-link ${label === 'AI Assistant' ? 'assistant-link' : ''} ${isActive ? 'active' : ''}`}>
               <i className={`bi ${icon}`} /><span>{label}</span>
+              {label === 'Chats' && personalUnreadCount > 0 && <b className="side-count" aria-label={`${personalUnreadCount} tin nhắn chưa đọc`}>{personalUnreadCount > 99 ? '99+' : personalUnreadCount}</b>}
             </NavLink>
           ))}
           <div className="nav-caption workspace-caption">My Work</div>

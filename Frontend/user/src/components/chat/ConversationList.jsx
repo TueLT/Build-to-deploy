@@ -23,7 +23,7 @@ const MODE_CONTENT = {
   },
 }
 
-export default function ConversationList({ mode = 'personal', conversations, selectedId, onSelect, onNewConversation, onToggleAi }) {
+export default function ConversationList({ mode = 'personal', conversations, selectedId, currentUserId, onSelect, onNewConversation, onToggleAi }) {
   const [search, setSearch] = useState('')
   const content = MODE_CONTENT[mode]
   const filtered = conversations.filter(conversation =>
@@ -44,10 +44,13 @@ export default function ConversationList({ mode = 'personal', conversations, sel
       </div>
 
       <div className="conversation-items">
-        {filtered.map(conversation => (
+        {filtered.map(conversation => {
+          const lastMessageIsMine = conversation.last_message?.sender_id === currentUserId
+          const visuallyUnread = conversation.unread_count > 0 && !lastMessageIsMine
+          return (
           <div
             key={conversation.id}
-            className={`chat-item ${conversation.id === selectedId ? 'active' : ''}`}
+            className={`chat-item ${conversation.id === selectedId ? 'active' : ''} ${visuallyUnread ? 'unread' : ''}`}
             role="button"
             tabIndex={0}
             onClick={() => onSelect(conversation.id)}
@@ -75,11 +78,11 @@ export default function ConversationList({ mode = 'personal', conversations, sel
                   </label>
                 </span>
               </span>
-              <span className="chat-item-bottom"><span>{conversation.last_message?.content || 'Chưa có tin nhắn'}</span>{conversation.unread_count > 0 && <b>{conversation.unread_count}</b>}</span>
+              <span className="chat-item-bottom"><span>{lastMessageIsMine && <em>Bạn: </em>}{conversation.last_message?.content || 'Chưa có tin nhắn'}</span>{visuallyUnread && <b aria-label={`${conversation.unread_count} tin nhắn chưa đọc`}>{conversation.unread_count > 99 ? '99+' : conversation.unread_count}</b>}</span>
               {conversation.type === 'group' && <span className="chat-item-role"><i className={`bi ${conversation.scope === 'channel' ? 'bi-hash' : 'bi-people'}`} /> {conversation.participants.length} thành viên{conversation.scope === 'channel' ? ' · Workspace channel' : ''}</span>}
             </span>
           </div>
-        ))}
+        )})}
         {!filtered.length && (
           <div className="conversation-list-empty">
             <i className={`bi ${search ? 'bi-search' : content.icon}`} />

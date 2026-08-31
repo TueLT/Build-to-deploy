@@ -52,6 +52,7 @@
 :root[data-theme='dark'] .user-mini:hover,
 :root[data-theme='dark'] .icon-btn:hover { background: #27303e; color: var(--ink); }
 :root[data-theme='dark'] .icon-btn { color: #aab4c8; }
+:root[data-theme='dark'] .notification-btn .notification-count { border-color: #1a202b; }
 :root[data-theme='dark'] .workspace-switcher,
 :root[data-theme='dark'] .global-search { background: #232b38; border-color: var(--line); color: var(--ink); }
 :root[data-theme='dark'] .workspace-switcher select,
@@ -155,6 +156,11 @@
 :root[data-theme='dark'] .session-item.active { background: #303a55; }
 :root[data-theme='dark'] .personal-message-bubble { background: #293240; color: #dce3ed; }
 :root[data-theme='dark'] .personal-message.own .personal-message-bubble { background: linear-gradient(135deg,#526ff5,#785de4); color: #fff; }
+:root[data-theme='dark'] .personal-process-trace { background: #202936; border-color: #364255; color: #d6deea; }
+:root[data-theme='dark'] .personal-process-trace>summary:hover { background: #283244; }
+:root[data-theme='dark'] .personal-process-timeline { background: #1d2531; border-color: #364255; }
+:root[data-theme='dark'] .personal-process-step p { color: #c5cedc; }
+:root[data-theme='dark'] .personal-process-step:not(:last-child)::before { background: #3a4658; }
 :root[data-theme='dark'] .active-sources button { background: #293240; color: #c0c8d5; }
 :root[data-theme='dark'] .context-empty { background: #252e3b; border-color: var(--line); color: #c0c8d5; }
 :root[data-theme='dark'] .related-memory { background: #292416; border-color: #4c4121; }
@@ -197,6 +203,7 @@
 :root[data-theme='dark'] .permission-card { background: #252e3b; border-color: var(--line); color: var(--ink); }
 :root[data-theme='dark'] .chat-item:hover { background: #293240; }
 :root[data-theme='dark'] .chat-item.active { background: #303a55; }
+:root[data-theme='dark'] .chat-item.unread .chat-item-bottom>span { color: #d3daea; }
 :root[data-theme='dark'] .conversation-sections > button,
 :root[data-theme='dark'] .new-conversation-types > button { background: #252e3b; border-color: var(--line); color: var(--muted); }
 :root[data-theme='dark'] .conversation-sections > button:hover,
@@ -367,6 +374,20 @@
 :root[data-theme='dark'] .workspace-agent-history-group button:hover { background: #293240; }
 :root[data-theme='dark'] .workspace-agent-history-group button { color: #cbd3e2; }
 :root[data-theme='dark'] .workspace-agent-history-group button.active { background: #263149; }
+
+/* Shared in-app confirmation dialog. Destructive actions stay inside Orbit instead of using the
+   browser's blocking alert/confirm UI. */
+.orbit-confirm-backdrop{z-index:1200;background:rgba(20,30,50,.42);backdrop-filter:blur(3px)}
+.orbit-confirm-dialog{max-width:430px;padding:16px}
+.orbit-confirm-dialog .modal-content{border:0;border-radius:18px;box-shadow:0 24px 70px rgba(25,34,58,.24);overflow:hidden}
+.orbit-confirm-dialog .modal-header{padding:19px 21px 10px;border:0}
+.orbit-confirm-dialog .modal-title{font-size:17px;font-weight:800;color:var(--text)}
+.orbit-confirm-dialog .modal-body{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:13px;padding:10px 21px 19px;color:var(--muted);font-size:12px;line-height:1.55}
+.orbit-confirm-icon{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--primary-soft);color:var(--primary);font-size:17px}
+.orbit-confirm-icon.danger{background:#fff0f2;color:#d9324b}
+.orbit-confirm-dialog .modal-footer{padding:13px 21px 19px;border:0;background:#fafbfc;gap:8px}
+.orbit-confirm-dialog .modal-footer .btn{min-width:92px;border-radius:10px;font-size:11px;font-weight:700}
+:root[data-theme='dark'] .orbit-confirm-dialog .modal-content,:root[data-theme='dark'] .orbit-confirm-dialog .modal-footer{background:#18202d;color:#dce3ef}
 :root[data-theme='dark'] .workspace-agent-message>div>section { color: #dce3ed; }
 :root[data-theme='dark'] .workspace-agent-message.user>div>section { background: linear-gradient(135deg,#526ff5,#785de4); color: #fff; }
 :root[data-theme='dark'] .workspace-agent-message.assistant>div>section {

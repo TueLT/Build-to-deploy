@@ -199,9 +199,15 @@ async def create_message(db: AsyncSession, conversation_id: str, sender_id: str,
     conversation = await db.get(Conversation, conversation_id)
     if conversation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
-    message = Message(conversation_id=conversation_id, sender_id=sender_id, content=content)
+    now = datetime.now(UTC)
+    message = Message(
+        conversation_id=conversation_id,
+        sender_id=sender_id,
+        content=content,
+        created_at=now,
+    )
     db.add(message)
-    conversation.updated_at = datetime.now(UTC)
+    conversation.updated_at = now
     await db.execute(
         update(ConversationParticipant)
         .where(
@@ -209,6 +215,18 @@ async def create_message(db: AsyncSession, conversation_id: str, sender_id: str,
             ConversationParticipant.revoked_at.is_(None),
         )
         .values(hidden_at=None)
+    )
+    # Sending from a conversation means the sender has seen everything up to this point. Advancing
+    # their read cursor prevents older inbound messages from resurfacing as unread after reload,
+    # and makes an own last message consistently render in the normal/read style.
+    await db.execute(
+        update(ConversationParticipant)
+        .where(
+            ConversationParticipant.conversation_id == conversation_id,
+            ConversationParticipant.user_id == sender_id,
+            ConversationParticipant.revoked_at.is_(None),
+        )
+        .values(last_read_at=now)
     )
     await db.commit()
     await db.refresh(message)
@@ -406,6 +424,7 @@ async def create_group_conversation(
     name: str,
     workspace_id: str | None = None,
     *,
+    ai_enabled: bool = False,
     commit: bool = True,
 ) -> Conversation:
     if workspace_id is None:
@@ -417,7 +436,17 @@ async def create_group_conversation(
             detail="Group conversations require an organization workspace",
         )
     await _assert_workspace_participants(db, workspace_id, {creator_id, *member_ids})
-    conversation = Conversation(workspace_id=workspace_id, type="group", name=name, created_by=creator_id)
+    now = datetime.now(UTC)
+    conversation = Conversation(
+        workspace_id=workspace_id,
+        type="group",
+        name=name,
+        created_by=creator_id,
+        ai_enabled=ai_enabled,
+        ai_policy_version=1 if ai_enabled else 0,
+        ai_enabled_by_user_id=creator_id if ai_enabled else None,
+        ai_enabled_at=now if ai_enabled else None,
+    )
     db.add(conversation)
     await db.flush()
     all_member_ids = {creator_id, *member_ids}

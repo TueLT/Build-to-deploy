@@ -41,6 +41,7 @@ from src.models.workspace_action_schemas import (
     WorkspaceActionProposalDecision,
     WorkspaceActionProposalOut,
 )
+from src.services import reminder_service
 from src.services.audit_service import record_audit_event
 from src.websocket.manager import manager
 
@@ -838,5 +839,7 @@ async def decide_workspace_action_proposal(
     )
     await db.commit()
     await db.refresh(proposal)
+    if proposal.status == "executed" and result_json.get("record_type") == "tasks":
+        await reminder_service.reconcile_task_reminder(result_json["record_id"])
     await _broadcast_action_message(db, proposal)
     return WorkspaceActionProposalOut.model_validate(proposal)

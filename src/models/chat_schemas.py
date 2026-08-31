@@ -11,6 +11,9 @@ class ConversationCreateRequest(BaseModel):
     participant_ids: list[str] = Field(..., min_length=1)
     name: str | None = None
     workspace_id: str | None = None
+    # Group conversations use one manager-owned policy. When enabled at creation time every
+    # participant sees the same AI state; direct conversations continue to use per-user consent.
+    ai_enabled: bool = False
 
 
 class ChannelCreateRequest(BaseModel):

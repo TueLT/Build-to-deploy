@@ -59,7 +59,14 @@ async def save_explicit_personal_memory_node(state: AgentState) -> dict:
     workspace_id = state.get("workspace_id")
     if not user_id or not workspace_id:
         response = "Không thể xác định Personal Space để lưu Memory."
-        return {"error": response, "messages": [AIMessage(content=response)]}
+        return {
+            "error": response,
+            "messages": [AIMessage(content=response)],
+            "metadata": {
+                **state.get("metadata", {}),
+                "memory_write": {"saved": False, "reason": "personal_space_unavailable"},
+            },
+        }
 
     drafts = extract_explicit_memory_drafts(_latest_user_text(state))
     try:
@@ -99,16 +106,25 @@ async def save_explicit_personal_memory_node(state: AgentState) -> dict:
     if address is not None:
         alias = address.detail.removeprefix("Gọi người dùng là “").removesuffix("”.")
         other_details = [draft.detail for draft in drafts if draft is not address]
-        response = f"Đã ghi nhớ, {alias}. Từ giờ tôi sẽ gọi bạn là “{alias}”."
+        fallback_response = f"Đã ghi nhớ. Từ giờ tôi sẽ gọi bạn là “{alias}”."
         if other_details:
-            response += f" Tôi cũng đã ghi nhớ: {' '.join(other_details)}"
+            fallback_response += f" Tôi cũng đã ghi nhớ: {' '.join(other_details)}"
     else:
         details = " và ".join(draft.detail for draft in drafts)
-        response = f"Đã ghi nhớ trong Personal Memory: {details}"
+        alias = None
+        other_details = [draft.detail for draft in drafts]
+        fallback_response = f"Đã ghi nhớ trong Personal Memory: {details}"
     return {
-        "messages": [AIMessage(content=response)],
         "metadata": {
             **state.get("metadata", {}),
-            "memory_write": {"saved": True, "count": len(drafts)},
+            "memory_write": {
+                "saved": True,
+                "count": len(drafts),
+                "acknowledgement_facts": {
+                    "address_alias": alias,
+                    "other_details": other_details,
+                    "fallback_response": fallback_response,
+                },
+            },
         },
     }

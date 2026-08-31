@@ -28,6 +28,8 @@ class AgentState(TypedDict, total=False):
     guardrail_requires_clarification: bool
     personal_intent: str
     routing_strategy: str
+    personal_plan: dict
+    action_requires_clarification: bool
     user_id: str | None  # id of the user driving this run, for tools that push WS updates to them
     workspace_id: str | None  # active workspace for tenant-scoped tools
     trace_id: str | None

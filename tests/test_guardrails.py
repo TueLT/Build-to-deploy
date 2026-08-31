@@ -232,6 +232,14 @@ def test_explicit_memory_extraction_keeps_address_and_work_style_separate():
     ]
 
 
+def test_explicit_memory_extraction_removes_conversational_alias_suffix():
+    drafts = extract_explicit_memory_drafts("Hãy gọi tôi là sếp thôi")
+
+    assert [(draft.title, draft.detail) for draft in drafts] == [
+        ("Cách xưng hô", "Gọi người dùng là “sếp”."),
+    ]
+
+
 def test_conversation_mode_still_requires_semantic_scope_check_and_blocks_injection():
     # Conversation access is permission to analyse that chat, not blanket domain permission.
     assert evaluate_request("What happened today?", conversation_mode=True).allowed is False

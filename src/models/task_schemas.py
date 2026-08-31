@@ -32,6 +32,7 @@ class TaskOut(BaseModel):
     conversation_name: str | None = None
     title: str
     due_at: datetime | None
+    auto_reminder_enabled: bool = True
     priority: TaskPriority
     status: TaskStatus
     blocked_reason: str | None = None
@@ -70,6 +71,26 @@ class UpdateTaskStatusRequest(BaseModel):
     status: TaskStatus
     blocked_reason: str | None = Field(default=None, min_length=1, max_length=500)
     expected_row_version: int | None = Field(default=None, ge=1)
+
+
+class UpdateTaskRequest(BaseModel):
+    """Owner-controlled task settings.
+
+    Organization task deadlines remain governed by their Workspace Agent workflow; their owner
+    may still opt the private reminder out without mutating shared delivery state.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    due_at: datetime | None = None
+    auto_reminder_enabled: bool | None = None
+    expected_row_version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def has_update(self):
+        if not ({"due_at", "auto_reminder_enabled"} & self.model_fields_set):
+            raise ValueError("At least one task setting must be supplied")
+        return self
 
 
 class TaskSubmissionRequest(BaseModel):

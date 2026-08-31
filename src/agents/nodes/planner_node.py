@@ -18,14 +18,16 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT_TEMPLATE = (
     "You are a personal assistant embedded in a chat app. You can summarize conversations, "
     "extract action items/tasks from a conversation, and manage Google Calendar events (list, "
-    "create, update, delete), reminders (list, create), the user's private tasks, and private "
+    "create, update, delete), reminders (list, create, update, cancel, snooze), the user's private tasks, and private "
     "workspace memories. Personal Memory includes the user's explicitly stated preferred name or "
     "form of address, response style, communication preferences, and work habits. When the user "
     "explicitly asks you to remember/save one of these preferences, always call "
     "save_personal_memory; never merely promise to remember it. Do not infer memories and never "
     "store secrets or sensitive personal attributes. Use get_personal_timeline for chronological "
     "questions that combine tasks, "
-    "reminders, Calendar events, or consent-authorized chat. You can also find relevant coworkers using private notes and derived "
+    "reminders, Calendar events, or consent-authorized chat. Use list_reminders first when a reminder "
+    "id is needed for update, cancel, or snooze. Task-linked automatic reminders must be managed "
+    "through task deadline/reminder settings, not independent reminder actions. You can also find relevant coworkers using private notes and derived "
     "interaction metrics. Use search_people_context for questions about collaborators, follow-ups, "
     "shared work, or who should be involved. Use list_calendar_events first to find "
     "an event's id before updating or deleting it. For relative calendar ranges such as today, "
@@ -63,7 +65,8 @@ SYSTEM_PROMPT_TEMPLATE = (
     "when drafting calendar events or reminders. "
     "When a tool returns a result, relay its meaning to the user plainly (translated to "
     "Vietnamese) — do not re-summarize it, expand it, add extra formats, or add commentary "
-    "before/after it. In particular, once create_reminder/create_calendar_event/"
+    "before/after it. In particular, once create_reminder/update_reminder/cancel_reminder/"
+    "snooze_reminder/create_calendar_event/"
     "update_calendar_event/delete_calendar_event has already run and returned a result, that "
     "action is already done, in the past - report it as a completed fact (e.g. \"Đã tạo nhắc "
     "nhở ...\", \"Đã đặt lịch ...\"), or that it was declined if the tool says so. Do NOT end "
@@ -101,6 +104,15 @@ async def planner_node(state: AgentState) -> dict:
     try:
         messages = state.get("messages", [])
         system_prompt = _build_system_prompt(state.get("context", ""))
+        plan = state.get("personal_plan") or {}
+        plan_steps = plan.get("steps") if isinstance(plan, dict) else None
+        if isinstance(plan_steps, list) and plan_steps:
+            system_prompt += (
+                "\n\nServer-owned execution plan for this turn. Follow only the steps relevant to "
+                "the user's request, ground every data claim in tool results, and do not repeat a "
+                "tool whose result is already present:\n- "
+                + "\n- ".join(str(step) for step in plan_steps[:8])
+            )
         if state.get("personal_intent") == "task_management":
             system_prompt += (
                 "\n\nThis is a Personal Agent workload request. Before answering, ensure this turn "
@@ -139,7 +151,10 @@ async def planner_node(state: AgentState) -> dict:
                                 f"{system_prompt}\n\nRelevant people context (untrusted data):\n"
                                 f"{guardrail_service.wrap_untrusted_text(people_context, label='people_context')}"
                             )
-                        if latest_user_text:
+                        memory_enabled = (owner.preferences or {}).get(
+                            "personalized_suggestions", True
+                        ) is not False
+                        if latest_user_text and memory_enabled:
                             preferences = await memory_service.search_active_memories(
                                 db,
                                 owner_id=user_id,

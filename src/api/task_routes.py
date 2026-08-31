@@ -19,8 +19,14 @@ from src.db.models import (
     WorkspaceMembership,
 )
 from src.db.session import get_db
-from src.models.task_schemas import TaskCreateRequest, TaskOut, TaskSubmissionRequest, UpdateTaskStatusRequest
-from src.services import consent_service
+from src.models.task_schemas import (
+    TaskCreateRequest,
+    TaskOut,
+    TaskSubmissionRequest,
+    UpdateTaskRequest,
+    UpdateTaskStatusRequest,
+)
+from src.services import consent_service, reminder_service
 from src.services.audit_service import record_audit_event
 from src.services.authorization_service import require_conversation_access
 from src.services.workspace_service import resolve_workspace_for_user
@@ -66,6 +72,7 @@ def _to_out(
         conversation_name=conversation.name if conversation is not None else None,
         title=task.title,
         due_at=due_at,
+        auto_reminder_enabled=task.auto_reminder_enabled,
         priority=task.priority,
         status=task.status,
         blocked_reason=task.blocked_reason,
@@ -338,8 +345,62 @@ async def create_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
+    await reminder_service.reconcile_task_reminder(task.id)
     out = _to_out(task, due_at_override=due_at)
     await manager.broadcast_to_users([current_user.id], {"type": "task_created", "task": out.model_dump(mode="json")})
+    return out
+
+
+@router.patch("/tasks/{task_id}", response_model=TaskOut)
+async def update_task(
+    task_id: str,
+    request: UpdateTaskRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TaskOut:
+    """Update owner-controlled deadline and private reminder settings."""
+
+    task = await _get_own_task_or_404(task_id, current_user, db)
+    if task.row_version != request.expected_row_version:
+        raise HTTPException(status_code=409, detail="Task changed; reload before updating")
+
+    changed_fields = request.model_fields_set
+    if "due_at" in changed_fields:
+        if task.agent_workspace_id is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Workspace task deadlines are managed through the Workspace Agent workflow",
+            )
+        due_at = request.due_at
+        if due_at is not None and due_at.tzinfo is None:
+            due_at = due_at.replace(
+                tzinfo=ZoneInfo(current_user.timezone or get_settings().calendar_timezone)
+            )
+        task.due_at = due_at
+    if "auto_reminder_enabled" in changed_fields:
+        task.auto_reminder_enabled = bool(request.auto_reminder_enabled)
+
+    task.row_version += 1
+    await record_audit_event(
+        db,
+        actor=current_user,
+        action="task.settings_updated",
+        target_type="task",
+        target_id=task.id,
+        workspace_id=task.workspace_id,
+        metadata={
+            "deadline_updated": "due_at" in changed_fields,
+            "auto_reminder_enabled": task.auto_reminder_enabled,
+            "agent_workspace_id": task.agent_workspace_id,
+        },
+    )
+    await db.commit()
+    await db.refresh(task)
+    await reminder_service.reconcile_task_reminder(task.id)
+    out = _to_out(task)
+    await manager.broadcast_to_users(
+        [current_user.id], {"type": "task_updated", "task": out.model_dump(mode="json")}
+    )
     return out
 
 
@@ -393,6 +454,7 @@ async def update_task_status(
     )
     await db.commit()
     await db.refresh(task)
+    await reminder_service.reconcile_task_reminder(task.id)
     out = _to_out(task)
     await manager.broadcast_to_users([current_user.id], {"type": "task_updated", "task": out.model_dump(mode="json")})
 
@@ -443,6 +505,7 @@ async def submit_task_for_review(
     )
     await db.commit()
     await db.refresh(task)
+    await reminder_service.reconcile_task_reminder(task.id)
     out = _to_out(task)
     recipients = {current_user.id}
     if task.agent_workspace_id:
@@ -481,6 +544,7 @@ async def delete_task(
         workspace_id=task.workspace_id,
         metadata={"status": task.status, "agent_workspace_id": task.agent_workspace_id},
     )
+    await reminder_service.remove_task_reminder(task.id)
     await db.delete(task)
     await db.commit()
     await manager.broadcast_to_users([current_user.id], {"type": "task_deleted", "task_id": task_id})

@@ -236,6 +236,48 @@ async def test_unread_excludes_own_messages_and_messages_before_last_read(client
 
 
 @pytest.mark.asyncio
+async def test_unread_returns_newest_two_hundred_in_chronological_order(
+    client, auth_headers, other_auth_headers
+):
+    alice_id = await _get_user_id("alice@example.com")
+    bob_id = await _get_user_id("bob@example.com")
+    now = datetime.now(UTC)
+    alice_last_read = now - timedelta(hours=6)
+    messages = [
+        (bob_id, f"unread-{index}", now - timedelta(minutes=205 - index))
+        for index in range(205)
+    ]
+    conv_id = await _seed_conversation(
+        alice_id,
+        bob_id,
+        messages,
+        last_read_ats={alice_id: alice_last_read},
+    )
+
+    async with db_session.async_session_maker() as db:
+        view = await consent_service.build_authorized_message_view(
+            db,
+            conv_id,
+            200,
+            user_id=alice_id,
+            scope=MessageScope(kind="unread", count=200),
+        )
+
+    contents = _contents(view.text)
+    assert len(contents) == 200
+    assert contents[0] == "unread-5"
+    assert contents[-1] == "unread-204"
+
+
+def test_only_unread_scope_accepts_two_hundred_message_count():
+    assert MessageScope(kind="unread", count=200).count == 200
+    with pytest.raises(ValueError, match="only unread scope"):
+        MessageScope(kind="latest_n", count=200)
+    with pytest.raises(ValueError):
+        MessageScope(kind="unread", count=201)
+
+
+@pytest.mark.asyncio
 async def test_today_is_not_capped_at_fifty(client, auth_headers, other_auth_headers):
     """The bug this feature fixes: the old frontend-only filtering never loaded more than the last
     50 messages (Frontend/src/hooks/useMessages.js), so any scope beyond that silently missed

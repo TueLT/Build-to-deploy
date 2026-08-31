@@ -43,9 +43,8 @@ export default function ChatPage({ mode = 'personal' }) {
     : conversation.scope !== 'channel')
   const { messages, setMessages, loading: messagesLoading, firstUnreadMessageId, unreadCount } = useMessages(token, selectedId, unreadHint)
 
-  // AI permission is per (conversation, user) on the backend - shared here so the header badge
-  // and the AI panel's Grant/Revoke buttons always agree, instead of each fetching/toggling it
-  // independently.
+  // Direct-chat AI permission is per user; groups expose one manager-owned policy shared by every
+  // participant. Keep both modes in one state so the header, list and AI panel always agree.
   useEffect(() => {
     if (!selectedId) { setAiGranted(false); setAiContributionAllowed(false); setAiMode('individual'); setCanManageAi(false); return }
     let cancelled = false
@@ -160,11 +159,16 @@ export default function ChatPage({ mode = 'personal' }) {
   }
 
   const markedReadRef = useRef(null)
+  const latestMessageId = messages.at(-1)?.id || 'empty'
   useEffect(() => {
-    if (!selectedId || messagesLoading || markedReadRef.current === selectedId) return
-    markedReadRef.current = selectedId
-    markRead(token, selectedId).catch(() => {})
-  }, [selectedId, messagesLoading, token])
+    if (!selectedId || messagesLoading) return
+    const readVersion = `${selectedId}:${latestMessageId}`
+    if (markedReadRef.current === readVersion) return
+    markedReadRef.current = readVersion
+    markRead(token, selectedId).catch(() => {
+      if (markedReadRef.current === readVersion) markedReadRef.current = null
+    })
+  }, [latestMessageId, messagesLoading, selectedId, token])
 
   const onSend = (content) => { if (selectedId) sendJson({ type: 'send_message', conversation_id: selectedId, content }) }
 
@@ -209,7 +213,7 @@ export default function ChatPage({ mode = 'personal' }) {
 
   return (
     <div className={`chat-layout ${mobileChat ? 'show-chat' : ''} ${aiPanelCollapsed ? 'ai-panel-collapsed' : ''} ${isSingleChannel ? 'single-channel' : ''}`}>
-      {!isSingleChannel && <ConversationList mode={mode} conversations={scopedConversations} selectedId={selectedId} onSelect={onSelect} onNewConversation={mode === 'personal' ? () => setNewConvoOpen(true) : null} onToggleAi={onToggleAiInList} />}
+      {!isSingleChannel && <ConversationList mode={mode} conversations={scopedConversations} selectedId={selectedId} currentUserId={user?.id} onSelect={onSelect} onNewConversation={mode === 'personal' ? () => setNewConvoOpen(true) : null} onToggleAi={onToggleAiInList} />}
       <section className="conversation-pane">
         {selectedConversation ? (
           <>

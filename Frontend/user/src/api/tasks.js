@@ -6,6 +6,9 @@ export const listTasks = (token, { scope = 'personal' } = {}) =>
 export const createTask = (token, { workspace_id, title, due_at, priority, conversation_id, source, source_message_ids, consent_scope_hash }) =>
   apiFetch('/tasks', { method: 'POST', token, body: { workspace_id, title, due_at, priority, conversation_id, source, source_message_ids, consent_scope_hash } })
 
+export const updateTask = (token, taskId, updates) =>
+  apiFetch(`/tasks/${taskId}`, { method: 'PATCH', token, body: updates })
+
 export const updateTaskStatus = (token, taskId, status, { blocked_reason = null, expected_row_version = null } = {}) =>
   apiFetch(`/tasks/${taskId}/status`, {
     method: 'PATCH', token, body: { status, blocked_reason, expected_row_version },

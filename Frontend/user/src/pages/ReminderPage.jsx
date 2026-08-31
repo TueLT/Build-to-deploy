@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useOutletContext } from 'react-router-dom'
+import { Link, useOutletContext } from 'react-router-dom'
 import PageHeader from '../components/common/PageHeader'
 import NewReminderModal from '../components/reminder/NewReminderModal'
 import { useAuth } from '../context/AuthContext'
-import { cancelReminder } from '../api/reminders'
+import { cancelReminder, snoozeReminder } from '../api/reminders'
 import { useRemindersQuery } from '../hooks/usePersonalData'
 import { getColor } from '../utils/avatar'
 import { formatDateTime } from '../utils/datetime'
@@ -19,12 +19,20 @@ export default function ReminderPage() {
   const [error, setError] = useState('')
 
   useEffect(() => subscribe((data) => {
-    if (data.type !== 'reminder_fired') return
-    setReminders(prev => prev.map(r => r.id === data.reminder.id ? { ...r, status: 'fired' } : r))
+    if (['reminder_created', 'reminder_updated'].includes(data.type)) {
+      setReminders(prev => [...prev.filter(reminder => reminder.id !== data.reminder.id), data.reminder])
+    }
+    if (data.type === 'reminder_deleted') {
+      setReminders(prev => prev.filter(reminder => reminder.id !== data.reminder_id))
+    }
+    if (data.type === 'reminder_fired') {
+      setReminders(prev => prev.map(r => r.id === data.reminder.id ? { ...r, status: 'fired' } : r))
+    }
   }), [subscribe])
 
-  const onCreated = (reminder) => setReminders(prev => [...prev, reminder])
+  const onCreated = (reminder) => setReminders(prev => [...prev.filter(item => item.id !== reminder.id), reminder])
   const onCancel = (reminder) => cancelReminder(token, reminder.id).then(refresh).catch(err => setError(err.detail || 'Could not cancel reminder.'))
+  const onSnooze = (reminder) => snoozeReminder(token, reminder.id, 10).then(refresh).catch(err => setError(err.detail || 'Could not snooze reminder.'))
 
   return <div className="page-container">
     <PageHeader eyebrow="Stay focused" title="Reminders" description="Gentle nudges for everything that matters." action={<button className="btn btn-primary" onClick={() => setNewOpen(true)}><i className="bi bi-plus-lg me-2"/>New reminder</button>}/>
@@ -33,8 +41,8 @@ export default function ReminderPage() {
       {loading ? <p className="text-muted small p-3 mb-0">Loading...</p> : reminders.map(r => (
         <div className={`reminder-row ${r.status !== 'scheduled' ? 'disabled' : ''}`} key={r.id}>
           <div className="reminder-icon" style={{ background: `${getColor(r.id)}12`, color: getColor(r.id) }}><i className="bi bi-alarm"/></div>
-          <div className="reminder-info"><h4>{r.title}</h4><strong>{formatDateTime(r.due_at)}</strong><div><span><i className="bi bi-bell"/>Reminds at {formatDateTime(r.fire_at)}</span>{r.message && <span><i className="bi bi-chat-left-text"/>{r.message}</span>}</div></div>
-          <div className="reminder-controls"><span className={`status-badge ${statusClass[r.status]}`}>{statusLabel[r.status]}</span>{r.status === 'scheduled' && <button className="btn btn-sm btn-light" onClick={() => onCancel(r)}>Cancel</button>}</div>
+          <div className="reminder-info"><h4>{r.title}</h4><strong>{formatDateTime(r.due_at)}</strong><div><span><i className="bi bi-bell"/>Reminds at {formatDateTime(r.fire_at)}</span>{r.task_id && <span><i className="bi bi-link-45deg"/>Follows task deadline</span>}{r.message && <span><i className="bi bi-chat-left-text"/>{r.message}</span>}</div></div>
+          <div className="reminder-controls"><span className={`status-badge ${statusClass[r.status]}`}>{statusLabel[r.status]}</span>{!r.task_id && <button className="btn btn-sm btn-light" onClick={() => onSnooze(r)}>Snooze 10m</button>}{r.status === 'scheduled' && (r.task_id ? <Link className="btn btn-sm btn-light" to="/tasks">Manage task</Link> : <button className="btn btn-sm btn-light" onClick={() => onCancel(r)}>Cancel</button>)}</div>
         </div>
       ))}
       {!loading && !reminders.length && <p className="text-muted small p-3 mb-0">No reminders yet.</p>}

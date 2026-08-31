@@ -1144,6 +1144,9 @@ class Task(Base):
     )
     title: Mapped[str]
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # Global user preferences decide whether task reminders are created at all. This per-task
+    # switch lets a user opt one noisy task out without disabling the feature everywhere.
+    auto_reminder_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     priority: Mapped[str] = mapped_column(default="Medium")  # "High" | "Medium" | "Low"
     status: Mapped[str] = mapped_column(default="suggested")
     # "suggested" | "pending" | "in_progress" | "blocked" | "completed" | "dismissed"
@@ -1510,11 +1513,17 @@ class Reminder(Base):
         CheckConstraint("source IN ('manual', 'agent', 'proactive')", name="ck_reminder_source"),
         Index("ix_reminders_workspace_owner_status", "workspace_id", "owner_id", "status"),
         Index("ix_reminders_workspace_fire_at", "workspace_id", "fire_at"),
+        Index("uq_reminders_task_id", "task_id", unique=True),
     )
 
     id: Mapped[str] = mapped_column(primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    # A task-linked reminder is private to the owner's Personal Space even when the task belongs
+    # to an organization workspace. Manual/agent reminders remain independent with task_id=NULL.
+    task_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), default=None
+    )
     title: Mapped[str]
     message: Mapped[str] = mapped_column(default="")
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

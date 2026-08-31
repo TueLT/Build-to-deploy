@@ -210,6 +210,44 @@ async def test_unread_count_and_mark_read(client, auth_headers, other_auth_heade
 
 
 @pytest.mark.asyncio
+async def test_sending_a_last_message_advances_sender_read_cursor(
+    client, auth_headers, other_auth_headers
+):
+    workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
+    conv = (
+        await client.post(
+            "/api/v1/conversations",
+            json={"type": "direct", "participant_ids": [other["id"]], "workspace_id": workspace["id"]},
+            headers=auth_headers,
+        )
+    ).json()
+
+    await client.post(
+        f"/api/v1/conversations/{conv['id']}/messages",
+        json={"content": "Tin từ người khác chưa đọc"},
+        headers=other_auth_headers,
+    )
+    before_reply = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace['id']}", headers=auth_headers
+    )
+    summary = next(item for item in before_reply.json()["conversations"] if item["id"] == conv["id"])
+    assert summary["unread_count"] == 1
+
+    reply = await client.post(
+        f"/api/v1/conversations/{conv['id']}/messages",
+        json={"content": "Tôi đã xem và trả lời"},
+        headers=auth_headers,
+    )
+    after_reply = await client.get(
+        f"/api/v1/conversations?workspace_id={workspace['id']}", headers=auth_headers
+    )
+    summary = next(item for item in after_reply.json()["conversations"] if item["id"] == conv["id"])
+    assert summary["unread_count"] == 0
+    assert summary["last_message"]["id"] == reply.json()["id"]
+    assert summary["last_message"]["sender_id"] != other["id"]
+
+
+@pytest.mark.asyncio
 async def test_first_unread_message_id_in_message_list(client, auth_headers, other_auth_headers):
     workspace, other = await _team_workspace(client, auth_headers, other_auth_headers)
     conv = (

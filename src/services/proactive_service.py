@@ -324,6 +324,7 @@ def _task_payload(task: Task) -> dict:
         "agent_workspace_id": task.agent_workspace_id,
         "title": task.title,
         "due_at": task.due_at.isoformat() if task.due_at else None,
+        "auto_reminder_enabled": task.auto_reminder_enabled,
         "priority": task.priority,
         "status": task.status,
         "source": task.source,

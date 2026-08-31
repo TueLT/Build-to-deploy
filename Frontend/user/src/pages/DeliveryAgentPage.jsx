@@ -8,6 +8,7 @@ import {
   createDeliveryReleaseCandidate,
   decideWorkspaceActionProposal,
   createWorkspaceActionProposal,
+  deleteDeliveryThread,
   getDeliveryBrief,
   getDeliveryCapabilities,
   getDeliveryDashboard,
@@ -23,6 +24,7 @@ import {
   updateDeliveryReleaseCandidate,
 } from '../api/agent'
 import Markdown from '../components/common/Markdown'
+import ConfirmDialog from '../components/common/ConfirmDialog'
 import { useAuth } from '../context/AuthContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { queryClient, queryKeys } from '../query/queryClient'
@@ -725,6 +727,8 @@ export default function DeliveryAgentPage({ assignedAgent }) {
   const [threads, setThreads] = useState([])
   const [threadSearch, setThreadSearch] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [deletingThreadId, setDeletingThreadId] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const [question, setQuestion] = useState('')
   const [loading, setLoading] = useState(false)
   const [initializing, setInitializing] = useState(true)
@@ -978,8 +982,67 @@ export default function DeliveryAgentPage({ assignedAgent }) {
     }
   }
 
+  const removeThread = async targetThread => {
+    if (
+      !targetThread?.thread_id
+      || loading
+      || historyLoading
+      || deletingThreadId
+      || !company?.id
+      || !agentWorkspaceId
+    ) return
+    setDeletingThreadId(targetThread.thread_id)
+    setError('')
+    try {
+      await deleteDeliveryThread(
+        token,
+        company.id,
+        agentWorkspaceId,
+        targetThread.thread_id,
+        selectedConversationId,
+      )
+      const nextThreads = threads.filter(item => item.thread_id !== targetThread.thread_id)
+      setThreads(nextThreads)
+      queryClient.setQueryData(
+        queryKeys.deliveryThreads(company.id, agentWorkspaceId, analysisScopeKey),
+        nextThreads,
+      )
+      queryClient.removeQueries({
+        queryKey: queryKeys.deliveryThreadMessages(
+          company.id,
+          agentWorkspaceId,
+          targetThread.thread_id,
+          analysisScopeKey,
+        ),
+        exact: true,
+      })
+      if (targetThread.thread_id === threadId) {
+        setThreadId(null)
+        setMessages([createWelcomeMessage(businessRole)])
+        setLiveProgress(null)
+        if (threadStorageKey) {
+          try { sessionStorage.removeItem(threadStorageKey) } catch { /* optional cache */ }
+        }
+      }
+      setDeleteTarget(null)
+    } catch (deleteError) {
+      setError(deleteError.detail || 'Không thể xóa lịch sử Workspace Agent này.')
+    } finally {
+      setDeletingThreadId(null)
+    }
+  }
+
   return (
     <div className="workspace-agent-page">
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Xóa lịch sử Workspace Agent?"
+        message={deleteTarget ? `Cuộc trò chuyện “${deleteTarget.title}” sẽ bị xóa vĩnh viễn. Task, workflow và dữ liệu nguồn của workspace vẫn được giữ nguyên.` : ''}
+        confirmLabel={deletingThreadId ? 'Đang xóa…' : 'Xóa cuộc trò chuyện'}
+        busy={Boolean(deletingThreadId)}
+        onCancel={()=>{ if (!deletingThreadId) setDeleteTarget(null) }}
+        onConfirm={()=>{ if (deleteTarget && !deletingThreadId) removeThread(deleteTarget) }}
+      />
       <aside className="workspace-agent-sidebar">
         <div className="workspace-agent-identity">
           <span><i className="bi bi-robot" /></span>
@@ -1005,14 +1068,26 @@ export default function DeliveryAgentPage({ assignedAgent }) {
             </p>}
             {groupedThreads.map(group => <section className="workspace-agent-history-group" key={group.label}>
               <h3>{group.label}</h3>
-              {group.threads.map(thread => <button
-                type="button"
+              {group.threads.map(thread => <div
+                className={`workspace-agent-history-row ${thread.thread_id === threadId ? 'active' : ''}`}
                 key={thread.thread_id}
-                className={thread.thread_id === threadId ? 'active' : ''}
-                onClick={() => openThread(thread.thread_id)}
-                disabled={loading || historyLoading}
-                title={thread.title}
-              ><span>{thread.title}</span></button>)}
+              >
+                <button
+                  type="button"
+                  className={`workspace-agent-thread-button ${thread.thread_id === threadId ? 'active' : ''}`}
+                  onClick={() => openThread(thread.thread_id)}
+                  disabled={loading || historyLoading || Boolean(deletingThreadId)}
+                  title={thread.title}
+                ><span>{thread.title}</span></button>
+                <button
+                  type="button"
+                  className="workspace-agent-history-delete"
+                  aria-label={`Xóa cuộc trò chuyện ${thread.title}`}
+                  title="Xóa cuộc trò chuyện"
+                  onClick={event => { event.stopPropagation(); setError(''); setDeleteTarget(thread) }}
+                  disabled={loading || historyLoading || Boolean(deletingThreadId)}
+                ><i className="bi bi-trash3" /></button>
+              </div>)}
             </section>)}
           </div>
         </section>

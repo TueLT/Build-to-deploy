@@ -662,6 +662,26 @@ async def test_delivery_brief_endpoint_reads_only_bound_consented_delivery_tasks
     assert persisted_steps[-1]["kind"] == "synthesis"
     assert any(step["kind"] == "specialist" for step in persisted_steps)
 
+    deleted = await client.delete(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{seed['delivery_id']}/delivery/threads/{thread_id}",
+        headers=lead_headers,
+    )
+    assert deleted.status_code == 204, deleted.text
+    missing_history = await client.get(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{seed['delivery_id']}/delivery/threads/{thread_id}/messages",
+        headers=lead_headers,
+    )
+    assert missing_history.status_code == 404
+    remaining_threads = await client.get(
+        f"/api/v1/workspaces/{seed['organization_id']}/agent-workspaces/"
+        f"{seed['delivery_id']}/delivery/threads",
+        headers=lead_headers,
+    )
+    assert remaining_threads.status_code == 200
+    assert thread_id not in {item["thread_id"] for item in remaining_threads.json()}
+
     class UnavailableRuntime:
         async def run(self, request):
             del request

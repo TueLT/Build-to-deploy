@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
 
@@ -7,8 +7,15 @@ from sqlalchemy import select
 
 from src.config import get_settings
 from src.db import session as db_session
-from src.db.models import Task
-from src.services import calendar_service
+from src.db.models import Reminder, Task
+from src.services import calendar_service, reminder_service
+
+
+def _api_datetime_as_utc(value: str) -> datetime:
+    """SQLite drops timezone metadata even for timezone-aware test columns."""
+
+    parsed = datetime.fromisoformat(value)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=ZoneInfo("UTC"))
 
 
 async def _create_proactive_task(client, auth_headers, *, title, due_at=None):
@@ -235,3 +242,287 @@ async def test_accepting_proactive_task_never_calls_calendar(client, auth_header
 
     reminders = (await client.get("/api/v1/reminders", headers=auth_headers)).json()
     assert not any(r["title"] == "Flaky calendar" for r in reminders)
+
+
+@pytest.mark.asyncio
+async def test_opted_in_task_creates_one_private_linked_reminder(client, auth_headers):
+    profile = await client.patch(
+        "/api/v1/auth/me",
+        json={
+            "preferences": {
+                "auto_task_reminders": True,
+                "default_reminder_lead_minutes": 60,
+            }
+        },
+        headers=auth_headers,
+    )
+    assert profile.status_code == 200, profile.text
+
+    due_at = datetime(2099, 8, 10, 15, 0, tzinfo=ZoneInfo("UTC"))
+    created = await client.post(
+        "/api/v1/tasks",
+        json={"title": "Linked deadline", "due_at": due_at.isoformat()},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+
+    reminders = (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+    linked = [item for item in reminders if item["task_id"] == created.json()["id"]]
+    assert len(linked) == 1
+    assert linked[0]["source"] == "proactive"
+    assert linked[0]["status"] == "scheduled"
+    assert _api_datetime_as_utc(linked[0]["due_at"]) == due_at
+    assert _api_datetime_as_utc(linked[0]["fire_at"]) == due_at - timedelta(hours=1)
+
+
+@pytest.mark.asyncio
+async def test_task_deadline_reschedules_same_reminder_and_completion_cancels_it(
+    client, auth_headers
+):
+    await client.patch(
+        "/api/v1/auth/me",
+        json={
+            "preferences": {
+                "auto_task_reminders": True,
+                "default_reminder_lead_minutes": 30,
+            }
+        },
+        headers=auth_headers,
+    )
+    first_due = datetime(2099, 8, 10, 15, 0, tzinfo=ZoneInfo("UTC"))
+    created = (
+        await client.post(
+            "/api/v1/tasks",
+            json={"title": "Moving deadline", "due_at": first_due.isoformat()},
+            headers=auth_headers,
+        )
+    ).json()
+    first_reminder = next(
+        item
+        for item in (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+        if item["task_id"] == created["id"]
+    )
+
+    second_due = first_due + timedelta(days=2)
+    updated = await client.patch(
+        f"/api/v1/tasks/{created['id']}",
+        json={"due_at": second_due.isoformat(), "expected_row_version": created["row_version"]},
+        headers=auth_headers,
+    )
+    assert updated.status_code == 200, updated.text
+    second_reminder = next(
+        item
+        for item in (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+        if item["task_id"] == created["id"]
+    )
+    assert second_reminder["id"] == first_reminder["id"]
+    assert _api_datetime_as_utc(second_reminder["due_at"]) == second_due
+    assert _api_datetime_as_utc(second_reminder["fire_at"]) == second_due - timedelta(minutes=30)
+
+    completed = await client.patch(
+        f"/api/v1/tasks/{created['id']}/status",
+        json={"status": "completed", "expected_row_version": updated.json()["row_version"]},
+        headers=auth_headers,
+    )
+    assert completed.status_code == 200, completed.text
+    cancelled = next(
+        item
+        for item in (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+        if item["task_id"] == created["id"]
+    )
+    assert cancelled["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_task_reminder_opt_out_and_global_lead_change_reconcile_existing_task(
+    client, auth_headers
+):
+    await client.patch(
+        "/api/v1/auth/me",
+        json={
+            "preferences": {
+                "auto_task_reminders": True,
+                "default_reminder_lead_minutes": 15,
+            }
+        },
+        headers=auth_headers,
+    )
+    due_at = datetime(2099, 8, 10, 15, 0, tzinfo=ZoneInfo("UTC"))
+    task = (
+        await client.post(
+            "/api/v1/tasks",
+            json={"title": "Configurable reminder", "due_at": due_at.isoformat()},
+            headers=auth_headers,
+        )
+    ).json()
+
+    opted_out = await client.patch(
+        f"/api/v1/tasks/{task['id']}",
+        json={"auto_reminder_enabled": False, "expected_row_version": task["row_version"]},
+        headers=auth_headers,
+    )
+    assert opted_out.status_code == 200, opted_out.text
+    reminder = next(
+        item
+        for item in (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+        if item["task_id"] == task["id"]
+    )
+    assert reminder["status"] == "cancelled"
+
+    opted_in = await client.patch(
+        f"/api/v1/tasks/{task['id']}",
+        json={
+            "auto_reminder_enabled": True,
+            "expected_row_version": opted_out.json()["row_version"],
+        },
+        headers=auth_headers,
+    )
+    assert opted_in.status_code == 200, opted_in.text
+    await client.patch(
+        "/api/v1/auth/me",
+        json={
+            "preferences": {
+                "auto_task_reminders": True,
+                "default_reminder_lead_minutes": 60,
+            }
+        },
+        headers=auth_headers,
+    )
+    rescheduled = next(
+        item
+        for item in (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+        if item["task_id"] == task["id"]
+    )
+    assert rescheduled["status"] == "scheduled"
+    assert _api_datetime_as_utc(rescheduled["fire_at"]) == due_at - timedelta(hours=1)
+
+
+@pytest.mark.asyncio
+async def test_task_managed_reminder_cannot_be_cancelled_as_manual_reminder(client, auth_headers):
+    await client.patch(
+        "/api/v1/auth/me",
+        json={"preferences": {"auto_task_reminders": True}},
+        headers=auth_headers,
+    )
+    task = (
+        await client.post(
+            "/api/v1/tasks",
+            json={"title": "Managed reminder", "due_at": "2099-08-10T15:00:00Z"},
+            headers=auth_headers,
+        )
+    ).json()
+    reminder = next(
+        item
+        for item in (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+        if item["task_id"] == task["id"]
+    )
+    response = await client.delete(f"/api/v1/reminders/{reminder['id']}", headers=auth_headers)
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_deleting_task_removes_linked_reminder(client, auth_headers):
+    await client.patch(
+        "/api/v1/auth/me",
+        json={"preferences": {"auto_task_reminders": True}},
+        headers=auth_headers,
+    )
+    task = (
+        await client.post(
+            "/api/v1/tasks",
+            json={"title": "Delete linked reminder", "due_at": "2099-08-10T15:00:00Z"},
+            headers=auth_headers,
+        )
+    ).json()
+    response = await client.delete(f"/api/v1/tasks/{task['id']}", headers=auth_headers)
+    assert response.status_code == 204
+    reminders = (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+    assert all(item["task_id"] != task["id"] for item in reminders)
+
+
+@pytest.mark.asyncio
+async def test_reassigning_task_moves_private_reminder_between_owners(client, auth_headers):
+    await client.patch(
+        "/api/v1/auth/me",
+        json={"preferences": {"auto_task_reminders": True}},
+        headers=auth_headers,
+    )
+    task = (
+        await client.post(
+            "/api/v1/tasks",
+            json={"title": "Reassigned task", "due_at": "2099-08-10T15:00:00Z"},
+            headers=auth_headers,
+        )
+    ).json()
+
+    registered = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "new-owner@example.com",
+            "password": "password123",
+            "display_name": "New Owner",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    logged_in = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "new-owner@example.com", "password": "password123"},
+    )
+    second_headers = {"Authorization": f"Bearer {logged_in.json()['access_token']}"}
+    await client.patch(
+        "/api/v1/auth/me",
+        json={"preferences": {"auto_task_reminders": True}},
+        headers=second_headers,
+    )
+
+    async with db_session.async_session_maker() as db:
+        stored = await db.get(Task, task["id"])
+        stored.owner_id = registered.json()["id"]
+        await db.commit()
+    await reminder_service.reconcile_task_reminder(task["id"])
+
+    former_owner_reminders = (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+    new_owner_reminders = (await client.get("/api/v1/reminders", headers=second_headers)).json()
+    assert all(item["task_id"] != task["id"] for item in former_owner_reminders)
+    assert len([item for item in new_owner_reminders if item["task_id"] == task["id"]]) == 1
+
+
+@pytest.mark.asyncio
+async def test_periodic_sweep_repairs_out_of_band_task_reminder_drift(client, auth_headers):
+    await client.patch(
+        "/api/v1/auth/me",
+        json={
+            "preferences": {
+                "auto_task_reminders": True,
+                "default_reminder_lead_minutes": 30,
+            }
+        },
+        headers=auth_headers,
+    )
+    due_at = datetime(2099, 8, 20, 15, 0, tzinfo=ZoneInfo("UTC"))
+    task = (
+        await client.post(
+            "/api/v1/tasks",
+            json={"title": "Sweep protected", "due_at": due_at.isoformat()},
+            headers=auth_headers,
+        )
+    ).json()
+
+    async with db_session.async_session_maker() as db:
+        reminder = await db.scalar(select(Reminder).where(Reminder.task_id == task["id"]))
+        reminder.status = "cancelled"
+        reminder.due_at = due_at + timedelta(days=1)
+        reminder.fire_at = due_at + timedelta(days=1) - timedelta(minutes=30)
+        await db.commit()
+
+    processed = await reminder_service.reconcile_active_task_reminders(batch_size=1)
+
+    assert processed >= 1
+    repaired = next(
+        item
+        for item in (await client.get("/api/v1/reminders", headers=auth_headers)).json()
+        if item["task_id"] == task["id"]
+    )
+    assert repaired["status"] == "scheduled"
+    assert _api_datetime_as_utc(repaired["due_at"]) == due_at
+    assert _api_datetime_as_utc(repaired["fire_at"]) == due_at - timedelta(minutes=30)

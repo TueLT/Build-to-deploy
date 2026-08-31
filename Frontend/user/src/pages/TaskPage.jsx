@@ -5,6 +5,7 @@ import StatCard from '../components/common/StatCard'
 import TaskTable, { formatDue } from '../components/task/TaskTable'
 import NewTaskModal from '../components/task/NewTaskModal'
 import TaskSubmissionModal from '../components/task/TaskSubmissionModal'
+import TaskReminderModal from '../components/task/TaskReminderModal'
 import { useAuth } from '../context/AuthContext'
 import { updateTaskStatus, deleteTask } from '../api/tasks'
 import { useTasksQuery } from '../hooks/usePersonalData'
@@ -20,6 +21,7 @@ export default function TaskPage() {
   const [newOpen, setNewOpen] = useState(false)
   const [error, setError] = useState('')
   const [submissionTask, setSubmissionTask] = useState(null)
+  const [reminderTask, setReminderTask] = useState(null)
   const [scopeFilter, setScopeFilter] = useState('all')
 
   const upsertTask = (task) => setTasks(prev => upsertTaskWithContext(prev, task))
@@ -64,11 +66,12 @@ export default function TaskPage() {
     <PageHeader eyebrow="My Work" title="My Tasks" description="All work assigned to you across personal and Product Delivery scopes." action={<div className="d-flex gap-2"><Link to="/tasks/inbox" className="btn btn-light rounded-3"><i className="bi bi-inbox me-2"/>Priority inbox</Link><button className="btn btn-primary rounded-3" onClick={()=>setNewOpen(true)}><i className="bi bi-plus-lg me-2"/>Add personal task</button></div>}/>
     {(error || queryError) && <div className="auth-error mb-3">{error || queryError.detail || 'Could not load tasks.'}</div>}
     <div className="stats-grid"><StatCard label="Total tasks" value={mainTasks.length} icon="bi-list-task"/><StatCard label="Completed" value={completed} icon="bi-check2-circle" color="success"/><StatCard label="Pending" value={pending} icon="bi-hourglass-split" color="warning"/><StatCard label="Overdue" value={overdue} icon="bi-exclamation-circle" color="danger" note={overdue ? 'Needs attention' : undefined}/></div>
-    <section className="content-card"><div className="card-toolbar"><div><h3>My assigned tasks</h3><span>{shownTasks.length} of {mainTasks.length} tasks</span></div><div className="toolbar-actions flex-wrap"><div className="btn-group btn-group-sm" role="group" aria-label="Task scope"><button className={`btn ${scopeFilter === 'all' ? 'btn-primary' : 'btn-light'}`} onClick={()=>setScopeFilter('all')}>All ({scopeCounts.all})</button><button className={`btn ${scopeFilter === 'personal' ? 'btn-primary' : 'btn-light'}`} onClick={()=>setScopeFilter('personal')}>Personal ({scopeCounts.personal})</button><button className={`btn ${scopeFilter === 'product_delivery' ? 'btn-primary' : 'btn-light'}`} onClick={()=>setScopeFilter('product_delivery')}>Product Delivery ({scopeCounts.product_delivery})</button></div><div className="mini-search"><i className="bi bi-search"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search tasks"/></div></div></div>{loading ? <p className="text-muted small p-3 mb-0">Loading...</p> : <TaskTable tasks={shownTasks} onStart={start} onBlock={block} onSubmit={setSubmissionTask} onComplete={complete} onDelete={remove}/>}</section>
+    <section className="content-card"><div className="card-toolbar"><div><h3>My assigned tasks</h3><span>{shownTasks.length} of {mainTasks.length} tasks</span></div><div className="toolbar-actions flex-wrap"><div className="btn-group btn-group-sm" role="group" aria-label="Task scope"><button className={`btn ${scopeFilter === 'all' ? 'btn-primary' : 'btn-light'}`} onClick={()=>setScopeFilter('all')}>All ({scopeCounts.all})</button><button className={`btn ${scopeFilter === 'personal' ? 'btn-primary' : 'btn-light'}`} onClick={()=>setScopeFilter('personal')}>Personal ({scopeCounts.personal})</button><button className={`btn ${scopeFilter === 'product_delivery' ? 'btn-primary' : 'btn-light'}`} onClick={()=>setScopeFilter('product_delivery')}>Product Delivery ({scopeCounts.product_delivery})</button></div><div className="mini-search"><i className="bi bi-search"/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search tasks"/></div></div></div>{loading ? <p className="text-muted small p-3 mb-0">Loading...</p> : <TaskTable tasks={shownTasks} onStart={start} onBlock={block} onSubmit={setSubmissionTask} onComplete={complete} onReminder={setReminderTask} onDelete={remove}/>}</section>
     <section className="suggested-section"><div className="section-heading"><div><span className="ai-label"><i className="bi bi-stars"/> AI suggestions</span><h3>Tasks you may have missed</h3><p>Orbit found these action items in your conversations.</p></div></div><div className="suggestion-grid">{suggestions.map(s=><div className="suggestion-card" key={s.id}><div className="suggestion-check"><i className="bi bi-stars"/></div><div className="flex-grow-1"><h4>{s.title}</h4><div className="suggestion-meta"><span><i className="bi bi-chat-left-text"/>{sourceLabel[s.source] || s.source}</span><span><i className="bi bi-calendar3"/>{formatDue(s.due_at)}</span></div></div><div className="suggestion-actions"><button className="btn btn-sm btn-primary" onClick={() => accept(s)}>Accept</button><button className="btn btn-sm btn-light" onClick={() => dismiss(s)}>Dismiss</button></div></div>)}
       {!loading && !suggestions.length && <p className="text-muted small mb-0">No new suggestions right now — try "Extract tasks" in a conversation's AI panel.</p>}
     </div></section>
     <NewTaskModal open={newOpen} onClose={()=>setNewOpen(false)} onCreated={upsertTask}/>
     <TaskSubmissionModal task={submissionTask} onClose={()=>setSubmissionTask(null)} onSubmitted={upsertTask}/>
+    <TaskReminderModal task={reminderTask} onClose={()=>setReminderTask(null)} onSaved={upsertTask}/>
   </div>
 }

@@ -16,6 +16,7 @@ from src.services.workspace_agent_memory_service import (
     WorkspaceAgentThreadDeniedError,
     append_turn,
     cleanup_expired_threads,
+    delete_thread,
     get_thread_messages,
     list_thread_summaries,
     load_history,
@@ -121,6 +122,48 @@ async def test_workspace_memory_is_durable_bounded_and_profile_isolated(client, 
                 profile=AgentProfile.PRODUCT_DELIVERY,
                 authorization_scope_hash="scope-revoked",
             )
+        with pytest.raises(WorkspaceAgentThreadDeniedError):
+            await delete_thread(
+                db,
+                thread_id=thread_id,
+                organization_workspace_id=organization.id,
+                agent_workspace_id=delivery.id,
+                owner_id="another-owner",
+                profile=AgentProfile.PRODUCT_DELIVERY,
+                authorization_scope_hash="scope-v1",
+            )
+        with pytest.raises(WorkspaceAgentThreadDeniedError):
+            await delete_thread(
+                db,
+                thread_id=thread_id,
+                organization_workspace_id=organization.id,
+                agent_workspace_id=delivery.id,
+                owner_id=user.id,
+                profile=AgentProfile.PRODUCT_DELIVERY,
+                authorization_scope_hash="scope-revoked",
+            )
+
+        await delete_thread(
+            db,
+            thread_id=thread_id,
+            organization_workspace_id=organization.id,
+            agent_workspace_id=delivery.id,
+            owner_id=user.id,
+            profile=AgentProfile.PRODUCT_DELIVERY,
+            authorization_scope_hash="scope-v1",
+        )
+        await db.commit()
+        assert await db.get(WorkspaceAgentThread, thread_id) is None
+        remaining_messages = list(
+            (
+                await db.execute(
+                    select(WorkspaceAgentMessage).where(
+                        WorkspaceAgentMessage.thread_id == thread_id
+                    )
+                )
+            ).scalars()
+        )
+        assert remaining_messages == []
 
 
 @pytest.mark.asyncio

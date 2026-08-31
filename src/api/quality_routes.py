@@ -69,7 +69,7 @@ from src.models.quality_schemas import (
     QualityWorkItemOut,
     QualityWorkItemStatusRequest,
 )
-from src.services import guardrail_service, usage_service
+from src.services import guardrail_service, reminder_service, usage_service
 from src.services.audit_service import record_audit_event
 from src.services.quality_control_service import load_quality_control_plane
 from src.services.quality_workspace_service import QualityDataError
@@ -630,6 +630,7 @@ async def create_quality_work_item(
             "work_item_type": request.work_item_type,
         },
     )
+    await reminder_service.reconcile_task_reminder(task.id)
     await db.refresh(task)
     return _work_item_out(task)
 
@@ -730,4 +731,5 @@ async def update_quality_work_item_status(
             "row_version": item.row_version,
         },
     )
+    await reminder_service.reconcile_task_reminder(item.id)
     return _work_item_out(item)

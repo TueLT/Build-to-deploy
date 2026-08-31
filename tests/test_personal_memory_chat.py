@@ -2,8 +2,33 @@ import pytest
 from langchain_core.messages import AIMessage
 
 
+class _MemoryAcknowledgementLLM:
+    async def ainvoke(self, messages):
+        facts = messages[-1].content
+        if "sếp" in facts and "cẩn thận" in facts:
+            content = (
+                "Được, từ giờ tôi sẽ gọi bạn là “sếp”. "
+                "Tôi cũng đã ghi nhớ rằng bạn rất cẩn thận trong cách làm việc."
+            )
+        elif "anh Minh" in facts:
+            content = "Được, từ giờ tôi sẽ gọi bạn là “anh Minh”."
+        elif "sếp" in facts:
+            content = "Được, từ giờ tôi sẽ gọi bạn là “sếp”."
+        else:
+            content = "Đã ghi nhớ preference bạn vừa chia sẻ."
+        return AIMessage(content=content)
+
+
+@pytest.fixture(autouse=True)
+def _mock_memory_acknowledgement_llm(monkeypatch):
+    monkeypatch.setattr(
+        "src.agents.nodes.personal_memory_response_node.get_llm",
+        lambda: _MemoryAcknowledgementLLM(),
+    )
+
+
 @pytest.mark.asyncio
-async def test_explicit_preference_is_saved_from_personal_chat_without_llm(
+async def test_explicit_preference_is_saved_deterministically_and_acknowledged_naturally(
     client, auth_headers, personal_workspace
 ):
     response = await client.post(
@@ -20,7 +45,7 @@ async def test_explicit_preference_is_saved_from_personal_chat_without_llm(
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "completed"
-    assert "Đã ghi nhớ, sếp" in body["response"]
+    assert "gọi bạn là “sếp”" in body["response"]
     assert "rất cẩn thận" in body["response"]
 
     memories = await client.get("/api/v1/memories", headers=auth_headers)
@@ -242,3 +267,30 @@ async def test_long_term_preference_is_loaded_in_different_personal_agent_thread
     for invocation in fake.invocations:
         prompt = str(invocation[0].content)
         assert 'Address the user as "sếp" naturally in responses.' in prompt
+
+
+@pytest.mark.asyncio
+async def test_personalized_suggestions_opt_out_prevents_memory_prompt_injection(
+    client, auth_headers, fake_llm_factory, monkeypatch
+):
+    saved = await client.post(
+        "/api/v1/chat", json={"message": "Hãy gọi tôi là sếp"}, headers=auth_headers
+    )
+    assert saved.status_code == 200
+    profile = await client.patch(
+        "/api/v1/auth/me",
+        json={"preferences": {"personalized_suggestions": False}},
+        headers=auth_headers,
+    )
+    assert profile.status_code == 200
+
+    fake = fake_llm_factory([AIMessage(content="Hôm nay chúng ta bắt đầu nhé.")])
+    monkeypatch.setattr("src.agents.nodes.planner_node.get_llm", lambda *args, **kwargs: fake)
+    response = await client.post(
+        "/api/v1/chat", json={"message": "Liệt kê task hôm nay"}, headers=auth_headers
+    )
+
+    assert response.status_code == 200
+    prompt = str(fake.invocations[0][0].content)
+    assert 'Address the user as "sếp" naturally in responses.' not in prompt
+    assert "Gọi người dùng là “sếp”" not in prompt

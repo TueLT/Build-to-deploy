@@ -294,7 +294,12 @@ async def create_conversation(
         if not request.name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Group conversations require a name")
         conversation = await chat_service.create_group_conversation(
-            db, current_user.id, request.participant_ids, request.name, request.workspace_id
+            db,
+            current_user.id,
+            request.participant_ids,
+            request.name,
+            request.workspace_id,
+            ai_enabled=request.ai_enabled,
         )
     return await chat_service.build_conversation_summary(db, conversation, current_user.id)
 

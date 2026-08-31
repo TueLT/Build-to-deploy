@@ -74,7 +74,7 @@ async def test_agent_interrupt_then_resume_round_trip(monkeypatch, fake_llm_fact
     config = _config()
     result = await agent_graph.agent.ainvoke(
         {
-            "messages": [HumanMessage(content="book a sync")],
+            "messages": [HumanMessage(content="book a 30 minute sync tomorrow at 10:00")],
             "user_id": "user-1",
             "workspace_id": "workspace-1",
         },
