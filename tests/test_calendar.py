@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock, call
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from google.oauth2.credentials import Credentials
@@ -27,6 +28,12 @@ async def _credential(user_id: str) -> GoogleCalendarCredential | None:
 
 def test_calendar_oauth_uses_event_only_scope():
     assert google_credentials.SCOPES == ["https://www.googleapis.com/auth/calendar.events"]
+
+
+def test_calendar_oauth_does_not_merge_legacy_grants():
+    query = parse_qs(urlparse(google_credentials.build_authorization_url("user-1")).query)
+    assert query["scope"] == google_credentials.SCOPES
+    assert "include_granted_scopes" not in query
 
 
 @pytest.mark.asyncio

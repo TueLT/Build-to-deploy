@@ -127,6 +127,13 @@ setTimeout(function(){{window.close()}},800);</script></body>"""
         else:
             message = "Google could not complete Calendar authorization. Please try again."
         return page(False, message, 502)
+    except Warning:
+        logger.exception("Google Calendar OAuth returned previously granted scopes")
+        return page(
+            False,
+            "Google returned an older Calendar permission. Remove Orbit access from your Google Account, then connect again.",
+            502,
+        )
     except Exception:  # noqa: BLE001 - callback returns a safe page, details stay in logs
         logger.exception("Google Calendar OAuth exchange failed")
         return page(False, "Google Calendar token exchange failed unexpectedly. Check the server logs.", 502)

@@ -99,7 +99,10 @@ def read_oauth_state(state: str) -> str:
 
 def build_authorization_url(user_id: str) -> str:
     flow = _build_flow(state=make_oauth_state(user_id))
-    url, _ = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
+    # Do not merge grants previously issued to other OAuth clients in this Cloud project.
+    # Orbit used to request the broader Calendar scope; combining that old grant with the
+    # event-only scope makes oauthlib reject Google's token response as a scope mismatch.
+    url, _ = flow.authorization_url(access_type="offline", prompt="consent")
     return url
 
 
