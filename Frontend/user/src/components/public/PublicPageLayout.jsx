@@ -27,13 +27,12 @@ export default function PublicPageLayout({ children }) {
   return (
     <div className="public-site">
       <header className="public-header">
-        <Link className="public-brand" to="/" aria-label="Orbit AI Calendar home">
+        <Link className="public-brand" to="/login" aria-label="Orbit sign in">
           <span><i className="bi bi-command" /></span>
           <strong>Orbit</strong>
           <small>AI Calendar</small>
         </Link>
         <nav aria-label="Public navigation">
-          <a href="/#calendar-sync">Calendar sync</a>
           <Link to="/privacy">Privacy</Link>
           <Link to="/terms">Terms</Link>
         </nav>
@@ -47,7 +46,7 @@ export default function PublicPageLayout({ children }) {
 
       <footer className="public-footer">
         <div>
-          <Link className="public-brand" to="/">
+          <Link className="public-brand" to="/login">
             <span><i className="bi bi-command" /></span>
             <strong>Orbit</strong>
           </Link>

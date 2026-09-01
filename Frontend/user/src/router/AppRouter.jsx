@@ -6,7 +6,6 @@ import { importRoute } from './routeModules'
 
 const LoginPage = lazy(() => import('../pages/LoginPage'))
 const RegisterPage = lazy(() => import('../pages/RegisterPage'))
-const LandingPage = lazy(() => import('../pages/LandingPage'))
 const PrivacyPolicyPage = lazy(() => import('../pages/PrivacyPolicyPage'))
 const TermsPage = lazy(() => import('../pages/TermsPage'))
 const ChatPage = lazy(importRoute('/chat'))
@@ -35,7 +34,7 @@ export default function AppRouter() {
     <BrowserRouter>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -60,7 +59,7 @@ export default function AppRouter() {
               <Route path="/profile" element={<ProfilePage />} />
             </Route>
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Suspense>
     </BrowserRouter>
