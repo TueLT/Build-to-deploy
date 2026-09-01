@@ -370,6 +370,69 @@ async def test_list_users_excludes_self(client, auth_headers, other_auth_headers
 
 
 @pytest.mark.asyncio
+async def test_open_test_chat_auto_joins_accounts_and_allows_direct_messages(client, monkeypatch):
+    from src.config import get_settings
+
+    alice_register = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "open-alice@example.com", "password": "password123", "display_name": "Open Alice"},
+    )
+    bob_register = await client.post(
+        "/api/v1/auth/register",
+        json={"email": "open-bob@example.com", "password": "password123", "display_name": "Open Bob"},
+    )
+    assert alice_register.status_code == 201
+    assert bob_register.status_code == 201
+
+    alice_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "open-alice@example.com", "password": "password123"},
+    )
+    bob_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "open-bob@example.com", "password": "password123"},
+    )
+    alice_headers = {"Authorization": f"Bearer {alice_login.json()['access_token']}"}
+    bob_headers = {"Authorization": f"Bearer {bob_login.json()['access_token']}"}
+
+    # Simulate enabling public test chat after these users already have active sessions.
+    test_settings = get_settings().model_copy(update={"open_test_chat_enabled": True})
+    monkeypatch.setattr("src.services.company_service.get_settings", lambda: test_settings)
+
+    alice_workspaces = (await client.get("/api/v1/workspaces", headers=alice_headers)).json()
+    bob_workspaces = (await client.get("/api/v1/workspaces", headers=bob_headers)).json()
+    alice_company = next(workspace for workspace in alice_workspaces if workspace["type"] == "organization")
+    bob_company = next(workspace for workspace in bob_workspaces if workspace["type"] == "organization")
+    assert alice_company["id"] == bob_company["id"]
+
+    directory = await client.get(
+        f"/api/v1/users?workspace_id={alice_company['id']}",
+        headers=alice_headers,
+    )
+    assert directory.status_code == 200
+    assert "open-bob@example.com" in {user["email"] for user in directory.json()}
+
+    created = await client.post(
+        "/api/v1/conversations",
+        json={
+            "type": "direct",
+            "participant_ids": [bob_register.json()["id"]],
+            "workspace_id": alice_company["id"],
+        },
+        headers=alice_headers,
+    )
+    assert created.status_code == 200
+
+    bob_conversations = await client.get(
+        f"/api/v1/conversations?workspace_id={bob_company['id']}",
+        headers=bob_headers,
+    )
+    assert created.json()["id"] in {
+        conversation["id"] for conversation in bob_conversations.json()["conversations"]
+    }
+
+
+@pytest.mark.asyncio
 async def test_hide_conversation_is_per_user_and_new_message_restores_it(
     client, auth_headers, other_auth_headers
 ):

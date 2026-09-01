@@ -23,6 +23,7 @@ from src.models.auth_schemas import (
     UserPublic,
 )
 from src.services import reminder_service
+from src.services.company_service import ensure_open_test_chat_membership
 from src.services.workspace_service import ensure_personal_workspace
 
 router = APIRouter()
@@ -168,6 +169,7 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
     db.add(user)
     await db.flush()
     await ensure_personal_workspace(db, user)
+    await ensure_open_test_chat_membership(db, user)
     await db.commit()
     await db.refresh(user)
 
@@ -185,6 +187,7 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)) -> Au
     # Repair accounts created by legacy imports or direct admin/demo provisioning.
     # Personal APIs can then resolve their private namespace from the JWT alone.
     await ensure_personal_workspace(db, user)
+    await ensure_open_test_chat_membership(db, user)
     await db.commit()
     token = create_access_token(user.id)
     return AuthResponse(access_token=token, user=_to_public(user))
@@ -244,6 +247,7 @@ async def google_auth(request: GoogleAuthRequest, db: AsyncSession = Depends(get
     # Existing Google identities and email-linked accounts need the same
     # invariant repair as password logins.
     await ensure_personal_workspace(db, user)
+    await ensure_open_test_chat_membership(db, user)
     await db.commit()
     await db.refresh(user)
     token = create_access_token(user.id)

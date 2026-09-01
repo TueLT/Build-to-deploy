@@ -77,6 +77,8 @@ envVarGroups:
         value: embedded
       - key: ALLOW_EMBEDDED_WORKSPACE_AGENTS_IN_PRODUCTION
         value: "true"
+      - key: OPEN_TEST_CHAT_ENABLED
+        value: "true"
       - key: WORKSPACE_AGENT_RUNTIME_VERSION
         value: product-delivery-v2
       - key: QUALITY_ASSURANCE_RUNTIME_VERSION

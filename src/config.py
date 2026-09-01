@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     # Enterprise default: organizations are provisioned by platform operations.
     # Keep this switch only for local/demo compatibility and isolated tests.
     allow_self_service_organization_creation: bool = False
+    # Demo/testing mode: every active account joins the shared company workspace so
+    # testers can discover one another and start direct conversations immediately.
+    open_test_chat_enabled: bool = False
     # Public click-to-login accounts for local/staging usability tests. Production requires a
     # second explicit opt-in so a generic DEMO_LOGIN_ENABLED override cannot expose them alone.
     demo_login_enabled: bool = False
