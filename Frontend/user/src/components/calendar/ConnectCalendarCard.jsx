@@ -35,13 +35,13 @@ export default function ConnectCalendarCard({ onConnected }) {
         window.removeEventListener('message', onMessage)
         if (timer) window.clearInterval(timer)
       }
-      const finish = (connected) => {
+      const finish = (connected, message = '') => {
         if (finished) return
         finished = true
         cleanup()
         setBusy(false)
         if (connected) onConnected?.()
-        else setError('Could not connect Google Calendar.')
+        else setError(message || 'Could not connect Google Calendar.')
       }
       const verifyConnection = async () => {
         if (finished || checking) return
@@ -56,7 +56,7 @@ export default function ConnectCalendarCard({ onConnected }) {
       const onMessage = event => {
         if (!TRUSTED_BACKEND_ORIGINS.has(event.origin) || event.data?.type !== 'calendar_oauth') return
         if (event.data.ok) verifyConnection()
-        else finish(false)
+        else finish(false, event.data.message)
       }
       window.addEventListener('message', onMessage)
       timer = window.setInterval(async () => {

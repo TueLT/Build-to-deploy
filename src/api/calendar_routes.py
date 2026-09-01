@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
+from oauthlib.oauth2 import OAuth2Error
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
@@ -96,10 +97,11 @@ async def calendar_oauth_callback(
 ) -> HTMLResponse:
     def page(ok: bool, message: str, status_code: int = 200) -> HTMLResponse:
         origin = json.dumps(get_settings().frontend_origin)
+        message_json = json.dumps(message)
         safe_message = html.escape(message)
         document = f"""<!doctype html><meta charset=\"utf-8\"><title>Google Calendar</title>
 <body style=\"font-family:system-ui;padding:2rem;text-align:center\"><p>{safe_message}</p>
-<script>if(window.opener)window.opener.postMessage({{type:'calendar_oauth',ok:{str(ok).lower()}}},{origin});
+<script>if(window.opener)window.opener.postMessage({{type:'calendar_oauth',ok:{str(ok).lower()},message:{message_json}}},{origin});
 setTimeout(function(){{window.close()}},800);</script></body>"""
         return HTMLResponse(document, status_code=status_code)
 
@@ -112,9 +114,18 @@ setTimeout(function(){{window.close()}},800);</script></body>"""
     try:
         credentials = await run_in_threadpool(google_credentials.exchange_code, code)
         await google_credentials.save_credentials(user_id, credentials)
+    except OAuth2Error as exc:
+        logger.exception("Google Calendar OAuth token exchange failed")
+        if exc.error == "invalid_client":
+            message = "Google rejected the Calendar OAuth client credentials. Check the Calendar client secret on the server."
+        elif exc.error == "invalid_grant":
+            message = "Google authorization expired or was already used. Please connect again."
+        else:
+            message = "Google could not complete Calendar authorization. Please try again."
+        return page(False, message, 502)
     except Exception:  # noqa: BLE001 - callback returns a safe page, details stay in logs
         logger.exception("Google Calendar OAuth exchange failed")
-        return page(False, "Could not connect Google Calendar.", 502)
+        return page(False, "Orbit could not securely save the Google Calendar connection. Check the server logs.", 502)
     return page(True, "Google Calendar connected. You can close this window.")
 
 
