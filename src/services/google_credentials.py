@@ -17,7 +17,10 @@ from src.db.models import GoogleCalendarCredential
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+# Orbit only reads and writes events. It does not manage calendar sharing, ACLs, or
+# calendar properties, so requesting the broader /auth/calendar scope would violate
+# Google's least-privilege guidance and make public OAuth review unnecessarily broad.
+SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
 _AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
 _STATE_PURPOSE = "calendar_oauth"
@@ -92,18 +95,6 @@ def exchange_code(code: str) -> Credentials:
     flow = _build_flow()
     flow.fetch_token(code=code)
     return flow.credentials
-
-
-def fetch_google_email(creds: Credentials) -> str:
-    from googleapiclient.discovery import build
-
-    try:
-        return (
-            build("calendar", "v3", credentials=creds).calendarList().get(calendarId="primary").execute().get("id", "")
-        )
-    except Exception:  # noqa: BLE001 - display metadata is best-effort
-        logger.warning("Could not resolve connected Google Calendar email", exc_info=True)
-        return ""
 
 
 async def _row_for_user(db, user_id: str) -> GoogleCalendarCredential | None:

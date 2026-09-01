@@ -6,6 +6,9 @@ import { importRoute } from './routeModules'
 
 const LoginPage = lazy(() => import('../pages/LoginPage'))
 const RegisterPage = lazy(() => import('../pages/RegisterPage'))
+const LandingPage = lazy(() => import('../pages/LandingPage'))
+const PrivacyPolicyPage = lazy(() => import('../pages/PrivacyPolicyPage'))
+const TermsPage = lazy(() => import('../pages/TermsPage'))
 const ChatPage = lazy(importRoute('/chat'))
 const TaskPage = lazy(importRoute('/tasks'))
 const TaskInboxPage = lazy(importRoute('/tasks/inbox'))
@@ -32,7 +35,9 @@ export default function AppRouter() {
     <BrowserRouter>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<Navigate to="/assistant" replace />} />
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route element={<ProtectedRoute />}>
@@ -55,7 +60,7 @@ export default function AppRouter() {
               <Route path="/profile" element={<ProfilePage />} />
             </Route>
           </Route>
-          <Route path="*" element={<Navigate to="/assistant" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </BrowserRouter>

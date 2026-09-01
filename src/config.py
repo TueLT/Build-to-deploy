@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -200,6 +201,30 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ORIGINS must explicitly list trusted origins in production")
         if self.cors_origin_regex:
             raise ValueError("CORS_ORIGIN_REGEX must be empty in production; list trusted origins explicitly")
+        calendar_oauth_values = (
+            self.google_calendar_client_id.strip(),
+            self.google_calendar_client_secret.strip(),
+        )
+        if any(calendar_oauth_values) and not all(calendar_oauth_values):
+            raise ValueError(
+                "GOOGLE_CALENDAR_CLIENT_ID and GOOGLE_CALENDAR_CLIENT_SECRET must be configured together"
+            )
+        if all(calendar_oauth_values):
+            if not self.credential_encryption_key.strip():
+                raise ValueError("CREDENTIAL_ENCRYPTION_KEY is required when Google Calendar is enabled")
+            redirect = urlparse(self.google_calendar_redirect_uri)
+            if redirect.scheme != "https" or not redirect.netloc:
+                raise ValueError("GOOGLE_CALENDAR_REDIRECT_URI must be a public HTTPS URL in production")
+            if redirect.path != "/api/v1/calendar/oauth/callback":
+                raise ValueError(
+                    "GOOGLE_CALENDAR_REDIRECT_URI must end with /api/v1/calendar/oauth/callback"
+                )
+            frontend = urlparse(self.frontend_origin)
+            if frontend.scheme != "https" or not frontend.netloc or frontend.path not in ("", "/"):
+                raise ValueError("FRONTEND_ORIGIN must be an HTTPS origin without a path in production")
+            normalized_origins = {origin.rstrip("/") for origin in origins}
+            if self.frontend_origin.rstrip("/") not in normalized_origins:
+                raise ValueError("FRONTEND_ORIGIN must also be present in CORS_ORIGINS")
         if self.llm_provider == "google" and not self.google_api_key:
             raise ValueError("GOOGLE_API_KEY is required when LLM_PROVIDER=google in production")
         if self.llm_provider == "groq" and not self.groq_api_key:

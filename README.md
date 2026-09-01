@@ -107,7 +107,7 @@ cp .env.example .env
 #   động, các tính năng khác không ảnh hưởng.
 # Muốn bật nút "Connect Google Calendar" (mỗi user tự nối Calendar riêng của họ):
 #   1. Bật "Google Calendar API" tại https://console.cloud.google.com — APIs & Services → Library.
-#   2. OAuth consent screen: thêm scope https://www.googleapis.com/auth/calendar, thêm email từng
+#   2. OAuth consent screen: thêm scope https://www.googleapis.com/auth/calendar.events, thêm email từng
 #      người sẽ test vào "Test users" (scope nhạy cảm nên app ở chế độ Testing, tối đa 100 test
 #      user, ai không có trong danh sách sẽ gặp lỗi access_denied).
 #   3. Credentials → Create Credentials → OAuth client ID → Web application (KHÁC client đăng nhập

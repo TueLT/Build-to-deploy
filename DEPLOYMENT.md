@@ -110,6 +110,7 @@ VITE_API_BASE_URL=https://<backend>/api/v1
 VITE_WS_BASE_URL=wss://<backend>/api/v1/ws
 VITE_ADMIN_APP_URL=https://<admin-vercel-domain>
 VITE_GOOGLE_CLIENT_ID=<optional-google-sign-in-client-id>
+VITE_SUPPORT_EMAIL=<oauth-support-email>
 ```
 
 Admin project:
@@ -129,6 +130,17 @@ FRONTEND_ORIGIN=https://<user-domain>
 OPENROUTER_SITE_URL=https://<user-domain>
 GOOGLE_CALENDAR_REDIRECT_URI=https://<backend>/api/v1/calendar/oauth/callback
 ```
+
+The User deployment also exposes the public pages required by Google OAuth Branding:
+
+```text
+Homepage:       https://<user-domain>/
+Privacy Policy: https://<user-domain>/privacy
+Terms:          https://<user-domain>/terms
+```
+
+In Google Auth Platform -> Data Access, register the least-privilege Calendar scope used by
+Orbit: `https://www.googleapis.com/auth/calendar.events`.
 
 Chọn **Save, rebuild, and deploy**.
 

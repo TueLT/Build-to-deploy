@@ -111,8 +111,7 @@ setTimeout(function(){{window.close()}},800);</script></body>"""
         return page(False, "This connection attempt is invalid or expired.", 400)
     try:
         credentials = await run_in_threadpool(google_credentials.exchange_code, code)
-        email = await run_in_threadpool(google_credentials.fetch_google_email, credentials)
-        await google_credentials.save_credentials(user_id, credentials, google_email=email)
+        await google_credentials.save_credentials(user_id, credentials)
     except Exception:  # noqa: BLE001 - callback returns a safe page, details stay in logs
         logger.exception("Google Calendar OAuth exchange failed")
         return page(False, "Could not connect Google Calendar.", 502)

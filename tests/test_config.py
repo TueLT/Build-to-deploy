@@ -13,6 +13,13 @@ def _production_settings(**overrides):
         "cors_origin_regex": "",
         "llm_provider": "google",
         "google_api_key": "test-api-key",
+        # Never inherit a developer's real Calendar credentials from the process environment.
+        # Individual tests opt in with a complete fake OAuth configuration below.
+        "google_calendar_client_id": "",
+        "google_calendar_client_secret": "",
+        "google_calendar_redirect_uri": "http://localhost:8000/api/v1/calendar/oauth/callback",
+        "credential_encryption_key": "",
+        "frontend_origin": "http://localhost:5173",
         "multi_agent_enabled": False,
         "product_delivery_agent_enabled": False,
         "quality_assurance_agent_enabled": False,
@@ -24,6 +31,33 @@ def _production_settings(**overrides):
 def test_valid_production_settings_are_accepted():
     settings = _production_settings()
     assert settings.app_env == "production"
+
+
+def test_production_calendar_oauth_requires_complete_https_configuration():
+    with pytest.raises(ValidationError, match="configured together"):
+        _production_settings(google_calendar_client_id="calendar-client")
+
+    with pytest.raises(ValidationError, match="CREDENTIAL_ENCRYPTION_KEY"):
+        _production_settings(
+            google_calendar_client_id="calendar-client",
+            google_calendar_client_secret="calendar-secret",
+        )
+
+    with pytest.raises(ValidationError, match="public HTTPS URL"):
+        _production_settings(
+            google_calendar_client_id="calendar-client",
+            google_calendar_client_secret="calendar-secret",
+            credential_encryption_key="encrypted-token-key",
+        )
+
+    settings = _production_settings(
+        google_calendar_client_id="calendar-client",
+        google_calendar_client_secret="calendar-secret",
+        credential_encryption_key="encrypted-token-key",
+        google_calendar_redirect_uri="https://api.example.com/api/v1/calendar/oauth/callback",
+        frontend_origin="https://app.example.com",
+    )
+    assert settings.frontend_origin == "https://app.example.com"
 
 
 def test_openrouter_requires_its_own_key_in_production():
