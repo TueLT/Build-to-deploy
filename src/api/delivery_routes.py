@@ -1640,7 +1640,7 @@ async def _validate_delivery_control_references(
         ).scalar_one_or_none()
         if participant is None:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Control owner is outside the source group",
             )
     distinct_task_ids = tuple(dict.fromkeys(task_id for task_id in task_ids if task_id))
@@ -1661,7 +1661,7 @@ async def _validate_delivery_control_references(
         )
         if set(rows) != set(distinct_task_ids):
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="Dependency task is outside the Delivery source scope",
             )
 
@@ -1699,12 +1699,12 @@ async def create_delivery_dependency(
         ) from None
     if request.due_at is not None and request.due_at.tzinfo is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="due_at must include a timezone",
         )
     if request.predecessor_task_id is not None and request.predecessor_task_id == request.successor_task_id:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="A dependency cannot link a task to itself",
         )
     await _validate_delivery_control_references(
@@ -1833,7 +1833,7 @@ async def create_delivery_decision(
             status_code=status.HTTP_403_FORBIDDEN, detail="Delivery decision management is unavailable"
         ) from None
     if request.due_at is not None and request.due_at.tzinfo is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="due_at must include a timezone")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="due_at must include a timezone")
     await _validate_delivery_control_references(
         db,
         workspace_id=workspace_id,
@@ -1914,11 +1914,11 @@ async def update_delivery_decision(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Invalid decision state transition")
     if request.status == "decided" and not request.outcome:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="A decided item requires an outcome"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="A decided item requires an outcome"
         )
     if request.status != "decided" and request.outcome is not None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Outcome is valid only for a decided item"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Outcome is valid only for a decided item"
         )
     record.status = request.status
     record.outcome = request.outcome

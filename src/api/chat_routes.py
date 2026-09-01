@@ -175,7 +175,7 @@ async def create_workspace_channel(
     agent_workspace = await _require_channel_lead(db, current_user, workspace_id, agent_workspace_id)
     normalized_name = request.name.strip()
     if not normalized_name:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Channel name is required")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Channel name is required")
 
     member_rows = await _channel_member_rows(db, agent_workspace_id)
     allowed_member_ids = {user.id for _, user in member_rows}
@@ -193,7 +193,7 @@ async def create_workspace_channel(
     classification = classification_by_profile.get(agent_workspace.agent_profile)
     if classification is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="This workspace does not support chat channels",
         )
 
