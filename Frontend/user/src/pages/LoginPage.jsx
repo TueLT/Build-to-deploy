@@ -5,7 +5,7 @@ import { GoogleLogin } from '@react-oauth/google'
 import { listDemoAccounts } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
 
-const POST_LOGIN_PATH = '/assistant'
+const POST_LOGIN_PATH = '/chat'
 
 export default function LoginPage() {
   const location = useLocation()
@@ -46,7 +46,7 @@ export default function LoginPage() {
     setDemoSubmitting(account.account_key)
     try {
       await loginDemo(account.account_key)
-      navigate('/workspace-agent', { replace: true })
+      navigate(POST_LOGIN_PATH, { replace: true })
     } catch (err) {
       setError(err.detail || 'Không thể đăng nhập tài khoản demo này.')
     } finally {
