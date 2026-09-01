@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from oauthlib.oauth2 import OAuth2Error
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -78,6 +79,7 @@ async def get_calendar_connection(
 @router.get("/calendar/oauth/url")
 async def calendar_oauth_url(current_user: User = Depends(get_current_user)) -> dict:
     try:
+        google_credentials.validate_configuration()
         return {"url": google_credentials.build_authorization_url(current_user.id)}
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
@@ -113,7 +115,6 @@ setTimeout(function(){{window.close()}},800);</script></body>"""
         return page(False, "This connection attempt is invalid or expired.", 400)
     try:
         credentials = await run_in_threadpool(google_credentials.exchange_code, code)
-        await google_credentials.save_credentials(user_id, credentials)
     except OAuth2Error as exc:
         logger.exception("Google Calendar OAuth token exchange failed")
         if exc.error == "invalid_client":
@@ -125,6 +126,20 @@ setTimeout(function(){{window.close()}},800);</script></body>"""
         return page(False, message, 502)
     except Exception:  # noqa: BLE001 - callback returns a safe page, details stay in logs
         logger.exception("Google Calendar OAuth exchange failed")
+        return page(False, "Google Calendar token exchange failed unexpectedly. Check the server logs.", 502)
+    try:
+        await google_credentials.save_credentials(user_id, credentials)
+    except CalendarNotConnectedError:
+        logger.exception("Google Calendar did not return a refresh token")
+        return page(False, "Google did not return offline Calendar access. Revoke Orbit access in your Google Account, then connect again.", 502)
+    except (RuntimeError, ValueError):
+        logger.exception("Google Calendar credential encryption failed")
+        return page(False, "The server credential encryption key is invalid. Update CREDENTIAL_ENCRYPTION_KEY on Render.", 502)
+    except SQLAlchemyError:
+        logger.exception("Google Calendar credential database write failed")
+        return page(False, "Orbit could not save the Calendar connection in its database. Check the Render migration logs.", 502)
+    except Exception:  # noqa: BLE001 - callback returns a safe page, details stay in logs
+        logger.exception("Google Calendar credential save failed")
         return page(False, "Orbit could not securely save the Google Calendar connection. Check the server logs.", 502)
     return page(True, "Google Calendar connected. You can close this window.")
 

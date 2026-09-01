@@ -48,6 +48,18 @@ def _client_config() -> dict:
     }
 
 
+def validate_configuration() -> None:
+    """Fail before OAuth when credentials cannot be encrypted on this server."""
+    _client_config()
+    probe = "calendar-oauth-readiness"
+    try:
+        encrypted = encrypt_secret(probe)
+        if decrypt_secret(encrypted) != probe:
+            raise RuntimeError("credential encryption round-trip failed")
+    except (CredentialCryptoError, RuntimeError, ValueError) as exc:
+        raise RuntimeError("CREDENTIAL_ENCRYPTION_KEY is invalid") from exc
+
+
 def _build_flow(state: str | None = None) -> Flow:
     settings = get_settings()
     if settings.google_calendar_redirect_uri.startswith("http://"):
