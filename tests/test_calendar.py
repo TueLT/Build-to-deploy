@@ -30,7 +30,16 @@ def test_calendar_oauth_uses_event_only_scope():
     assert google_credentials.SCOPES == ["https://www.googleapis.com/auth/calendar.events"]
 
 
-def test_calendar_oauth_does_not_merge_legacy_grants():
+def test_calendar_oauth_does_not_merge_legacy_grants(monkeypatch):
+    settings = google_credentials.get_settings().model_copy(
+        update={
+            "google_calendar_client_id": "test-calendar-client",
+            "google_calendar_client_secret": "test-calendar-secret",
+            "google_calendar_redirect_uri": "http://localhost:8000/api/v1/calendar/oauth/callback",
+        }
+    )
+    monkeypatch.setattr(google_credentials, "get_settings", lambda: settings)
+
     query = parse_qs(urlparse(google_credentials.build_authorization_url("user-1")).query)
     assert query["scope"] == google_credentials.SCOPES
     assert "include_granted_scopes" not in query
