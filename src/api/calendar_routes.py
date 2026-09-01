@@ -80,7 +80,10 @@ async def get_calendar_connection(
 async def calendar_oauth_url(current_user: User = Depends(get_current_user)) -> dict:
     try:
         google_credentials.validate_configuration()
-        return {"url": google_credentials.build_authorization_url(current_user.id)}
+        return {
+            "url": google_credentials.build_authorization_url(current_user.id),
+            "storage_ready": True,
+        }
     except RuntimeError as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from None
 
