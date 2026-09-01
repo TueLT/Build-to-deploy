@@ -105,6 +105,45 @@ def test_verify_owner_matches_display_name_without_suffix():
     assert owner_id == "u2"
 
 
+def test_verify_owner_uses_evidence_sender_for_self_commitment():
+    window = [
+        (
+            SimpleNamespace(sender_id="u1", content="Tôi sẽ gửi báo cáo trước 5 giờ chiều mai"),
+            SimpleNamespace(display_name="Trương Tuệ"),
+        )
+    ]
+
+    owner_id = proactive_service._verify_owner(
+        # A model may paraphrase, omit accents, or return "Tôi" instead of copying the name.
+        {"name": "Toi", "evidence": "self", "message_index": 1},
+        window=window,
+        roster={"Trương Tuệ": "u1"},
+        eligible_ids={"u1"},
+        proposal_idx=1,
+        is_direct=False,
+    )
+
+    assert owner_id == "u1"
+
+
+def test_verify_owner_uses_evidence_sender_for_confirmation():
+    window = [
+        (SimpleNamespace(sender_id="u1", content="Mai họp nhé"), SimpleNamespace(display_name="An")),
+        (SimpleNamespace(sender_id="u2", content="Tôi đồng ý"), SimpleNamespace(display_name="Quỳnh")),
+    ]
+
+    owner_id = proactive_service._verify_owner(
+        {"name": "missing-name", "evidence": "confirmed", "message_index": 2},
+        window=window,
+        roster={"An": "u1", "Quỳnh": "u2"},
+        eligible_ids={"u1", "u2"},
+        proposal_idx=1,
+        is_direct=True,
+    )
+
+    assert owner_id == "u2"
+
+
 def test_verify_owner_rejects_unnamed_group_invitation():
     window = [
         (

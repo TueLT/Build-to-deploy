@@ -206,6 +206,25 @@ def _verify_owner(
 ) -> str | None:
     if not isinstance(claim, dict):
         return None
+    message_index = claim.get("message_index")
+    if not _is_plain_int(message_index) or not (1 <= message_index <= len(window)):
+        return None
+    message, _ = window[message_index - 1]
+    evidence = claim.get("evidence")
+    if evidence not in {"self", "confirmed", "invited"}:
+        return None
+
+    # For self-authored commitments and confirmations, the evidence message itself is the
+    # authoritative identity. Requiring the model to copy a display name exactly made valid
+    # Vietnamese names (or duplicate display names) disappear after token usage was already
+    # recorded. The sender id is stable and remains bounded by the same consent scope.
+    if evidence in {"self", "confirmed"}:
+        if message.sender_id not in eligible_ids:
+            return None
+        if evidence == "confirmed" and message_index <= proposal_idx:
+            return None
+        return message.sender_id
+
     claim_name = str(claim.get("name") or "").strip()
     user_id = roster.get(claim_name)
     if user_id is None:
@@ -217,18 +236,6 @@ def _verify_owner(
         }
         user_id = matches.pop() if len(matches) == 1 else None
     if user_id is None or user_id not in eligible_ids:
-        return None
-
-    message_index = claim.get("message_index")
-    if not _is_plain_int(message_index) or not (1 <= message_index <= len(window)):
-        return None
-    message, _ = window[message_index - 1]
-    evidence = claim.get("evidence")
-    if evidence not in {"self", "confirmed", "invited"}:
-        return None
-    if evidence in {"self", "confirmed"} and message.sender_id != user_id:
-        return None
-    if evidence == "confirmed" and message_index <= proposal_idx:
         return None
     if evidence == "invited":
         if message.sender_id == user_id:
@@ -413,6 +420,11 @@ async def maybe_suggest_task(
             workspace_id=workspace_id,
         )
         if not _parse_relevant(relevance.content):
+            logger.info(
+                "Proactive suggestion skipped: irrelevant conversation=%s message=%s",
+                conversation_id,
+                message_id,
+            )
             return
 
         async with db_session.async_session_maker() as db:
@@ -448,9 +460,16 @@ async def maybe_suggest_task(
         data = json.loads(_strip_fence(extraction.content))
         commitments = data.get("commitments") if isinstance(data, dict) else None
         if not isinstance(commitments, list):
+            logger.warning(
+                "Proactive suggestion rejected: invalid commitments conversation=%s message=%s",
+                conversation_id,
+                message_id,
+            )
             return
 
         async with db_session.async_session_maker() as db:
+            created_count = 0
+            rejected_owner_count = 0
             for commitment in commitments:
                 if not isinstance(commitment, dict):
                     continue
@@ -481,7 +500,10 @@ async def maybe_suggest_task(
                         proposal_idx=proposal_idx,
                         is_direct=is_direct,
                     )
-                    if owner_id is None or await _task_exists(
+                    if owner_id is None:
+                        rejected_owner_count += 1
+                        continue
+                    if await _task_exists(
                         db,
                         owner_id=owner_id,
                         conversation_id=conversation_id,
@@ -523,5 +545,15 @@ async def maybe_suggest_task(
                         [owner_id],
                         {"type": "task_suggested", "task": _task_payload(task)},
                     )
+                    created_count += 1
+            logger.info(
+                "Proactive suggestion completed: conversation=%s message=%s commitments=%d "
+                "created=%d owner_rejected=%d",
+                conversation_id,
+                message_id,
+                len(commitments),
+                created_count,
+                rejected_owner_count,
+            )
     except Exception:  # noqa: BLE001 - background detection must never break message delivery
         logger.exception("Proactive commitment detection failed")
