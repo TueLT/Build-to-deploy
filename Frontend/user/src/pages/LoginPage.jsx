@@ -1,11 +1,46 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
-import { listDemoAccounts } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
 
 const POST_LOGIN_PATH = '/chat'
+// Public demo metadata is bundled with the login page so the account picker does not wait for a
+// sleeping backend. Keep account_key values in sync with src/api/auth_routes.py::_DEMO_ACCOUNTS.
+const DEMO_ACCOUNTS = [
+  {
+    account_key: 'delivery_lead',
+    display_name: 'Linh Delivery Lead',
+    email: 'delivery-demo-lead@example.com',
+    business_role: 'lead',
+    channel_name: null,
+    job_title: 'Head of Product Delivery',
+  },
+  {
+    account_key: 'apollo_member',
+    display_name: 'Minh Backend',
+    email: 'delivery-demo-member@example.com',
+    business_role: 'member',
+    channel_name: 'Apollo Platform',
+    job_title: 'Backend Engineer',
+  },
+  {
+    account_key: 'release_member',
+    display_name: 'Mai Release',
+    email: 'delivery-demo-mai@example.com',
+    business_role: 'member',
+    channel_name: 'Release 34',
+    job_title: 'Release Manager',
+  },
+  {
+    account_key: 'portal_member',
+    display_name: 'An UX',
+    email: 'delivery-demo-an@example.com',
+    business_role: 'member',
+    channel_name: 'Customer Portal',
+    job_title: 'Product Designer',
+  },
+]
 
 export default function LoginPage() {
   const location = useLocation()
@@ -16,17 +51,8 @@ export default function LoginPage() {
   const { login, loginDemo } = useAuth()
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [demoAccounts, setDemoAccounts] = useState([])
   const [demoSubmitting, setDemoSubmitting] = useState('')
   const registrationSuccess = location.state?.registrationSuccess
-
-  useEffect(() => {
-    let active = true
-    listDemoAccounts()
-      .then(accounts => { if (active) setDemoAccounts(accounts) })
-      .catch(() => { /* Demo login is intentionally hidden when disabled. */ })
-    return () => { active = false }
-  }, [])
 
   const onSubmit = async ({ email, password }) => {
     setError('')
@@ -70,7 +96,7 @@ export default function LoginPage() {
         <GoogleAuthButton onError={setError} />
         <p className="auth-switch">New to Orbit? <Link to="/register">Create an account</Link></p>
       </form>
-      {demoAccounts.length > 0 && (
+      {DEMO_ACCOUNTS.length > 0 && (
         <section className="demo-login-panel" aria-label="Tài khoản Product Delivery dùng thử">
           <details className="demo-account-dropdown">
             <summary>
@@ -79,7 +105,7 @@ export default function LoginPage() {
               <i className="bi bi-chevron-down demo-dropdown-chevron" />
             </summary>
             <div className="demo-account-menu">
-              {demoAccounts.map(account => (
+              {DEMO_ACCOUNTS.map(account => (
                 <button
                   type="button"
                   className={`demo-account-option ${account.business_role}`}
