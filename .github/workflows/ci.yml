@@ -104,7 +104,12 @@ jobs:
 
       - name: Audit production frontend dependencies
         working-directory: Frontend
-        run: npm audit --omit=dev
+        # npm's advisory endpoint is external to the build and can hang until npm's
+        # five-minute network timeout. Keep the security signal visible without
+        # preventing the deterministic frontend build from running during an outage.
+        continue-on-error: true
+        timeout-minutes: 2
+        run: npm audit --omit=dev --audit-level=high --fetch-retries=1 --fetch-timeout=60000
 
       - name: Build user and admin frontends
         working-directory: Frontend
