@@ -187,6 +187,29 @@ async def chat(
     else:
         scoped_messages = request.messages[-request.context_limit :] if request.messages else []
         context_text = _format_messages(scoped_messages)
+
+    # A client-visible thread id is reusable, so bind its checkpoint history to the same
+    # conversation and consent snapshot before allowing a follow-up. The embedded Ask Orbit UI
+    # stores one thread per user + conversation, but this server check is the actual security
+    # boundary against a stale/malicious client mixing authorized context across conversations.
+    if request.thread_id is not None:
+        snapshot = await agent_graph.agent.aget_state(config)
+        previous_state = snapshot.values or {}
+        if previous_state.get("messages"):
+            previous_conversation_id = previous_state.get("conversation_id")
+            if previous_conversation_id != request.conversation_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This AI session belongs to another conversation; start a new session",
+                )
+            if conversation_view is not None and (
+                previous_state.get("consent_scope_hash") != conversation_view.consent_scope_hash
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Conversation AI permissions changed; start a new session",
+                )
+
     inputs = {
         "messages": [HumanMessage(content=request.message)],
         "context": context_text,

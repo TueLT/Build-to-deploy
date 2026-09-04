@@ -243,6 +243,7 @@ export default function ChatPage({ mode = 'personal' }) {
         )}
       </section>
       <AIPanel
+        key={`${user?.id || 'anonymous'}:${selectedId || 'none'}`}
         open={aiOpen}
         onClose={closeAiPanel}
         messages={messages}

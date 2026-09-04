@@ -249,6 +249,23 @@
 :root[data-theme='dark'] .quick-grid button small,
 :root[data-theme='dark'] .ask-title small,
 :root[data-theme='dark'] .ask-footer span { color: #9da8b9; font-size: 9px; }
+:root[data-theme='dark'] .ask-new-session {
+  color: #aeb8ff;
+  border-color: #465267;
+}
+:root[data-theme='dark'] .ask-new-session:hover:not(:disabled) {
+  color: #d8ddff;
+  background: #303a55;
+  border-color: #687bf2;
+}
+:root[data-theme='dark'] .ask-thread-message.assistant span {
+  color: #dce3ed;
+  background: #303947;
+}
+:root[data-theme='dark'] .ask-thread-message.user span {
+  color: #fff;
+  background: linear-gradient(135deg,#7485ef,#6876df);
+}
 :root[data-theme='dark'] .quick-grid button strong { font-size: 11px; }
 :root[data-theme='dark'] .quick-grid button small { line-height: 1.35; }
 :root[data-theme='dark'] .ai-calendar-card,

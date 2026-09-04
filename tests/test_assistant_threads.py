@@ -94,6 +94,49 @@ async def test_conversation_scoped_chat_does_not_create_assistant_thread(
         headers=auth_headers,
     )
     assert resp.status_code == 200
+    thread_id = resp.json()["thread_id"]
+
+    follow_up_llm = _mock_reply(
+        monkeypatch,
+        fake_llm_factory,
+        "The second answer uses the prior Ask Orbit turn.",
+    )
+    follow_up = await client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Explain the previous project summary in more detail.",
+            "conversation_id": conversation_id,
+            "thread_id": thread_id,
+        },
+        headers=auth_headers,
+    )
+    assert follow_up.status_code == 200
+    assert follow_up.json()["thread_id"] == thread_id
+    follow_up_prompt = "\n".join(
+        str(message.content) for message in follow_up_llm.invocations[-1]
+    )
+    assert "Summarize this." in follow_up_prompt
+    assert "Explain the previous project summary in more detail." in follow_up_prompt
+
+    # A participant changing the authorized message set invalidates the checkpoint. Old derived
+    # context must not remain available through a follow-up after consent changes.
+    changed_permission = await client.put(
+        f"/api/v1/conversations/{conversation_id}/ai-permission",
+        json={"granted": True},
+        headers=other_auth_headers,
+    )
+    assert changed_permission.status_code == 200
+    stale_follow_up = await client.post(
+        "/api/v1/chat",
+        json={
+            "message": "Continue the previous project summary.",
+            "conversation_id": conversation_id,
+            "thread_id": thread_id,
+        },
+        headers=auth_headers,
+    )
+    assert stale_follow_up.status_code == 409
+    assert stale_follow_up.json()["detail"] == "Conversation AI permissions changed; start a new session"
 
     listing = await client.get("/api/v1/assistant/threads", headers=auth_headers)
     assert listing.json() == []

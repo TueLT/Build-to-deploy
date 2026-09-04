@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../../context/AuthContext'
 import { chatWithAgent, resumeAgent } from '../../api/agent'
@@ -24,6 +24,29 @@ const scopeOptions = {
   last_hour: { label: 'Last hour', request: { kind: 'rolling_hours', hours: 1 }, count: 50 },
   last_five_hours: { label: 'Last 5 hours', request: { kind: 'rolling_hours', hours: 5 }, count: 50 },
   custom: { label: 'Custom range', request: { kind: 'custom_range' }, count: 50 },
+}
+
+const ASK_HISTORY_LIMIT = 16
+const ASK_HISTORY_TEXT_LIMIT = 4000
+
+function conversationAiSessionKey(userId, conversationId) {
+  return userId && conversationId ? `orbit-conversation-ai:${userId}:${conversationId}` : null
+}
+
+function readConversationAiSession(key) {
+  if (!key) return { threadId: null, messages: [] }
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(key) || 'null')
+    const messages = Array.isArray(stored?.messages)
+      ? stored.messages.filter(item => ['user', 'assistant'].includes(item?.role) && typeof item?.text === 'string').slice(-ASK_HISTORY_LIMIT)
+      : []
+    return {
+      threadId: typeof stored?.threadId === 'string' && stored.threadId ? stored.threadId : null,
+      messages,
+    }
+  } catch {
+    return { threadId: null, messages: [] }
+  }
 }
 
 function parseJsonArray(text) {
@@ -77,7 +100,9 @@ export default function AIPanel({
   aiMode = 'individual',
   canManageAi = false,
 }) {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
+  const sessionKey = conversationAiSessionKey(user?.id, conversationId)
+  const [initialAiSession] = useState(() => readConversationAiSession(sessionKey))
   const [scope, setScope] = useState('latest_20')
   const [customSince, setCustomSince] = useState('')
   const [customUntil, setCustomUntil] = useState('')
@@ -93,6 +118,31 @@ export default function AIPanel({
   const [question, setQuestion] = useState('')
   const [asking, setAsking] = useState(false)
   const [permissionExpanded, setPermissionExpanded] = useState(false)
+  const [panelThreadId, setPanelThreadId] = useState(initialAiSession.threadId)
+  const [askMessages, setAskMessages] = useState(initialAiSession.messages)
+  const askHistoryRef = useRef(null)
+
+  const appendAskMessage = (role, text) => {
+    const normalized = String(text || '').trim().slice(0, ASK_HISTORY_TEXT_LIMIT)
+    if (!normalized) return
+    setAskMessages(current => [...current, { role, text: normalized }].slice(-ASK_HISTORY_LIMIT))
+  }
+
+  useEffect(() => {
+    if (!sessionKey) return
+    try {
+      window.sessionStorage.setItem(sessionKey, JSON.stringify({ threadId: panelThreadId, messages: askMessages }))
+    } catch {
+      // Session continuity is an enhancement; a blocked/full storage area must not break Ask Orbit.
+    }
+  }, [askMessages, panelThreadId, sessionKey])
+
+  useEffect(() => {
+    const container = askHistoryRef.current
+    if (!container) return undefined
+    const frame = requestAnimationFrame(() => { container.scrollTop = container.scrollHeight })
+    return () => cancelAnimationFrame(frame)
+  }, [askMessages, asking])
 
   const refreshEventCandidates = () => {
     if (!conversationId || !granted || aiMode !== 'group_managed') {
@@ -142,7 +192,7 @@ export default function AIPanel({
     return false
   }
 
-  const callAgent = async (action, prompt, title) => {
+  const callAgent = async (action, prompt, title, { hideResult = false, onResponse, onError } = {}) => {
     if (!messages.length) { setError('No messages in this conversation yet.'); setResult(''); return null }
     setRunningAction(action); setError(''); setResult(''); setPending(null)
     try {
@@ -150,16 +200,23 @@ export default function AIPanel({
         message: prompt,
         messages: scopedMessages(),
         conversation_id: conversationId,
+        thread_id: panelThreadId,
         workspace_id: workspaceId,
         context_limit: scopeOptions[scope].count,
         scope: selectedScope(),
       })
+      if (response.thread_id) setPanelThreadId(response.thread_id)
+      onResponse?.(response)
       if (handleAgentResult(response)) return null
-      setResultTitle(title)
-      setResult(response.response)
+      if (!hideResult) {
+        setResultTitle(title)
+        setResult(response.response)
+      }
       return response
     } catch (err) {
-      setError(err.detail || 'Could not reach the AI agent.')
+      const detail = err.detail || 'Could not reach the AI agent.'
+      setError(detail)
+      onError?.(detail)
       return null
     } finally { setRunningAction(null) }
   }
@@ -207,11 +264,38 @@ export default function AIPanel({
   }
 
   const askOrbit = async (value = question) => {
-    if (!value.trim() || asking) return
+    if (!value.trim() || asking || pending || runningAction) return
+    const prompt = value.trim()
+    appendAskMessage('user', prompt)
     setAsking(true)
-    const response = await callAgent('__ask__', value, 'Orbit says')
-    if (response) setQuestion('')
+    let receivedResponse = false
+    await callAgent('__ask__', prompt, 'Orbit says', {
+      hideResult: true,
+      onResponse: response => {
+        receivedResponse = true
+        if (response.status === 'completed') appendAskMessage('assistant', response.response)
+      },
+      onError: detail => {
+        receivedResponse = true
+        appendAskMessage('assistant', detail)
+      },
+    })
+    if (receivedResponse) setQuestion('')
     setAsking(false)
+  }
+
+  const startNewAskSession = () => {
+    if (sessionKey) {
+      try { window.sessionStorage.removeItem(sessionKey) } catch { /* Ignore unavailable storage. */ }
+    }
+    setPanelThreadId(null)
+    setAskMessages([])
+    setQuestion('')
+    setError('')
+    setResult('')
+    setResultTitle('')
+    setContextScope(null)
+    setPending(null)
   }
 
   const actOnCandidate = async (candidate, action, options = {}) => {
@@ -262,12 +346,12 @@ export default function AIPanel({
       </div>}
 
       <div className="ai-section-title"><span>Quick actions</span><i className="bi bi-lightning-charge-fill"/></div>
-      <div className="quick-grid">{actions.map(([icon,title,sub,color])=>{ const isRunning = runningAction === title; const invalidCustom = scope === 'custom' && (!customSince || !customUntil); return <motion.button key={title} whileHover={{y:-2}} whileTap={{scale:.98}} disabled={!granted || Boolean(runningAction) || invalidCustom} onClick={handlers[title]}><span style={{color,background:`${color}12`}}><i className={`bi ${isRunning ? 'bi-hourglass-split' : icon}`}/></span><strong>{title}</strong><small>{isRunning ? 'Working...' : sub}</small></motion.button> })}</div>
+      <div className="quick-grid">{actions.map(([icon,title,sub,color])=>{ const isRunning = runningAction === title; const invalidCustom = scope === 'custom' && (!customSince || !customUntil); return <motion.button key={title} whileHover={{y:-2}} whileTap={{scale:.98}} disabled={!granted || Boolean(runningAction) || Boolean(pending) || invalidCustom} onClick={handlers[title]}><span style={{color,background:`${color}12`}}><i className={`bi ${isRunning ? 'bi-hourglass-split' : icon}`}/></span><strong>{title}</strong><small>{isRunning ? 'Working...' : sub}</small></motion.button> })}</div>
       {error && <div className="auth-error">{error}</div>}
       {contextScope && <div className="alert alert-light border py-2 px-3 small mt-2 mb-2">This request used {contextScope.included_message_count}/{contextScope.window_message_count} messages in its selected window.{contextScope.excluded_participants?.length > 0 && <> Excluded authors: {contextScope.excluded_participants.join(', ')}.</>}</div>}
       {result && <div className="ai-result-card border rounded-3 p-3 mt-2 small"><strong className="d-block mb-1">{resultTitle}</strong><Markdown>{result}</Markdown>{pending && (pending.interrupt?.type === 'calendar_event' ? <><CalendarReminderOptions disabled={runningAction==='__resume__'} alternatives={pending.interrupt?.draft?.alternatives || []} onConfirm={edits=>respondToInterrupt(true,edits)}/><button className="btn btn-sm btn-light mt-2" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(false)}>Hủy</button></> : <div className="d-flex flex-wrap gap-2 mt-2"><button className="btn btn-sm btn-primary" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(true)}>Xác nhận</button><button className="btn btn-sm btn-light" disabled={runningAction==='__resume__'} onClick={()=>respondToInterrupt(false)}>Hủy</button></div>)}</div>}
-      <div className="ask-card"><div className="ask-title"><span><i className="bi bi-stars"/></span><div><strong>Ask Orbit</strong><small>About this conversation</small></div></div><textarea value={question} onChange={event=>setQuestion(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askOrbit()}}} placeholder="Ask anything about this conversation..." disabled={!granted}/><div className="ask-footer"><span>AI may make mistakes</span><button disabled={!granted || asking || !question.trim()} onClick={()=>askOrbit()}><i className={`bi ${asking?'bi-hourglass-split':'bi-arrow-up'}`}/></button></div></div>
-      <div className="suggested-prompts"><span>Try asking</span><button disabled={asking || !granted} onClick={()=>askOrbit('What decisions were made today?')}>“What decisions were made today?”</button><button disabled={asking || !granted} onClick={()=>askOrbit('Who assigned me tasks?')}>“Who assigned me tasks?”</button></div>
+      <div className="ask-card"><div className="ask-title"><span><i className="bi bi-stars"/></span><div><strong>Ask Orbit</strong><small>{panelThreadId ? 'Session memory active' : 'About this conversation'}</small></div>{(panelThreadId || askMessages.length > 0) && <button type="button" className="ask-new-session" onClick={startNewAskSession} disabled={asking || Boolean(runningAction)} title="Start a new Ask Orbit session" aria-label="Start a new Ask Orbit session"><i className="bi bi-plus-lg"/></button>}</div>{askMessages.length > 0 && <div className="ask-thread-history" ref={askHistoryRef} aria-live="polite">{askMessages.map((message,index)=><div className={`ask-thread-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.text}</span></div>)}{asking && <div className="ask-thread-message assistant pending"><span><i className="bi bi-three-dots"/></span></div>}</div>}<textarea value={question} onChange={event=>setQuestion(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();askOrbit()}}} placeholder={pending ? 'Confirm or cancel the pending action first...' : 'Ask anything about this conversation...'} disabled={!granted || Boolean(pending)}/><div className="ask-footer"><span>{panelThreadId ? 'Remembers follow-up questions in this tab' : 'AI may make mistakes'}</span><button disabled={!granted || asking || Boolean(pending) || !question.trim()} onClick={()=>askOrbit()}><i className={`bi ${asking?'bi-hourglass-split':'bi-arrow-up'}`}/></button></div></div>
+      <div className="suggested-prompts"><span>Try asking</span><button disabled={asking || Boolean(runningAction) || Boolean(pending) || !granted} onClick={()=>askOrbit('What decisions were made today?')}>“What decisions were made today?”</button><button disabled={asking || Boolean(runningAction) || Boolean(pending) || !granted} onClick={()=>askOrbit('Who assigned me tasks?')}>“Who assigned me tasks?”</button></div>
     </aside></>
   )
 }
