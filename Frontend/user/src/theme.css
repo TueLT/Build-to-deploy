@@ -517,6 +517,27 @@
 :root[data-theme='dark'] .auth-input { background: #151e30; border-color: #344058; }
 :root[data-theme='dark'] .auth-input input { background: transparent; }
 :root[data-theme='dark'] .auth-error { background: #351923; border-color: #653044; color: #ff91a8; }
+:root[data-theme='dark'] .demo-account-dropdown>summary {
+  background: var(--card);
+  border-color: #414c60;
+  color: var(--ink);
+}
+:root[data-theme='dark'] .demo-account-dropdown>summary:hover,
+:root[data-theme='dark'] .demo-account-dropdown[open]>summary {
+  background: #263042;
+  border-color: #6879d6;
+}
+:root[data-theme='dark'] .demo-dropdown-copy small,
+:root[data-theme='dark'] .demo-account-option small { color: var(--muted); }
+:root[data-theme='dark'] .demo-account-menu {
+  background: var(--card);
+  border-color: #414c60;
+}
+:root[data-theme='dark'] .demo-account-option {
+  background: transparent;
+  color: var(--ink);
+}
+:root[data-theme='dark'] .demo-account-option:hover:not(:disabled) { background: #2b3547; }
 :root[data-theme='dark'] .toast,
 :root[data-theme='dark'] .budget-alert-toast>div { background: var(--card) !important; color: var(--ink); border-color: var(--line) !important; }
 :root[data-theme='dark'] input:-webkit-autofill,
